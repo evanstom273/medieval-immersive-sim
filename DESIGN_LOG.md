@@ -236,6 +236,7 @@ When an item changes status, move it and add a dated note rather than silently r
 - **Direct control always runs at normal speed (1×).** Fast-forward exists only in the overview. Pausing is still allowed.
 - So the day length is how long everything takes while you're in someone's shoes, waiting and sleeping included. Skipping time (a night, a wait) means zooming out to the overview.
 - Implications: zooming out becomes part of everyday play (e.g. sleeping through the night), so the overview needs to be pleasant to drop into for that. The greyed-out speed buttons on the direct-control bar contradict this and should come off (they belong to the overview).
+- *Under consideration (2026-11-08 22:21 UTC):* an exception tied to actions: a TES-style wait (choose how many hours) and/or sleeping/waiting that speeds time up, ending when the action ends. Not a free speed control. Open: a skip/fade versus a visible speed-up; what can interrupt it (noises, people, threats via the senses system).
 
 ---
 
