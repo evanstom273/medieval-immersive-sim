@@ -222,6 +222,13 @@ When an item changes status, move it and add a dated note rather than silently r
 - Windows sit in walls with a low wall under them (sill, 0.9 m) and wall above (from 1.8 m). The whole window drops with its wall in cutaway / walls down.
 - The test house has one window in each wall. Placeholder art.
 
+### Calendar
+*2026-11-08 22:14 UTC*
+
+- **7 days a week · 4 weeks a month (28 days) · 3 months a season · 12 months a year · 48 weeks a year · 336 days a year.**
+- So: four seasons of 84 days; every month is exactly four weeks, and every month and season starts on the same weekday.
+- Still open (see Time model): how long a day lasts in real time, and how fast time runs in each view.
+
 ---
 
 ## Undecided
@@ -232,6 +239,7 @@ When an item changes status, move it and add a dated note rather than silently r
 - How time runs in each layer: speeds, compression, pausing, skips.
 - How the overview and direct-control clocks relate. Does dropping in force real-time? Can time advance while controlling someone?
 - Overall time scale of a playthrough (years? generations?).
+- *2026-11-08 22:14 UTC: the calendar is decided (see Calendar). Still open: real-time length of a day, speeds, and how the clocks of the two views relate.*
 - *Note:* the two-layer presentation largely addresses the conflict between real-time play and life-scale simulation, but the specifics remain open.
 
 ### Line extinction and player continuity
