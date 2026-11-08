@@ -519,6 +519,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     if (a.status === 'yielded') this.standUp(a);
     a.social = null;
     if (this.orderToPoint(a, { x, y })) this.markerFade = null;
+    else this.say("You can't find a way there.");
     if (hold) this.press = { since: this.now, lastPlan: this.now, point: { x, y }, touch };
   }
 
@@ -882,6 +883,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
    * - windows: from inside, always (they'll open it up and climb out); from
    *   outside, only if it's already open. Costs ~6 m, so doors win when open.
    * - locked doors: from inside, they'll unbar it (~2 m). From outside, no (no keys yet).
+   * The character you control only uses these when there's no other way (see planOrder).
    */
   private navLinks(): NavLink[] {
     const links: NavLink[] = [];
@@ -941,8 +943,25 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     });
   }
 
+  /**
+   * Plan a route. NPCs may always use links (windows, unbarring doors). The
+   * character you control walks normally, and only falls back to links when
+   * there's no other way there (e.g. the door's locked and a window is the only way).
+   */
+  private planOrder(c: Character, goal: Parameters<typeof MoveOrder.plan>[2]): MoveOrder | null {
+    const nav = this.ensureNav();
+    if (!c.controlled) return MoveOrder.plan(nav, c.pos(), goal, true);
+    const plain = MoveOrder.plan(nav, c.pos(), goal, false);
+    if (plain) return plain;
+    const linked = MoveOrder.plan(nav, c.pos(), goal, true);
+    if (linked?.path.some((w) => (w.link?.data as { kind?: string } | undefined)?.kind === 'window')) {
+      this.say("There's no other way: you'll have to go through a window.");
+    }
+    return linked;
+  }
+
   orderToPoint(c: Character, p: Point): boolean {
-    const order = MoveOrder.plan(this.ensureNav(), c.pos(), { kind: 'point', x: p.x, y: p.y }, !c.controlled);
+    const order = this.planOrder(c, { kind: 'point', x: p.x, y: p.y });
     if (!order) return false;
     c.order = order;
     c.onArrive = null;
@@ -954,7 +973,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
   }
 
   private orderToReach(c: Character, closest: (from: Point) => Point, reach: number, onArrive: (() => void) | null): boolean {
-    const order = MoveOrder.plan(this.ensureNav(), c.pos(), { kind: 'reach', closest, reach }, !c.controlled);
+    const order = this.planOrder(c, { kind: 'reach', closest, reach });
     if (!order) return false;
     c.order = order;
     c.onArrive = onArrive;

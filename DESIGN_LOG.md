@@ -214,7 +214,7 @@ When an item changes status, move it and add a dated note rather than silently r
 - **2026-11-08 22:03 UTC: NPCs use doors and windows** (PLACEHOLDER rules):
   - **Windows as a route:** NPCs can route through windows, at a cost of ~6 m of extra walking, so they only do it when it's genuinely shorter. From inside, they open it right up (unlatch, glass, shutters) and climb out; from outside, only if it's already open.
   - **Locked doors:** from inside, an NPC wanting to leave unbars the door (cost ~2 m) and goes out, without relocking. From outside, a locked door is a wall (no keys yet).
-  - **Your character's click-to-walk never routes through windows,** so a click never sends you climbing unexpectedly.
+  - ~~**Your character's click-to-walk never routes through windows.**~~ *Changed 2026-11-08 22:06 UTC:* your click-to-walk walks normally if it can, and **only if there's no other way** (e.g. the door's locked) does it climb through an open window, or unbar a locked door from inside, like the NPCs. You get a message when it's going to climb ("There's no other way: you'll have to go through a window."), and "You can't find a way there." when there's no route at all.
   - **Idle:** NPCs sometimes open or close windows and shutters.
   - Built as "links" in the pathfinder: hops between two points with an action attached (climb / unbar).
   - Emergent bits this already allows: a locked-in NPC lets themselves out; someone outside a locked house gets in through an open window (and is seen doing it).
