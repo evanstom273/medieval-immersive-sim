@@ -136,6 +136,14 @@ export function prism(g: Phaser.GameObjects.Graphics, p: Projection, ground: Pt[
   return bounds;
 }
 
+/** Screen bounds a prism would cover, without drawing it. */
+export function prismBounds(p: Projection, ground: Pt[], z0: number, height: number): Bounds {
+  const b = emptyBounds();
+  grow(b, ground.map((q) => p.toScreen(q.x, q.y, z0)));
+  grow(b, ground.map((q) => p.toScreen(q.x, q.y, z0 + height)));
+  return b;
+}
+
 /** A flat shape lying at height z. */
 export function flat(g: Phaser.GameObjects.Graphics, p: Projection, ground: Pt[], z: number, colour: number, alpha = 1, outline: number | null = null, width = 1.5): Bounds {
   const pts = ground.map((q) => p.toScreen(q.x, q.y, z));

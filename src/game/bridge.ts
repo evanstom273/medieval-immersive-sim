@@ -106,6 +106,8 @@ export type UiCommand =
   | { kind: 'setPaused'; paused: boolean }
   | { kind: 'setView'; mode: 'topdown' | 'threequarter' | 'isometric' }
   | { kind: 'cycleView' }
+  | { kind: 'setWalls'; mode: 'up' | 'cutaway' | 'down' }
+  | { kind: 'cycleWalls' }
   | { kind: 'cancelAction' };
 
 /** Game → UI: a character switch started / landed. */
@@ -117,6 +119,9 @@ export interface SwitchEvent {
   activity: string;
 }
 export const switchChannel = new Channel<SwitchEvent>();
+
+/** Game → UI: Sims-style wall display mode. */
+export const wallsChannel = new Channel<'up' | 'cutaway' | 'down'>();
 
 /** Game → UI: which view projection is active. */
 export const viewChannel = new Channel<'topdown' | 'threequarter' | 'isometric'>();

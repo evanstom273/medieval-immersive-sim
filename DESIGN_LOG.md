@@ -177,12 +177,29 @@ When an item changes status, move it and add a dated note rather than silently r
 - **Environments keep the art doc's direction** (detailed, layered, cel-shaded SVG). The character simplification applies to characters only.
 - In top-down, characters are seen from above; in the angled views they're upright figures facing one of **8 directions**, with hands placed exactly where they're aiming so combat stays precise.
 
-### View: isometric
+### ~~View: isometric~~ *(superseded 2026-11-08 21:45 UTC by ¾, below)*
 *2026-11-08 21:37 UTC*
 
-- **The game view is true 2:1 isometric**, chosen after comparing all three in-game. It's now the default; top-down and ¾ stay available in the Tuning panel for comparison and debugging.
+- ~~**The game view is true 2:1 isometric**~~, chosen after comparing all three in-game. It's now the default; top-down and ¾ stay available in the Tuning panel for comparison and debugging.
 - **WASD and the touch stick are screen-relative:** up walks up the screen, right walks right, whatever the view.
 - **Next for the art:** draw the environment properly for isometric per the art doc, and rewrite `ART_STYLE.md`'s perspective section (it still describes three-quarter).
+
+### View: ¾ (three-quarter)
+*2026-11-08 21:45 UTC*
+
+- **The game view is ¾:** an oblique view from the south. The world grid stays lined up with the screen (up is north, walls run straight across or up, rooms are rectangles), but you still see tops and front faces, and heights rise up the screen. Chosen over isometric because it's easier to read and reason about while keeping the 3D feel. It's the default; the others stay in the Tuning panel.
+- **Screen-relative WASD and touch stick** carry over.
+- **Next for the art:** draw the environment properly for ¾ per the art doc, and rewrite `ART_STYLE.md`'s perspective section to match.
+
+### Walls: up / cutaway / down (Sims-style)
+*2026-11-08 21:45 UTC*
+
+- **Three wall modes**, switched with a walls button on the bottom bar (or V), remembered between sessions:
+  - **Walls up:** full height. If a wall hides the character you control, that bit fades.
+  - **Cutaway (default):** walls standing in front of a room (floor behind them from the camera's point of view) are cut down to knee height, and side walls step down along their front stretch, doll's-house style. Back walls stay up. Any wall that would hide the character you control also drops.
+  - **Walls down:** every wall is a low stub.
+- Walls glide up and down rather than snapping. A cut wall shows a darker cross-section on top. Doors are cut down with their wall.
+- **Placeholders:** cut height 0.35 m; side walls step down within 2.5 m of a room's front; glide speed 7 m/s.
 
 ---
 

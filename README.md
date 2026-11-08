@@ -26,7 +26,8 @@ npm run build    # typecheck + production build
 | Lock on to someone (any time; you keep facing them) | F or middle click |
 | Talk to whoever you're locked on to / facing | E |
 | Zoom | Scroll wheel |
-| Change view (top-down / ¾ / isometric) | View button on the bottom bar |
+| Walls up / cutaway / down | Walls button on the bottom bar, or V |
+| Compare views (top-down / ¾ / isometric) | Tuning panel |
 | Show collision | F3 |
 | Senses debug overlay (vision cones, noise, scents) | F4, or the Tuning panel |
 

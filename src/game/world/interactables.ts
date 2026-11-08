@@ -66,6 +66,8 @@ export class Door implements Interactable {
   readonly geom: DoorGeom;
   /** Door height (px of world height). */
   readonly height = 2.0 * M;
+  /** Drawn height, when its wall is cut down (cutaway / walls down); null = full height. */
+  displayHeight: number | null = null;
 
   /**
    * @param hingeX,hingeY  hinge position
@@ -128,7 +130,8 @@ export class Door implements Interactable {
     const angle = baseAngle + this.swing.angle;
     const outline = this.highlighted ? HIGHLIGHT : OUTLINE;
     const leaf = slabPts(hingeX, hingeY, angle, length, thickness);
-    const b = prism(g, p, leaf, 0, p.upright ? this.height : 0, { colour: 0x6b4a2b, top: 0x7a5634, outline, outlineWidth: this.highlighted ? 3 : 1.5 });
+    const h = p.upright ? Math.min(this.height, this.displayHeight ?? this.height) : 0;
+    const b = prism(g, p, leaf, 0, h, { colour: 0x6b4a2b, top: 0x7a5634, outline, outlineWidth: this.highlighted ? 3 : 1.5 });
     if (!p.upright) {
       // Planks, seen from above.
       g.lineStyle(1, 0x4a321c, 1);
@@ -141,13 +144,14 @@ export class Door implements Interactable {
       }
     }
     // Hinge pin.
-    const pin = p.toScreen(hingeX, hingeY, p.upright ? this.height : 0);
+    const pin = p.toScreen(hingeX, hingeY, h);
     g.fillStyle(0x3a3a3a, 1);
     g.fillCircle(pin.x, pin.y, 3);
     // Iron bolt across the latch end when locked.
     if (this.locked) {
       const bolt = slabPts(hingeX + Math.cos(angle) * (length - 14), hingeY + Math.sin(angle) * (length - 14), angle, 10, thickness + 6);
-      prism(g, p, bolt, p.upright ? 0.9 * M : 0, p.upright ? 0.15 * M : 0, { colour: 0x2e2e2e, outline: 0x111111, outlineWidth: 1 }, b);
+      const boltZ = Math.min(0.9 * M, Math.max(0, h - 0.15 * M));
+      prism(g, p, bolt, p.upright ? boltZ : 0, p.upright ? Math.min(0.15 * M, h) : 0, { colour: 0x2e2e2e, outline: 0x111111, outlineWidth: 1 }, b);
     }
     return b;
   }

@@ -5,6 +5,7 @@ import {
   pausedChannel,
   switchChannel,
   viewChannel,
+  wallsChannel,
   messageChannel,
   rosterChannel,
   uiCommands,
@@ -16,7 +17,7 @@ import { CameraRig } from '../camera/CameraRig';
 import { planSwitch, sampleSwitch, switchDuration, type SwitchPlan } from '../camera/switchTransition';
 import { circlePts, discOnGround, emptyBounds, flat, prism, rectPts, ringOnGround, type Bounds } from '../view/draw';
 import { makeProjection, projectedBounds, screenToGroundDir, VIEW_MODES, type Projection, type ViewMode } from '../view/projection';
-import { Scenery } from '../view/Scenery';
+import { Scenery, WALL_MODES, type WallMode } from '../view/Scenery';
 import type { World } from '../characters/Brain';
 import { BODY_RADIUS, Character, type CharacterDef, type Targetable } from '../characters/Character';
 import { HIT_OPINION, MAX_HEALTH, PUNCH_DAMAGE, TEMPERAMENTS } from '../combat/combat';
@@ -74,8 +75,9 @@ interface Dummy extends Targetable {
   wobble: { x: number; y: number };
 }
 
-// v2: start everyone on isometric after it was chosen, ignoring any view saved while comparing.
-const VIEW_STORAGE_KEY = 'mis.viewMode.v2';
+// v3: start everyone on ¾ (the chosen view), ignoring any view saved while comparing.
+const VIEW_STORAGE_KEY = 'mis.viewMode.v3';
+const WALLS_STORAGE_KEY = 'mis.wallMode';
 
 type OpenMenu = { kind: 'character'; target: Character } | { kind: 'object'; target: Interactable } | { kind: 'self' };
 
@@ -88,7 +90,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
   private active!: Character;
 
   private keys!: Record<
-    'up' | 'down' | 'left' | 'right' | 'sprint' | 'crouch' | 'combat' | 'lock' | 'talk' | 'debug' | 'senses' | 'pause' | 'esc' | 'one' | 'two' | 'three' | 'four',
+    'up' | 'down' | 'left' | 'right' | 'sprint' | 'crouch' | 'combat' | 'lock' | 'talk' | 'debug' | 'senses' | 'pause' | 'walls' | 'esc' | 'one' | 'two' | 'three' | 'four',
     Phaser.Input.Keyboard.Key
   >;
   private solids!: Phaser.Physics.Arcade.StaticGroup;
@@ -174,8 +176,16 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     this.lockRing = this.add.graphics().setDepth(16);
     this.routeGfx = this.add.graphics().setDepth(5);
 
-    // Isometric is the chosen view; the others stay available from the Tuning panel for comparison.
-    let saved: ViewMode = 'isometric';
+    // ¾ is the chosen view; the others stay available from the Tuning panel for comparison.
+    let saved: ViewMode = 'threequarter';
+    let walls: WallMode = 'cutaway';
+    try {
+      const w = localStorage.getItem(WALLS_STORAGE_KEY) as WallMode | null;
+      if (w && WALL_MODES.includes(w)) walls = w;
+    } catch {
+      /* storage unavailable */
+    }
+    this.setWalls(walls);
     try {
       const v = localStorage.getItem(VIEW_STORAGE_KEY) as ViewMode | null;
       if (v && VIEW_MODES.includes(v)) saved = v;
@@ -193,7 +203,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
   /** A solid block: physics body, sight blocker, and scenery to draw (with height for the angled views). */
   private wall(solids: Phaser.Physics.Arcade.StaticGroup, x: number, y: number, w: number, h: number, colour = 0x8c8475, height = 2.4 * M, fade = true): void {
     this.sightBlockers.push({ kind: 'rect', x, y, w, h });
-    this.scenery.add({ kind: 'box', x, y, w, h, height, colour, fade });
+    this.scenery.add({ kind: 'box', x, y, w, h, height, colour, wall: fade });
     const r = this.add.rectangle(x + w / 2, y + h / 2, w, h).setVisible(false);
     this.physics.add.existing(r, true);
     solids.add(r);
@@ -283,6 +293,22 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     viewChannel.emit(mode);
   }
 
+  /** Sims-style walls: up, cutaway (cut down in front of rooms), or down. */
+  setWalls(mode: WallMode): void {
+    this.scenery.setMode(mode);
+    try {
+      localStorage.setItem(WALLS_STORAGE_KEY, mode);
+    } catch {
+      /* ignore */
+    }
+    wallsChannel.emit(mode);
+  }
+
+  private cycleWalls(): void {
+    const i = WALL_MODES.indexOf(this.scenery.mode);
+    this.setWalls(WALL_MODES[(i + 1) % WALL_MODES.length]);
+  }
+
   private cycleView(): void {
     const i = VIEW_MODES.indexOf(this.proj.mode);
     this.setView(VIEW_MODES[(i + 1) % VIEW_MODES.length]);
@@ -304,6 +330,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
         debug: KEY.F3,
         senses: KEY.F4,
         pause: KEY.SPACE,
+        walls: KEY.V,
         esc: KEY.ESC,
         one: KEY.ONE,
         two: KEY.TWO,
@@ -425,6 +452,12 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
         break;
       case 'cycleView':
         this.cycleView();
+        break;
+      case 'cycleWalls':
+        this.cycleWalls();
+        break;
+      case 'setWalls':
+        this.setWalls(c.mode);
         break;
       case 'toggleSenses':
         this.sensesOverlay = !this.sensesOverlay;
@@ -960,6 +993,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     const a = this.active;
 
     if (Phaser.Input.Keyboard.JustDown(k.pause)) this.setPaused(!this.paused);
+    if (Phaser.Input.Keyboard.JustDown(k.walls)) this.cycleWalls();
     if (this.paused) {
       if (Phaser.Input.Keyboard.JustDown(k.esc)) this.closeMenu();
       return;
@@ -1391,6 +1425,13 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
       const at = p.upright ? { x: r.headTop.x, y: r.headTop.y + 14 } : { x: c.x, y: c.y };
       c.overhead.update(at.x, at.y, screenScale, time, c.health, MAX_HEALTH, showBar);
     }
+    const a = this.active;
+    this.scenery.update(dt, { x: a.x, y: a.y }, this.charScreen.get(a)?.bounds ?? null);
+    // Doors cut down with their wall.
+    for (const door of this.doors) {
+      const h = door.hingePoint();
+      door.displayHeight = this.scenery.wallHeightNear(h.x, h.y, 14);
+    }
     for (const obj of this.interactables) {
       const o = this.objectGfx.get(obj)!;
       o.g.clear();
@@ -1398,11 +1439,10 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
       const sp = obj.sortPoint(p);
       o.g.setDepth(p.upright ? 10 + p.depth(sp.x, sp.y) / 1000 : obj.name === 'door' ? 12 : 11);
     }
-    const a = this.active;
     this.drawFire(time, dt);
     this.drawMidden(time);
     this.drawDummy(time);
-    this.scenery.updateFade(p, { x: a.x, y: a.y }, this.charScreen.get(a)?.bounds ?? null);
+
     this.drawLockRing(time);
     this.drawRoute(a, time, dt);
     this.drawSensesOverlay(time);

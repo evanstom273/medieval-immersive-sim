@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { hudChannel, pausedChannel, rosterChannel, uiCommands, type HudState, type RosterMember, type RosterState } from '../game/bridge';
+import { hudChannel, pausedChannel, rosterChannel, uiCommands, wallsChannel, type HudState, type RosterMember, type RosterState } from '../game/bridge';
 import { MOCK_PROFILES, NEEDS } from '../game/characters/mockProfiles';
 import { inputSourceChannel, type InputSource } from '../game/input/touchInput';
 import { Avatar, CharacterTab, NeedsTab, PeopleTab, SkillsTab, TABS, type Tab } from './characterPanel';
@@ -94,8 +94,11 @@ export function BottomBar() {
             {!touch && <Identity member={active} />}
           </div>
 
-          {/* ---- centre: time */}
-          <TimeControls paused={paused} touch={touch} help={help} setHelp={setHelp} />
+          {/* ---- centre: time, and walls up / cutaway / down */}
+          <div className={`flex items-center self-center ${touch ? 'gap-1' : 'gap-2'}`}>
+            <TimeControls paused={paused} touch={touch} help={help} setHelp={setHelp} />
+            <WallsButton touch={touch} />
+          </div>
 
           {/* ---- right: panel tabs (panel pops up above on desktop) */}
           <div className="relative flex flex-col items-end">
@@ -271,7 +274,7 @@ function TimeControls({ paused, touch, help, setHelp }: { paused: boolean; touch
               <div>Click ground to walk · hold to follow</div>
               <div>Click people & things for options</div>
               <div>E talk · F lock-on · R fight stance · LMB/RMB punch</div>
-              <div>1–4 switch person · Scroll zoom · Space pause</div>
+              <div>1–4 switch person · Scroll zoom · Space pause · V walls</div>
               <div>F3 collision · F4 senses overlay</div>
             </>
           )}
@@ -307,3 +310,40 @@ function CurrentAction({ member: m, touch }: { member: RosterMember; touch: bool
   );
 }
 
+
+type WallMode = 'up' | 'cutaway' | 'down';
+const WALL_LABEL: Record<WallMode, string> = { up: 'Walls up', cutaway: 'Cutaway', down: 'Walls down' };
+
+/** Little wall icon: three bars at full, stepped (cut away at the front), or low. */
+function WallIcon({ mode }: { mode: WallMode }) {
+  const heights = mode === 'up' ? [12, 12, 12] : mode === 'cutaway' ? [12, 8, 3] : [3, 3, 3];
+  return (
+    <svg width="18" height="14" viewBox="0 0 18 14" aria-hidden>
+      {heights.map((h, i) => (
+        <rect key={i} x={1 + i * 6} y={13 - h} width="4" height={h} rx="1" fill="currentColor" />
+      ))}
+    </svg>
+  );
+}
+
+/** Sims-style wall display: cycles walls up → cutaway → walls down (V). */
+function WallsButton({ touch }: { touch: boolean }) {
+  const [mode, setMode] = useState<WallMode>(() => wallsChannel.last ?? 'cutaway');
+  useEffect(() => {
+    setMode(wallsChannel.last ?? 'cutaway');
+    return wallsChannel.on(setMode);
+  }, []);
+  return (
+    <button
+      className={`flex items-center justify-center gap-1.5 rounded-full bg-white/5 text-white ring-1 ring-white/10 hover:bg-white/10 ${touch ? 'h-9 w-9' : 'h-11 px-3 text-sm'}`}
+      title={`${WALL_LABEL[mode]} (V to change)`}
+      onClick={(e) => {
+        uiCommands.emit({ kind: 'cycleWalls' });
+        e.currentTarget.blur();
+      }}
+    >
+      <WallIcon mode={mode} />
+      {!touch && <span>{WALL_LABEL[mode]}</span>}
+    </button>
+  );
+}
