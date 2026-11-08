@@ -137,8 +137,7 @@ export function prism(g: Phaser.GameObjects.Graphics, p: Projection, ground: Pt[
 }
 
 /** Screen bounds a prism would cover, without drawing it. */
-export function prismBounds(p: Projection, ground: Pt[], z0: number, height: number): Bounds {
-  const b = emptyBounds();
+export function prismBounds(p: Projection, ground: Pt[], z0: number, height: number, b = emptyBounds()): Bounds {
   grow(b, ground.map((q) => p.toScreen(q.x, q.y, z0)));
   grow(b, ground.map((q) => p.toScreen(q.x, q.y, z0 + height)));
   return b;

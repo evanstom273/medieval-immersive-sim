@@ -34,7 +34,7 @@ import { Relationships, opinionWord } from '../social/relationships';
 import { REACTION_ICON, SOCIAL_ACTIONS, describeSocial, resolveSocial, socialAction, type SocialActionId } from '../social/socialActions';
 import { between, createRng, type Rng } from '../util/rng';
 import { handOffset, PUNCH_EXTEND, PUNCH_TOTAL, type Hand, type ViewResult } from '../world/CharacterView';
-import { Chest, Door, Sign, type InteractContext, type Interactable, type MenuOption } from '../world/interactables';
+import { Chest, Door, Sign, Window, type InteractContext, type Interactable, type MenuOption } from '../world/interactables';
 
 /**
  * PLACEHOLDER sandbox: a field, a small house with a door, a chest, a sign,
@@ -97,6 +97,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
   private nav = new NavGrid(WORLD_W, WORLD_H, 8);
   private navDirty = true;
   private doors: Door[] = [];
+  private windows: Window[] = [];
   private dummy!: Dummy;
   private inputSource: InputSource = 'mouse';
   private hovered: Interactable | null = null;
@@ -200,6 +201,19 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     this.say(this.inputSource === 'touch' ? 'Tap someone to interact. Tap a portrait to switch.' : 'Click someone to interact. 1–4 switches who you control.');
   }
 
+  /**
+   * A window in a wall: the window itself (solid, interactive), the low wall under
+   * it, and the wall above it. It isn't a sight blocker in the grid: open shutters
+   * can be seen through, closed ones are checked per frame.
+   */
+  private window(solids: Phaser.Physics.Arcade.StaticGroup, x: number, y: number, w: number, h: number, inward: Point): void {
+    const win = new Window(this, solids, x, y, w, h, inward);
+    this.windows.push(win);
+    this.interactables.push(win);
+    this.scenery.add({ kind: 'box', x, y, w, h, height: Window.SILL, colour: 0x8c8475, wall: true });
+    this.scenery.add({ kind: 'box', x, y, w, h, z0: Window.HEAD, height: 2.4 * M - Window.HEAD, colour: 0x8c8475, wall: true });
+  }
+
   /** A solid block: physics body, sight blocker, and scenery to draw (with height for the angled views). */
   private wall(solids: Phaser.Physics.Arcade.StaticGroup, x: number, y: number, w: number, h: number, colour = 0x8c8475, height = 2.4 * M, fade = true): void {
     this.sightBlockers.push({ kind: 'rect', x, y, w, h });
@@ -218,15 +232,30 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     const t = 20;
     const doorX = hx + 224;
     const doorW = 64;
+    const winW = 64;
     this.scenery.add({ kind: 'floor', x: hx, y: hy, w: hw, h: hh, colour: 0x8a7356 });
-    this.wall(solids, hx, hy, hw, t);
-    this.wall(solids, hx, hy, t, hh);
-    this.wall(solids, hx + hw - t, hy, t, hh);
-    this.wall(solids, hx, hy + hh - t, doorX - hx, t);
+    // North wall, with a window.
+    this.wall(solids, hx, hy, 1440 - hx, t);
+    this.window(solids, 1440, hy, winW, t, { x: 0, y: 1 });
+    this.wall(solids, 1440 + winW, hy, hx + hw - (1440 + winW), t);
+    // West and east walls, a window in each.
+    this.wall(solids, hx, hy, t, 704 - hy);
+    this.window(solids, hx, 704, t, winW, { x: 1, y: 0 });
+    this.wall(solids, hx, 704 + winW, t, hy + hh - (704 + winW));
+    this.wall(solids, hx + hw - t, hy, t, 704 - hy);
+    this.window(solids, hx + hw - t, 704, t, winW, { x: -1, y: 0 });
+    this.wall(solids, hx + hw - t, 704 + winW, t, hy + hh - (704 + winW));
+    // South (front) wall: a window, then the door.
+    this.wall(solids, hx, hy + hh - t, 1216 - hx, t);
+    this.window(solids, 1216, hy + hh - t, winW, t, { x: 0, y: -1 });
+    this.wall(solids, 1216 + winW, hy + hh - t, doorX - (1216 + winW), t);
     this.wall(solids, doorX + doorW, hy + hh - t, hx + hw - (doorX + doorW), t);
 
     const door = new Door(doorX, hy + hh - t / 2, doorW, 10);
     this.doors.push(door);
+    // The door stands on a stone threshold, with wall carried on above it.
+    this.scenery.add({ kind: 'paving', x: doorX, y: hy + hh - t, w: doorW, h: t, colour: 0x9a9286 });
+    this.scenery.add({ kind: 'box', x: doorX, y: hy + hh - t, w: doorW, h: t, z0: door.height, height: 2.4 * M - door.height, colour: 0x8c8475, wall: true });
     const chest = new Chest(this, solids, hx + hw - 90, hy + 70, 56, 36);
     const sign = new Sign(this, solids, 920, 760, 'Movement test. Mind the dummy.');
     this.interactables.push(door, chest, sign);
@@ -506,7 +535,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     }
     const obj = this.interactableAt(sx, sy);
     if (obj) {
-      this.openMenu({ kind: 'object', target: obj }, obj.closestPoint(x, y), obj.name[0].toUpperCase() + obj.name.slice(1), undefined, obj.options());
+      this.openMenu({ kind: 'object', target: obj }, obj.closestPoint(x, y), obj.name[0].toUpperCase() + obj.name.slice(1), undefined, obj.options(a.pos()));
       return;
     }
     if (a.status === 'yielded') this.standUp(a);
@@ -778,7 +807,8 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
         } else this.startSocial(a, m.target, optionId as SocialActionId);
         break;
       case 'object':
-        this.useObject(a, m.target, optionId);
+        if (optionId === 'climb' && m.target instanceof Window) this.startClimb(a, m.target);
+        else this.useObject(a, m.target, optionId);
         break;
       case 'self':
         if (optionId === 'yield') this.yieldTo(a, null);
@@ -816,7 +846,12 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
   }
 
   sightClear(a: Point, b: Point): boolean {
-    return this.sightGrid.lineClear(a, b) && !this.doors.some((d) => crosses(a, b, d.hingePoint(), d.latchPoint()));
+    return (
+      this.sightGrid.lineClear(a, b) &&
+      !this.doors.some((d) => crosses(a, b, d.hingePoint(), d.latchPoint())) &&
+      // Glass is see-through; closed shutters aren't.
+      !this.windows.some((w) => w.blocksSight && crosses(a, b, ...w.segment()))
+    );
   }
 
   wallsBetween(a: Point, b: Point): number {
@@ -830,7 +865,11 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
       if (blocked && !inside) walls++;
       inside = blocked;
     }
-    return walls + this.doors.filter((d) => crosses(a, b, d.hingePoint(), d.latchPoint())).length;
+    return (
+      walls +
+      this.doors.filter((d) => crosses(a, b, d.hingePoint(), d.latchPoint())).length +
+      this.windows.filter((w) => w.muffles && crosses(a, b, ...w.segment())).length
+    );
   }
 
   perceive(c: Character, p: Perception): void {
@@ -907,6 +946,54 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     if (!this.orderToReach(c, (from) => obj.closestPoint(from.x, from.y), REACH, doIt) && c.controlled) {
       this.say("You can't find a way to reach that.");
     }
+  }
+
+  /** Walk up to an open window and climb through it to the other side. */
+  startClimb(c: Character, w: Window): void {
+    const side = w.isInside(c.pos()) ? 1 : -1;
+    const n = w.inward;
+    const near = { x: w.centre.x + n.x * side * 0.6 * M, y: w.centre.y + n.y * side * 0.6 * M };
+    const far = { x: w.centre.x - n.x * side * 0.65 * M, y: w.centre.y - n.y * side * 0.65 * M };
+    const begin = () => {
+      if (!w.passable) {
+        if (c.controlled) this.say("You can't climb through a closed window.");
+        return;
+      }
+      c.cancelOrder();
+      c.social = null;
+      c.mode = 'explore';
+      c.lockTarget = null;
+      c.climb = { from: c.pos(), to: far, t: 0, dur: 0.9 };
+      c.body.checkCollision.none = true;
+      c.motor = { ...c.motor, vx: 0, vy: 0, facing: Math.atan2(far.y - c.y, far.x - c.x) };
+      // Climbing isn't quiet, and anyone watching will remember it.
+      this.noise('thud', w.centre.x, w.centre.y, c, 4);
+      this.witness('saw_climb', w.centre.x, w.centre.y, c);
+    };
+    if (Math.hypot(c.x - near.x, c.y - near.y) < 0.25 * M) begin();
+    else if (!this.orderToReach(c, () => near, 0.15 * M, begin) && c.controlled) this.say("You can't get to that window.");
+  }
+
+  /** Move a climbing character through the window; returns true while they're climbing. */
+  private stepClimb(c: Character, dt: number): boolean {
+    const cl = c.climb;
+    if (!cl) return false;
+    cl.t += dt;
+    const k = Math.min(1, cl.t / cl.dur);
+    const e = k < 0.5 ? 2 * k * k : 1 - (-2 * k + 2) ** 2 / 2;
+    const x = cl.from.x + (cl.to.x - cl.from.x) * e;
+    const y = cl.from.y + (cl.to.y - cl.from.y) * e;
+    c.obj.setPosition(x, y);
+    c.body.reset(x, y);
+    c.motor = { ...c.motor, vx: 0, vy: 0 };
+    c.pose.lift = Math.sin(k * Math.PI) * 0.55 * M;
+    c.pose.crouched = true;
+    if (k >= 1) {
+      c.climb = null;
+      c.pose.lift = 0;
+      c.body.checkCollision.none = false;
+    }
+    return true;
   }
 
   startSocial(c: Character, target: Character, action: SocialActionId): boolean {
@@ -1024,7 +1111,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     // WASD and the stick are screen-relative: up walks up the screen in whichever view.
     manual = screenToGroundDir(this.proj, manual.x, manual.y);
     if (this.switching) manual = { x: 0, y: 0 };
-    const hasManual = manual.x !== 0 || manual.y !== 0;
+    const hasManual = (manual.x !== 0 || manual.y !== 0) && !a.climb;
     if (hasManual && a.status !== 'ko') {
       a.cancelOrder();
       a.social = null;
@@ -1057,6 +1144,11 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
         c.body.setVelocity(0, 0);
         c.appliedKnock = { x: 0, y: 0 };
         this.updatePose(c, dt);
+        continue;
+      }
+      if (c.climb) {
+        this.updatePose(c, dt);
+        this.stepClimb(c, dt);
         continue;
       }
       this.pushDoors(c, dt, time);
@@ -1427,17 +1519,18 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     }
     const a = this.active;
     this.scenery.update(dt, { x: a.x, y: a.y }, this.charScreen.get(a)?.bounds ?? null);
-    // Doors cut down with their wall.
+    // Doors and windows cut down with their wall.
     for (const door of this.doors) {
       const h = door.hingePoint();
       door.displayHeight = this.scenery.wallHeightNear(h.x, h.y, 14);
     }
+    for (const w of this.windows) w.cut = this.scenery.isCutNear(w.centre.x, w.centre.y, 2);
     for (const obj of this.interactables) {
       const o = this.objectGfx.get(obj)!;
       o.g.clear();
       o.bounds = obj.render(o.g, p);
       const sp = obj.sortPoint(p);
-      o.g.setDepth(p.upright ? 10 + p.depth(sp.x, sp.y) / 1000 : obj.name === 'door' ? 12 : 11);
+      o.g.setDepth(p.upright ? 10 + p.depth(sp.x, sp.y) / 1000 + 0.0002 : obj.name === 'door' || obj.name === 'window' ? 12 : 11);
     }
     this.drawFire(time, dt);
     this.drawMidden(time);

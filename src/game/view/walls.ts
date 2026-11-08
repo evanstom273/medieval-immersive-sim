@@ -9,8 +9,13 @@ const M = PX_PER_METRE;
 
 /** PLACEHOLDER static scenery, described on the ground plane with heights. */
 export type StaticProp =
-  /** Walls, crates: a block with height. `wall` marks it as a wall (it can be cut away / lowered). */
-  | { kind: 'box'; x: number; y: number; w: number; h: number; height: number; colour: number; wall?: boolean }
+  /**
+   * Walls, crates: a block with height. `wall` marks it as a wall (it can be cut away / lowered).
+   * `z0` lifts it off the ground (e.g. the bit of wall over a door or window).
+   */
+  | { kind: 'box'; x: number; y: number; w: number; h: number; height: number; colour: number; wall?: boolean; z0?: number }
+  /** Flat paving that isn't a room (e.g. a stone threshold). */
+  | { kind: 'paving'; x: number; y: number; w: number; h: number; colour: number }
   /** A flat floor (also marks a room, for cutaways). */
   | { kind: 'floor'; x: number; y: number; w: number; h: number; colour: number }
   /** A round stone well with water inside. */

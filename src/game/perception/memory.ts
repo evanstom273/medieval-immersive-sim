@@ -6,7 +6,7 @@
 
 export type Sense = 'sight' | 'sound' | 'smell' | 'touch';
 
-export type MemoryKind = 'saw_attack' | 'was_attacked' | 'heard_fight' | 'saw_yield' | 'saw_ko' | 'smelled_blood' | 'saw_intervene';
+export type MemoryKind = 'saw_attack' | 'was_attacked' | 'heard_fight' | 'saw_yield' | 'saw_ko' | 'smelled_blood' | 'saw_intervene' | 'saw_climb';
 
 export interface Memory {
   kind: MemoryKind;
@@ -95,6 +95,8 @@ export function describeMemory(m: Memory, name: (id: string | undefined) => stri
       return `Saw ${t} knocked out${m.actor ? ` by ${a}` : ''}`;
     case 'smelled_blood':
       return 'Smelled blood';
+    case 'saw_climb':
+      return `Saw ${a} climb through a window`;
     case 'saw_intervene':
       return `Saw ${a} step in for ${t}`;
   }

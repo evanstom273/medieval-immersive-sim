@@ -51,6 +51,8 @@ export interface CharacterPose {
   hitFlash: number;
   highlighted: boolean;
   controlled: boolean;
+  /** Raised off the ground (world px), e.g. while climbing through a window. */
+  lift: number;
 }
 
 export function createPose(): CharacterPose {
@@ -64,6 +66,7 @@ export function createPose(): CharacterPose {
     hitFlash: 0,
     highlighted: false,
     controlled: false,
+    lift: 0,
   };
 }
 
@@ -245,8 +248,8 @@ export class CharacterView {
       return { bounds: { x0: b.x - 0.7 * M, y0: b.y - 0.5 * M, x1: b.x + 0.7 * M, y1: b.y + 0.5 * M }, headTop: { x: b.x, y: b.y - 0.3 * M } };
     }
 
-    // Which of 8 screen directions they're facing.
-    const base = p.toScreen(x, y);
+    // Which of 8 screen directions they're facing. (`lift` raises the whole figure, e.g. climbing.)
+    const base = p.toScreen(x, y, pose.lift);
     const ahead = p.toScreen(x + Math.cos(facing) * 10, y + Math.sin(facing) * 10);
     const k = Math.round(Math.atan2(ahead.y - base.y, ahead.x - base.x) / (Math.PI / 4));
     const fx = Math.cos((k * Math.PI) / 4); // + right

@@ -201,6 +201,18 @@ When an item changes status, move it and add a dated note rather than silently r
 - Walls glide up and down rather than snapping. A cut wall shows a darker cross-section on top. Doors are cut down with their wall.
 - **Placeholders:** cut height 0.35 m; side walls step down within 2.5 m of a room's front; glide speed 7 m/s.
 
+### Doors and windows in walls
+*2026-11-08 21:53 UTC*
+
+- **Doors** stand on a stone threshold with wall carried on above them (a lintel piece), instead of a gap over the door.
+- **Windows: glass and shutters** (both, since the setting isn't fully decided):
+  - **Glass** opens inwards and can be **latched only from inside** the room. You can see through it; closed, it muffles sound like the wall.
+  - **Shutters** outside open and close from either side. Closed, they **block sight**.
+  - **Climb through** when both glass and shutters are open: walk up, climb over, land on the other side. It makes a little noise, and **anyone who sees it remembers it** ("Saw Edric climb through a window"), groundwork for burglary and witnesses.
+  - Windows always block walking and pathfinding; NPCs don't climb through them yet.
+- Windows sit in walls with a low wall under them (sill, 0.9 m) and wall above (from 1.8 m). The whole window drops with its wall in cutaway / walls down.
+- The test house has one window in each wall. Placeholder art.
+
 ---
 
 ## Undecided

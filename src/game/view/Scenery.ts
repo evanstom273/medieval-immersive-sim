@@ -61,13 +61,17 @@ export class Scenery {
       if (prop.kind === 'box') {
         for (const box of p.upright ? chunks(prop) : [prop]) {
           const front = !!box.wall && p.upright && isFrontWall(box, floors, p);
-          const piece: Piece = { g: this.scene.add.graphics(), bounds: null, depthKey: 0, box, shown: box.height, front };
+          const piece: Piece = { g: this.scene.add.graphics(), bounds: null, depthKey: 0, box, shown: top(box), front };
           // Start at the mode's height so switching views doesn't animate everything.
           piece.shown = this.targetHeight(piece, false);
-          piece.bounds = prismBounds(p, rectPts(box.x, box.y, box.w, box.h), 0, p.upright ? box.height : 0);
+          piece.bounds = prismBounds(p, rectPts(box.x, box.y, box.w, box.h), p.upright ? (box.z0 ?? 0) : 0, p.upright ? box.height : 0);
           this.drawPiece(piece);
           this.pieces.push(piece);
         }
+      } else if (prop.kind === 'paving') {
+        const g = this.scene.add.graphics().setDepth(1.5);
+        flat(g, p, rectPts(prop.x, prop.y, prop.w, prop.h), 0, prop.colour, 1, 0x2c2822, 1);
+        this.pieces.push({ g, bounds: null, depthKey: 0, shown: 0, front: false });
       } else if (prop.kind === 'floor') {
         const g = this.scene.add.graphics().setDepth(1);
         flat(g, p, rectPts(prop.x, prop.y, prop.w, prop.h), 0, prop.colour);
@@ -112,23 +116,33 @@ export class Scenery {
     }
   }
 
-  /** Height of the wall at a point right now (for cutting a doorway's door down with its wall). */
+  /** Height of the (ground-standing) wall at a point right now (for cutting a doorway's door down with its wall). */
   wallHeightNear(x: number, y: number, slack = 6): number | null {
     let best: number | null = null;
     for (const piece of this.pieces) {
       const b = piece.box;
-      if (!b?.wall) continue;
+      if (!b?.wall || (b.z0 ?? 0) > 0) continue;
       if (x >= b.x - slack && x <= b.x + b.w + slack && y >= b.y - slack && y <= b.y + b.h + slack) best = best === null ? piece.shown : Math.min(best, piece.shown);
     }
     return best;
   }
 
+  /** Is the wall around this point currently cut down (cutaway / walls down)? */
+  isCutNear(x: number, y: number, slack = 6): boolean {
+    return this.pieces.some((piece) => {
+      const b = piece.box;
+      return !!b?.wall && x >= b.x - slack && x <= b.x + b.w + slack && y >= b.y - slack && y <= b.y + b.h + slack && piece.shown < top(b) - 0.5;
+    });
+  }
+
+  /** Where the top of this piece should be: full height, or cut down. */
   private targetHeight(piece: Piece, hidesFocus: boolean): number {
     const b = piece.box!;
-    if (!b.wall || !this.proj?.upright) return b.height;
-    if (this.mode === 'down') return Math.min(b.height, CUT_HEIGHT);
-    if (this.mode === 'cutaway' && (piece.front || hidesFocus)) return Math.min(b.height, CUT_HEIGHT);
-    return b.height;
+    const full = top(b);
+    if (!b.wall || !this.proj?.upright) return full;
+    if (this.mode === 'down') return Math.min(full, CUT_HEIGHT);
+    if (this.mode === 'cutaway' && (piece.front || hidesFocus)) return Math.min(full, CUT_HEIGHT);
+    return full;
   }
 
   private drawPiece(piece: Piece): void {
@@ -136,10 +150,13 @@ export class Scenery {
     const b = piece.box!;
     const g = piece.g;
     g.clear();
-    const h = p.upright ? piece.shown : 0;
-    const cut = b.wall && h < b.height - 0.5;
+    const base = b.z0 ?? 0;
+    // Raised pieces (over doors and windows) only exist in the angled views, and vanish when cut below them.
+    if (base > 0 && (!p.upright || piece.shown <= base + 0.5)) return;
+    const h = p.upright ? piece.shown - base : 0;
+    const cut = b.wall && piece.shown < top(b) - 0.5;
     // A cut wall shows its cross-section on top, a little darker, like a cut through plaster.
-    prism(g, p, rectPts(b.x, b.y, b.w, b.h), 0, h, { colour: b.colour, top: cut ? shade(b.colour, 0.72) : shade(b.colour, 1.06), outline: 0x2c2822, outlineWidth: 1.5 });
+    prism(g, p, rectPts(b.x, b.y, b.w, b.h), base, h, { colour: b.colour, top: cut ? shade(b.colour, 0.72) : shade(b.colour, 1.06), outline: 0x2c2822, outlineWidth: 1.5 });
     const front = p.mode === 'isometric' ? { x: b.x + b.w, y: b.y + b.h } : { x: b.x + b.w / 2, y: b.y + b.h };
     piece.depthKey = p.depth(front.x, front.y);
     g.setDepth(p.upright ? 10 + piece.depthKey / 1000 : 10);
@@ -163,6 +180,11 @@ export class Scenery {
       g.lineBetween(a.x, a.y, b.x, b.y);
     }
   }
+}
+
+/** Top of a box: its base plus its height. */
+function top(b: Box): number {
+  return (b.z0 ?? 0) + b.height;
 }
 
 function overlaps(a: Bounds, b: Bounds): boolean {

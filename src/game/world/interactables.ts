@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { PX_PER_METRE } from '../movement/tuning';
-import { circlePts, emptyBounds, flat, HIGHLIGHT, OUTLINE, prism, rectPts, slabPts, type Bounds } from '../view/draw';
+import { circlePts, emptyBounds, flat, HIGHLIGHT, OUTLINE, prism, prismBounds, rectPts, slabPts, type Bounds } from '../view/draw';
 import type { Projection, Pt } from '../view/projection';
 import { closestOnLeaf, resolveDoorContact, stepDoor, type Circle, type ContactResult, type DoorGeom, type DoorSwing } from './doorPhysics';
 
@@ -32,8 +32,8 @@ export interface Interactable {
   hitTest(x: number, y: number): boolean;
   /** Closest point on the object to a ground point, for reach checks. */
   closestPoint(x: number, y: number): Phaser.Math.Vector2;
-  /** What can be done with it right now. */
-  options(): MenuOption[];
+  /** What can be done with it right now (by someone standing at `actor`, if given). */
+  options(actor?: Pt): MenuOption[];
   perform(optionId: string, ctx: InteractContext): void;
   /** Something an idle character might wander over and do with it, or null if nothing. */
   idleUse(): string | null;
@@ -325,6 +325,232 @@ export class Sign implements Interactable {
 
   perform(_optionId: string, ctx: InteractContext): void {
     ctx.say(`The sign reads: "${this.text}"`);
+  }
+
+  setHighlight(on: boolean): void {
+    this.highlighted = on;
+  }
+}
+
+/**
+ * A glazed window with shutters, set into a wall. PLACEHOLDER (the setting
+ * isn't final, so it has both):
+ * - the glass opens inwards and can be latched, but only from inside the room;
+ * - the shutters, outside, open and close from either side;
+ * - you can see through the glass, but not through closed shutters;
+ * - closed glass or shutters muffle sound like the wall; fully open, sound carries;
+ * - it always blocks walking, but you can climb through when glass and shutters are both open.
+ */
+export class Window implements Interactable {
+  readonly name = 'window';
+  private glassOpen = false;
+  private shuttersOpen = true;
+  private latched = false;
+  private highlighted = false;
+  readonly rect: Phaser.Geom.Rectangle;
+  /** Unit ground direction pointing into the room. */
+  readonly inward: Pt;
+  /** Set each frame: is its wall cut down (cutaway / walls down)? Then the window isn't drawn above the sill. */
+  cut = false;
+  static readonly SILL = 0.9 * M;
+  static readonly HEAD = 1.8 * M;
+
+  constructor(scene: Phaser.Scene, staticGroup: Phaser.Physics.Arcade.StaticGroup, x: number, y: number, w: number, h: number, inward: Pt) {
+    this.rect = new Phaser.Geom.Rectangle(x, y, w, h);
+    this.inward = inward;
+    const body = scene.add.rectangle(x + w / 2, y + h / 2, w, h).setVisible(false);
+    scene.physics.add.existing(body, true);
+    staticGroup.add(body);
+  }
+
+  /** Can someone climb through? */
+  get passable(): boolean {
+    return this.glassOpen && this.shuttersOpen;
+  }
+
+  /** Do closed shutters block the view through it? */
+  get blocksSight(): boolean {
+    return !this.shuttersOpen;
+  }
+
+  /** Is anything closed across it (muffling sound)? */
+  get muffles(): boolean {
+    return !this.passable;
+  }
+
+  get centre(): Pt {
+    return { x: this.rect.centerX, y: this.rect.centerY };
+  }
+
+  /** Is this point on the room side of the window? */
+  isInside(p: Pt): boolean {
+    return (p.x - this.rect.centerX) * this.inward.x + (p.y - this.rect.centerY) * this.inward.y > 0;
+  }
+
+  /** The window's centre line, for sight/sound checks. */
+  segment(): [Pt, Pt] {
+    const r = this.rect;
+    return r.width >= r.height
+      ? [
+          { x: r.x, y: r.centerY },
+          { x: r.right, y: r.centerY },
+        ]
+      : [
+          { x: r.centerX, y: r.y },
+          { x: r.centerX, y: r.bottom },
+        ];
+  }
+
+  sortPoint(p: Projection): Pt {
+    return frontCorner(this.rect, p);
+  }
+
+  render(g: Phaser.GameObjects.Graphics, p: Projection): Bounds {
+    const r = this.rect;
+    const b = emptyBounds();
+    const outline = this.highlighted ? HIGHLIGHT : OUTLINE;
+    const ow = this.highlighted ? 3 : 1.5;
+
+    if (p.upright && this.cut) {
+      // Its wall is cut down below the window: nothing to draw above the sill, but keep it clickable
+      // (and outlined when hovered).
+      const sill = rectPts(r.x, r.y, r.width, r.height);
+      if (this.highlighted) prism(g, p, sill, 0, 0.36 * M, { colour: 0, alpha: 0, outline, outlineWidth: 3 }, b);
+      else prismBounds(p, sill, 0, 0.36 * M, b);
+      return b;
+    }
+
+    const horizontal = r.width >= r.height;
+    const span = horizontal ? r.width : r.height;
+    const along = horizontal ? 0 : Math.PI / 2;
+    const [a0, a1] = this.segment();
+    const inAngle = Math.atan2(this.inward.y, this.inward.x);
+    const outAngle = inAngle + Math.PI;
+    const z0 = p.upright ? Window.SILL : 0;
+    const zh = p.upright ? Window.HEAD - Window.SILL : 0;
+    const shift = (q: Pt, d: number): Pt => ({ x: q.x + this.inward.x * d, y: q.y + this.inward.y * d });
+
+    // Draw back-to-front-ish: things on the far side from the viewer first.
+    const parts: { depth: number; draw: () => void }[] = [];
+    const depthOf = (q: Pt) => p.depth(q.x, q.y);
+
+    // Glass: a pale, see-through pane in a thin frame, set slightly inside; opens inwards as two casements.
+    const glass = { colour: 0xbfd8e6, top: 0xd5e6ef, alpha: 0.38, outline, outlineWidth: ow };
+    if (this.glassOpen) {
+      const g0 = shift(a0, 3);
+      const g1 = shift(a1, 3);
+      parts.push({ depth: depthOf(shift(this.centre, span / 4)), draw: () => prism(g, p, slabPts(g0.x, g0.y, inAngle, span / 2 - 2, 3), z0, zh, glass, b) });
+      parts.push({ depth: depthOf(shift(this.centre, span / 4)), draw: () => prism(g, p, slabPts(g1.x, g1.y, inAngle, span / 2 - 2, 3), z0, zh, glass, b) });
+    } else {
+      const gp = shift(a0, 3);
+      parts.push({
+        depth: depthOf(shift(this.centre, 3)),
+        draw: () => {
+          prism(g, p, slabPts(gp.x, gp.y, along, span, 3), z0, zh, glass, b);
+          // Glazing bars.
+          const mid = { x: (a0.x + a1.x) / 2, y: (a0.y + a1.y) / 2 };
+          const m = shift(mid, 3);
+          const lo = p.toScreen(m.x, m.y, z0);
+          const hi = p.toScreen(m.x, m.y, z0 + zh);
+          g.lineStyle(1.5, 0x5a4a3a, 0.9);
+          g.lineBetween(lo.x, lo.y, hi.x, hi.y);
+          if (this.latched) {
+            // The latch on the inside.
+            const l = shift(mid, 6);
+            prism(g, p, slabPts(l.x - 4 * Math.cos(along), l.y - 4 * Math.sin(along), along, 8, 3), p.upright ? z0 + zh * 0.45 : 0, p.upright ? 0.08 * M : 0, { colour: 0x2e2e2e, outline: 0x111111, outlineWidth: 1 }, b);
+          }
+        },
+      });
+    }
+
+    // Shutters: wooden leaves on the outside; open, they swing out against the wall.
+    const wood = { colour: 0x6b4a2b, top: 0x7a5634, outline, outlineWidth: ow };
+    if (this.shuttersOpen) {
+      parts.push({ depth: depthOf(shift(a0, -span / 4)), draw: () => prism(g, p, slabPts(shift(a0, -6).x, shift(a0, -6).y, outAngle, span / 2 - 2, 5), z0, zh, wood, b) });
+      parts.push({ depth: depthOf(shift(a1, -span / 4)), draw: () => prism(g, p, slabPts(shift(a1, -6).x, shift(a1, -6).y, outAngle, span / 2 - 2, 5), z0, zh, wood, b) });
+    } else {
+      const sp = shift(a0, -6);
+      parts.push({
+        depth: depthOf(shift(this.centre, -6)),
+        draw: () => {
+          prism(g, p, slabPts(sp.x, sp.y, along, span, 5), z0, zh, wood, b);
+          const mid = shift({ x: (a0.x + a1.x) / 2, y: (a0.y + a1.y) / 2 }, -9);
+          const lo = p.toScreen(mid.x, mid.y, z0);
+          const hi = p.toScreen(mid.x, mid.y, z0 + zh);
+          g.lineStyle(1.5, 0x3a2716, 1);
+          g.lineBetween(lo.x, lo.y, hi.x, hi.y);
+        },
+      });
+    }
+    parts.sort((x, y) => x.depth - y.depth).forEach((part) => part.draw());
+
+    if (!p.upright) {
+      // Seen from above: outline the opening so it reads as a window.
+      g.lineStyle(1, 0x2c2822, 0.6);
+      g.strokeRect(r.x, r.y, r.width, r.height);
+    }
+    return b;
+  }
+
+  hitTest(x: number, y: number): boolean {
+    const r = Phaser.Geom.Rectangle.Clone(this.rect);
+    Phaser.Geom.Rectangle.Inflate(r, 6, 6);
+    return r.contains(x, y);
+  }
+
+  closestPoint(x: number, y: number): Phaser.Math.Vector2 {
+    return clampToRect(this.rect, x, y);
+  }
+
+  options(actor?: Pt): MenuOption[] {
+    const inside = actor ? this.isInside(actor) : true;
+    const opts: MenuOption[] = [];
+    if (this.glassOpen) opts.push({ id: 'closeWindow', label: 'Close window', icon: '🪟' });
+    else opts.push({ id: 'openWindow', label: 'Open window', icon: '🪟', disabled: this.latched ? 'Latched' : undefined });
+    if (!this.glassOpen) {
+      opts.push(
+        this.latched
+          ? { id: 'unlatch', label: 'Unlatch', icon: '🔓', disabled: inside ? undefined : 'Only from inside' }
+          : { id: 'latch', label: 'Latch', icon: '🔒', disabled: inside ? undefined : 'Only from inside' },
+      );
+    }
+    opts.push(this.shuttersOpen ? { id: 'closeShutters', label: 'Close shutters', icon: '🚪' } : { id: 'openShutters', label: 'Open shutters', icon: '🚪' });
+    opts.push({
+      id: 'climb',
+      label: 'Climb through',
+      icon: '🧗',
+      disabled: this.passable ? undefined : !this.shuttersOpen ? 'Shutters closed' : 'Window closed',
+    });
+    return opts;
+  }
+
+  idleUse(): string | null {
+    return null;
+  }
+
+  perform(optionId: string, ctx: InteractContext): void {
+    switch (optionId) {
+      case 'openWindow':
+        if (this.latched) return ctx.say('The window is latched.');
+        this.glassOpen = true;
+        return ctx.say('You open the window.');
+      case 'closeWindow':
+        this.glassOpen = false;
+        return ctx.say('You close the window.');
+      case 'latch':
+        if (this.glassOpen) return;
+        this.latched = true;
+        return ctx.say('You latch the window.');
+      case 'unlatch':
+        this.latched = false;
+        return ctx.say('You unlatch the window.');
+      case 'openShutters':
+        this.shuttersOpen = true;
+        return ctx.say('You open the shutters.');
+      case 'closeShutters':
+        this.shuttersOpen = false;
+        return ctx.say('You close the shutters.');
+    }
   }
 
   setHighlight(on: boolean): void {

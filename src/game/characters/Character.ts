@@ -78,6 +78,8 @@ export class Character implements Targetable {
   /** Held still until this time: e.g. being talked to, or someone has a menu open on them. */
   heldUntil = 0;
   social: SocialState | null = null;
+  /** Climbing through a window: moving from `from` to `to` over `dur` seconds. */
+  climb: { from: Point; to: Point; t: number; dur: number } | null = null;
 
   constructor(scene: Phaser.Scene, def: CharacterDef) {
     this.id = def.id;
