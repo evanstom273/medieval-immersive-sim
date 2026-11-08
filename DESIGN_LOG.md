@@ -23,8 +23,9 @@ When an item changes status, move it and add a dated note rather than silently r
 ### Visual direction
 *2026-11-08 18:52 UTC — from the project brief*
 
-- `ART_STYLE.md` is the authoritative visual reference: detailed, layered, cel-shaded SVG in an elevated three-quarter top-down view.
-- No pixel art, no strict overhead view, no isometric diamond grid, no flat/minimalist graphics.
+- `ART_STYLE.md` is the authoritative visual reference: detailed, layered, cel-shaded SVG.
+- No pixel art, no isometric diamond grid, no flat/minimalist graphics.
+- **2026-11-08 19:11 UTC — correction:** the view is **full top-down** (straight overhead), *not* elevated three-quarter as `ART_STYLE.md` currently says. `ART_STYLE.md`'s perspective section needs updating to match; its other principles stand.
 - 1 SVG unit = 1 world pixel. Assets are authored at native size and placed at scale 1.
 - Interactive objects (doors, furniture, containers, etc.) stay as separate assets.
 
@@ -45,6 +46,17 @@ When an item changes status, move it and add a dated note rather than silently r
 - **Adoption counts as a recognised link**, but only for children, wards and orphaned kin. Adults can't be adopted into the line.
   - Consequence: an orphaned niece or nephew taken in becomes playable through the adoption link.
 - The simulation tracks **biological** and **recognised** parentage separately, since inheritance, legitimacy and gossip may care about the difference even though control doesn't.
+
+### Direct-control scheme
+*2026-11-08 19:11 UTC*
+
+- **Movement:** WASD. Light momentum (short acceleration and deceleration; turns at speed carve slightly wider).
+- **Sprint:** hold Ctrl (Minecraft-style). Works whichever of Ctrl/W is pressed first. Sprinting stands you up from a crouch. No stamina yet.
+- **Sneak/crouch:** Shift, toggle.
+- **Facing:** follows movement direction when exploring; follows the mouse in combat.
+- **Combat mode:** toggled with a key (currently R). Out of combat, clicking uses things; in combat, LMB = right hand, RMB = left hand.
+- **Third "other" action:** not yet; hands only for now.
+- **Interact:** click the object. If out of reach, the character walks there (pathfinding) and uses it.
 
 ---
 
@@ -139,6 +151,16 @@ When an item changes status, move it and add a dated note rather than silently r
 
 - The player as an agent with a different controller. Player and NPC actions (steal, buy, work, assault…) go through the same pipeline, so detection and consequences apply uniformly.
 - Reinforced by the control rule: any line member can be played, so their mechanics must be identical to everyone else's.
+
+### Movement prototype placeholders
+*2026-11-08 19:11 UTC*
+
+- **World scale:** `PX_PER_METRE = 64` is a placeholder so movement can be tuned in m/s. The real figure depends on the art scale.
+- **Default speeds:** sneak 0.9, walk 1.7, sprint 4.4 m/s; accel 14, decel 18 m/s². Placeholders, live-tunable in the prototype's debug panel.
+- **Combat key** is R for now.
+- **Click-to-walk pathfinding:** 8 px grid A* with obstacle inflation and string-pulling, in pure TypeScript (`src/game/navigation`). Written so NPCs can use it later. Not yet decided whether it scales to whole towns or needs a navmesh / hierarchical approach.
+- **Reach checks** ignore line of sight for now (you could, in principle, use something through a thin wall).
+- **Character and objects** are placeholder geometry, not final art.
 
 ### Overview as a chronicle
 *2026-11-08 18:52 UTC*
