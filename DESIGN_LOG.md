@@ -228,6 +228,14 @@ When an item changes status, move it and add a dated note rather than silently r
 - **7 days a week · 4 weeks a month (28 days) · 3 months a season · 12 months a year · 48 weeks a year · 336 days a year.**
 - So: four seasons of 84 days; every month is exactly four weeks, and every month and season starts on the same weekday.
 - Still open (see Time model): how long a day lasts in real time, and how fast time runs in each view.
+- *2026-11-08 22:18 UTC:* a "day" means **day + night of equal length**. Options under discussion: 10 (5+5), 20 (10+10), 30 (15+15) or 40 (20+20) real minutes per full day.
+
+### No fast-forward in direct control
+*2026-11-08 22:18 UTC*
+
+- **Direct control always runs at normal speed (1×).** Fast-forward exists only in the overview. Pausing is still allowed.
+- So the day length is how long everything takes while you're in someone's shoes, waiting and sleeping included. Skipping time (a night, a wait) means zooming out to the overview.
+- Implications: zooming out becomes part of everyday play (e.g. sleeping through the night), so the overview needs to be pleasant to drop into for that. The greyed-out speed buttons on the direct-control bar contradict this and should come off (they belong to the overview).
 
 ---
 
