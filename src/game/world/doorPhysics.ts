@@ -32,10 +32,19 @@ export interface Circle {
 
 /** How readily the door gives way (0..1). Below 1 fakes weight, but the leftover push shoves the body sideways into the door frame, so it stays at 1. */
 const GIVE = 1;
-/** How much of the push speed the door keeps swinging with after contact. */
-const CARRY = 0.5;
+/** Door weight, live-tunable from the debug panel. */
+export interface DoorTuning {
+  /** How much of the push speed the door keeps swinging with after contact. Above 1, it swings ahead of you. */
+  momentum: number;
+  /** How quickly a swinging door slows (per second). Lower = lighter, freer door. */
+  friction: number;
+}
+
+export const DEFAULT_DOOR_TUNING: Readonly<DoorTuning> = { momentum: 1.4, friction: 2.2 };
+export const doorTuning: DoorTuning = { ...DEFAULT_DOOR_TUNING };
+
 /** Pushing near the hinge would spin the door absurdly fast; treat the lever arm as at least this fraction of its length. */
-const MIN_LEVER = 0.3;
+const MIN_LEVER = 0.15;
 
 export function leafDirection(g: DoorGeom, s: DoorSwing): { x: number; y: number } {
   const a = g.baseAngle + s.angle;
@@ -99,7 +108,8 @@ export function resolveDoorContact(g: DoorGeom, swing: DoorSwing, body: Circle, 
       if (Math.abs(target) >= g.maxAngle) break;
     }
     // Keep whichever is stronger: the existing swing, or the new push.
-    const angVel = Math.abs(pushVel * CARRY) > Math.abs(swing.angVel) ? pushVel * CARRY : swing.angVel;
+    const carry = pushVel * doorTuning.momentum;
+    const angVel = Math.abs(carry) > Math.abs(swing.angVel) ? carry : swing.angVel;
     next = { angle: next.angle, angVel: Math.abs(next.angle) >= g.maxAngle ? 0 : angVel };
   }
 
@@ -113,7 +123,7 @@ export function resolveDoorContact(g: DoorGeom, swing: DoorSwing, body: Circle, 
 }
 
 /** Coast and damp the swing; stops dead at the limits. */
-export function stepDoor(g: DoorGeom, s: DoorSwing, dt: number, damping = 5): DoorSwing {
+export function stepDoor(g: DoorGeom, s: DoorSwing, dt: number, damping = doorTuning.friction): DoorSwing {
   let angle = s.angle + s.angVel * dt;
   let angVel = s.angVel * Math.exp(-damping * dt);
   if (angle > g.maxAngle || angle < -g.maxAngle) {

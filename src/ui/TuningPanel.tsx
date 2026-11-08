@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { DEFAULT_TUNING, tuning, type MovementTuning } from '../game/movement/tuning';
+import { DEFAULT_DOOR_TUNING, doorTuning, type DoorTuning } from '../game/world/doorPhysics';
 
 /** Debug panel for live-tuning movement feel. Writes straight into the shared tuning object. */
 
@@ -13,9 +14,20 @@ const FIELDS: { key: keyof MovementTuning; label: string; min: number; max: numb
   { key: 'turnRateCombat', label: 'Turn rate (combat)', min: 90, max: 1800, step: 10, unit: '°/s' },
 ];
 
+const DOOR_FIELDS: { key: keyof DoorTuning; label: string; min: number; max: number; step: number; unit: string }[] = [
+  { key: 'momentum', label: 'Door momentum', min: 0, max: 3, step: 0.05, unit: '×' },
+  { key: 'friction', label: 'Door friction', min: 0.2, max: 10, step: 0.1, unit: '/s' },
+];
+
 export function TuningPanel() {
   const [open, setOpen] = useState(false);
   const [values, setValues] = useState<MovementTuning>({ ...tuning });
+  const [doorValues, setDoorValues] = useState<DoorTuning>({ ...doorTuning });
+
+  const setDoor = (key: keyof DoorTuning, value: number) => {
+    doorTuning[key] = value;
+    setDoorValues({ ...doorTuning });
+  };
 
   const set = (key: keyof MovementTuning, value: number) => {
     tuning[key] = value;
@@ -25,6 +37,8 @@ export function TuningPanel() {
   const reset = () => {
     Object.assign(tuning, DEFAULT_TUNING);
     setValues({ ...tuning });
+    Object.assign(doorTuning, DEFAULT_DOOR_TUNING);
+    setDoorValues({ ...doorTuning });
   };
 
   return (
@@ -59,6 +73,25 @@ export function TuningPanel() {
                 value={values[f.key]}
                 onChange={(e) => set(f.key, Number(e.target.value))}
                 // Hand keyboard focus back to the game so WASD doesn't nudge the slider.
+                onPointerUp={(e) => e.currentTarget.blur()}
+              />
+            </label>
+          ))}
+          {DOOR_FIELDS.map((f) => (
+            <label key={f.key} className="flex flex-col gap-0.5">
+              <span className="flex justify-between">
+                <span>{f.label}</span>
+                <span className="text-stone-400">
+                  {doorValues[f.key]} {f.unit}
+                </span>
+              </span>
+              <input
+                type="range"
+                min={f.min}
+                max={f.max}
+                step={f.step}
+                value={doorValues[f.key]}
+                onChange={(e) => setDoor(f.key, Number(e.target.value))}
                 onPointerUp={(e) => e.currentTarget.blur()}
               />
             </label>
