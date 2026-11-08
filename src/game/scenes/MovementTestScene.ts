@@ -441,8 +441,9 @@ export class MovementTestScene extends Phaser.Scene {
 
     // Doors: walking into one pushes it open; a locked one stops you.
     for (const door of this.doors) {
-      door.update(dt);
-      const res = door.pushBy({ x: cx, y: cy, r: BODY_RADIUS }, dt);
+      const thud = door.update(dt);
+      if (thud > 0) this.doorThud(door, thud);
+      const res = door.pushBy({ x: cx, y: cy, r: BODY_RADIUS }, dt, this.motor.crouched);
       const len = Math.hypot(res.pushX, res.pushY);
       if (len > 0) {
         this.playerObj.x += res.pushX;
@@ -501,6 +502,29 @@ export class MovementTestScene extends Phaser.Scene {
         speed: speedOf(this.motor) / PX_PER_METRE,
         span: this.rig.span,
         locked: this.lockTarget !== null,
+      });
+    }
+  }
+
+  /**
+   * A door hit its frame. Placeholder feedback: a puff of dust at the latch,
+   * scaled by how hard it hit. (Hook for sound/noise later.)
+   */
+  private doorThud(door: Door, speed: number): void {
+    const p = door.latchPoint();
+    const strength = Phaser.Math.Clamp(speed / 4, 0.25, 1);
+    for (let i = 0; i < 5; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const puff = this.add.circle(p.x, p.y, 3 + Math.random() * 3 * strength, 0xd8cbb0, 0.55 * strength).setDepth(13);
+      this.tweens.add({
+        targets: puff,
+        x: p.x + Math.cos(a) * 14 * strength,
+        y: p.y + Math.sin(a) * 14 * strength,
+        scale: 1.8,
+        alpha: 0,
+        duration: 380,
+        ease: 'Quad.easeOut',
+        onComplete: () => puff.destroy(),
       });
     }
   }

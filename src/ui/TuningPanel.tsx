@@ -17,6 +17,7 @@ const FIELDS: { key: keyof MovementTuning; label: string; min: number; max: numb
 const DOOR_FIELDS: { key: keyof DoorTuning; label: string; min: number; max: number; step: number; unit: string }[] = [
   { key: 'momentum', label: 'Door momentum', min: 0, max: 3, step: 0.05, unit: '×' },
   { key: 'friction', label: 'Door friction', min: 0.2, max: 10, step: 0.1, unit: '/s' },
+  { key: 'closing', label: 'Door closing weight', min: 0, max: 25, step: 0.5, unit: '' },
 ];
 
 export function TuningPanel() {

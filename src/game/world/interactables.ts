@@ -28,8 +28,8 @@ function clampToRect(r: Phaser.Geom.Rectangle, x: number, y: number): Phaser.Mat
 }
 
 /**
- * A hinged door you push open by walking into it. Swings either way, keeps a
- * little momentum, and stays where it's left. Clicking it locks/unlocks
+ * A hinged door you push open by walking into it. Swings either way, and is
+ * weighted to swing back shut with a thud (or softly, if eased by someone sneaking). Clicking it locks/unlocks
  * (placeholder until there's an interaction menu); a locked door won't budge.
  */
 export class Door implements Interactable {
@@ -56,15 +56,23 @@ export class Door implements Interactable {
     return this.locked;
   }
 
-  /** Coast the swing. Call once per frame. */
-  update(dt: number): void {
-    this.swing = stepDoor(this.geom, this.swing, dt);
+  /** Swing under the door's weight. Call once per frame. Returns thud speed (rad/s) if it hit the frame, else 0. */
+  update(dt: number): number {
+    const res = stepDoor(this.geom, this.swing, dt);
+    this.swing = res.swing;
     this.leaf.setRotation(this.geom.baseAngle + this.swing.angle);
+    return res.thud;
   }
 
-  /** Let a circular body push the door. Returns how far to move the body to clear it. */
-  pushBy(body: Circle, dt: number): ContactResult {
-    const res = resolveDoorContact(this.geom, this.swing, body, this.locked, dt);
+  /** World position of the latch (free) end of the leaf. */
+  latchPoint(): { x: number; y: number } {
+    const a = this.geom.baseAngle + this.swing.angle;
+    return { x: this.geom.hingeX + Math.cos(a) * this.geom.length, y: this.geom.hingeY + Math.sin(a) * this.geom.length };
+  }
+
+  /** Let a circular body push the door (gently, if sneaking). Returns how far to move the body to clear it. */
+  pushBy(body: Circle, dt: number, sneaking = false): ContactResult {
+    const res = resolveDoorContact(this.geom, this.swing, body, this.locked, dt, sneaking);
     this.swing = res.swing;
     this.leaf.setRotation(this.geom.baseAngle + this.swing.angle);
     return res;
