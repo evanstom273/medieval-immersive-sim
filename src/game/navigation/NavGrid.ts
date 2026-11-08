@@ -11,6 +11,24 @@ export interface Point {
   y: number;
 }
 
+/**
+ * A hop the grid can't express as walking: e.g. climbing through a window or
+ * unbarring a locked door. Directed (from → to). `data` is carried along so
+ * whoever follows the path knows what to do when they get to `from`.
+ */
+export interface NavLink {
+  from: Point;
+  to: Point;
+  /** Extra cost, in metres of walking it's "worth". */
+  costMetres: number;
+  data: unknown;
+}
+
+/** A path waypoint. If `link` is set, reaching this point means: do the link's action, then carry on from its far side. */
+export interface Waypoint extends Point {
+  link?: NavLink;
+}
+
 export type Obstacle =
   | { kind: 'rect'; x: number; y: number; w: number; h: number }
   | { kind: 'circle'; x: number; y: number; r: number };
@@ -31,6 +49,7 @@ export class NavGrid {
   readonly cols: number;
   readonly rows: number;
   private blocked: Uint8Array;
+  private links = new Map<number, NavLink[]>();
 
   constructor(
     readonly width: number,
@@ -81,6 +100,22 @@ export class NavGrid {
         }
       }
     }
+  }
+
+  /** Replace the set of links (call after `build`, whenever doors/windows change). Links touching blocked cells are dropped. */
+  setLinks(links: NavLink[]): void {
+    this.links.clear();
+    for (const l of links) {
+      if (this.isBlockedAt(l.from.x, l.from.y) || this.isBlockedAt(l.to.x, l.to.y)) continue;
+      const i = this.cellIndex(l.from);
+      const list = this.links.get(i) ?? [];
+      list.push(l);
+      this.links.set(i, list);
+    }
+  }
+
+  private cellIndex(p: Point): number {
+    return Math.floor(p.y / this.cellSize) * this.cols + Math.floor(p.x / this.cellSize);
   }
 
   isBlockedCell(c: number, r: number): boolean {
@@ -137,7 +172,7 @@ export class NavGrid {
    * `heuristicTarget` guides the search (use the goal's nearest point).
    * Returns waypoints (excluding start), or null if unreachable.
    */
-  findPath(start: Point, isGoal: (p: Point) => boolean, heuristicTarget: Point, maxNodes = 60000): Point[] | null {
+  findPath(start: Point, isGoal: (p: Point) => boolean, heuristicTarget: Point, maxNodes = 60000, useLinks = false): Waypoint[] | null {
     const cs = this.cellSize;
     let sc = Math.floor(start.x / cs);
     let sr = Math.floor(start.y / cs);
@@ -162,6 +197,8 @@ export class NavGrid {
     const n = this.cols * this.rows;
     const g = new Float32Array(n).fill(Infinity);
     const came = new Int32Array(n).fill(-1);
+    /** The link used to arrive at a cell, if any. */
+    const cameBy = new Map<number, NavLink>();
     const closed = new Uint8Array(n);
     const open = new MinHeap();
     const startI = sr * this.cols + sc;
@@ -199,18 +236,57 @@ export class NavGrid {
         if (ng < g[ni]) {
           g[ni] = ng;
           came[ni] = i;
+          cameBy.delete(ni);
           open.push(ni, ng + h(ni));
+        }
+      }
+      if (useLinks) {
+        for (const link of this.links.get(i) ?? []) {
+          const ni = this.cellIndex(link.to);
+          if (closed[ni]) continue;
+          const ng = g[i] + Math.hypot(link.to.x - link.from.x, link.to.y - link.from.y) / cs + (link.costMetres * 64) / cs;
+          if (ng < g[ni]) {
+            g[ni] = ng;
+            came[ni] = i;
+            cameBy.set(ni, link);
+            open.push(ni, ng + h(ni));
+          }
         }
       }
     }
     if (goalI < 0) return null;
 
-    const cells: Point[] = [];
-    for (let i = goalI; i !== -1; i = came[i]) cells.push(this.centre(i));
-    cells.reverse();
+    // Walk back to the start, splitting the route into walkable stretches at each link.
+    const stretches: { cells: Point[]; via: NavLink | null }[] = [{ cells: [], via: null }];
+    for (let i = goalI; i !== -1; i = came[i]) {
+      stretches[stretches.length - 1].cells.push(this.centre(i));
+      const via = cameBy.get(i);
+      if (via) {
+        stretches[stretches.length - 1].via = via;
+        stretches.push({ cells: [], via: null });
+      }
+    }
+    stretches.reverse();
+    for (const st of stretches) st.cells.reverse();
 
-    // String-pull: skip waypoints while there's a clear straight line.
-    const path: Point[] = [];
+    const path: Waypoint[] = [];
+    let anchor = start;
+    for (const st of stretches) {
+      if (st.via) {
+        // Walk to the link, do it, carry on from its far side.
+        path.push({ x: st.via.from.x, y: st.via.from.y, link: st.via });
+        anchor = st.via.to;
+        path.push({ x: st.via.to.x, y: st.via.to.y });
+      }
+      path.push(...this.stringPull(anchor, st.cells));
+      if (path.length) anchor = path[path.length - 1];
+    }
+    return path;
+  }
+
+  /** Skip waypoints while there's a clear straight line. */
+  private stringPull(start: Point, cells: Point[]): Point[] {
+    const out: Point[] = [];
     let anchor = start;
     let k = 0;
     while (k < cells.length) {
@@ -221,11 +297,11 @@ export class NavGrid {
           break;
         }
       }
-      path.push(cells[far]);
+      out.push(cells[far]);
       anchor = cells[far];
       k = far + 1;
     }
-    return path;
+    return out;
   }
 }
 

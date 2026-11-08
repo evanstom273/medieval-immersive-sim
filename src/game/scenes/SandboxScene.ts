@@ -28,7 +28,7 @@ import { describeMemory, type MemoryKind } from '../perception/memory';
 import { SCENT, smellStrength, type SmellSource } from '../perception/scents';
 import { footstepLoudness, LOUDNESS, SIGHT, type NoiseKind } from '../perception/senseRules';
 import { Senses, type Perception, type SensesHost } from '../perception/Senses';
-import { NavGrid, type Obstacle, type Point } from '../navigation/NavGrid';
+import { NavGrid, type NavLink, type Obstacle, type Point } from '../navigation/NavGrid';
 import { Relationships, opinionWord } from '../social/relationships';
 import { REACTION_ICON, SOCIAL_ACTIONS, describeSocial, resolveSocial, socialAction, type SocialActionId } from '../social/socialActions';
 import { between, createRng, type Rng } from '../util/rng';
@@ -151,6 +151,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     this.solids = this.physics.add.staticGroup();
     this.buildWorld(this.solids);
     for (const obj of this.interactables) this.objectGfx.set(obj, { g: this.add.graphics(), bounds: emptyBounds() });
+    for (const w of this.windows) w.outerG = this.add.graphics();
 
     for (const def of CAST) this.characters.push(new Character(this, def));
     const objs = this.characters.map((c) => c.obj);
@@ -244,6 +245,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     this.wall(solids, doorX + doorW, hy + hh - t, hx + hw - (doorX + doorW), t);
 
     const door = new Door(doorX, hy + hh - t / 2, doorW, 10);
+    door.inward = { x: 0, y: -1 };
     this.doors.push(door);
     // The door stands on a stone threshold, with wall carried on above it.
     this.scenery.add({ kind: 'paving', x: doorX, y: hy + hh - t, w: doorW, h: t, colour: 0x9a9286 });
@@ -810,6 +812,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
         if (o) obstacles.push(o);
       }
       this.nav.build(obstacles, BODY_RADIUS + 2);
+      this.nav.setLinks(this.navLinks());
       this.navDirty = false;
     }
     return this.nav;
@@ -874,8 +877,72 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     }
   }
 
+  /**
+   * Ways through that aren't plain walking, for NPC routes (PLACEHOLDER rules):
+   * - windows: from inside, always (they'll open it up and climb out); from
+   *   outside, only if it's already open. Costs ~6 m, so doors win when open.
+   * - locked doors: from inside, they'll unbar it (~2 m). From outside, no (no keys yet).
+   */
+  private navLinks(): NavLink[] {
+    const links: NavLink[] = [];
+    for (const w of this.windows) {
+      const n = w.inward;
+      const inside = { x: w.centre.x + n.x * 0.6 * M, y: w.centre.y + n.y * 0.6 * M };
+      const outside = { x: w.centre.x - n.x * 0.65 * M, y: w.centre.y - n.y * 0.65 * M };
+      links.push({ from: inside, to: outside, costMetres: 6, data: { kind: 'window', window: w } });
+      if (w.passable) links.push({ from: outside, to: inside, costMetres: 6, data: { kind: 'window', window: w } });
+    }
+    for (const d of this.doors) {
+      if (!d.isLocked || !d.inward) continue;
+      const mid = { x: (d.hingePoint().x + d.latchPoint().x) / 2, y: (d.hingePoint().y + d.latchPoint().y) / 2 };
+      const inside = { x: mid.x + d.inward.x * 0.7 * M, y: mid.y + d.inward.y * 0.7 * M };
+      const outside = { x: mid.x - d.inward.x * 0.7 * M, y: mid.y - d.inward.y * 0.7 * M };
+      links.push({ from: inside, to: outside, costMetres: 2, data: { kind: 'door', door: d } });
+    }
+    return links;
+  }
+
+  /** An NPC's route reached a link: open the window and climb through, or unbar the door. */
+  private handleLink(c: Character, link: NavLink): void {
+    if (c.linkBusy || c.climb) return;
+    const data = link.data as { kind: 'window'; window: Window } | { kind: 'door'; door: Door };
+    if (data.kind === 'door') {
+      const d = data.door;
+      if (d.isLocked) {
+        if (!d.inward || (c.x - d.hingePoint().x) * d.inward.x + (c.y - d.hingePoint().y) * d.inward.y <= 0) {
+          c.cancelOrder(); // outside a locked door: no way through
+          return;
+        }
+        d.perform('unlock', { say: (m) => c.controlled && this.say(m) });
+        this.navDirty = true;
+      }
+      c.order?.linkDone();
+      return;
+    }
+    const w = data.window;
+    const climb = () => this.beginClimb(c, w, link.to, () => c.order?.linkDone());
+    if (w.passable) {
+      climb();
+      return;
+    }
+    if (!w.isInside(c.pos())) {
+      c.cancelOrder(); // shut from outside: can't get in this way
+      return;
+    }
+    // Open it right up from inside, then climb.
+    c.linkBusy = true;
+    c.look = { angle: c.angleTo(w.centre), until: this.now + 800 };
+    w.openUpFromInside();
+    this.noise('door', w.centre.x, w.centre.y, c, 3);
+    this.navDirty = true;
+    this.time.delayedCall(700, () => {
+      c.linkBusy = false;
+      if (c.order && w.passable && c.status === 'ok') climb();
+    });
+  }
+
   orderToPoint(c: Character, p: Point): boolean {
-    const order = MoveOrder.plan(this.ensureNav(), c.pos(), { kind: 'point', x: p.x, y: p.y });
+    const order = MoveOrder.plan(this.ensureNav(), c.pos(), { kind: 'point', x: p.x, y: p.y }, !c.controlled);
     if (!order) return false;
     c.order = order;
     c.onArrive = null;
@@ -887,7 +954,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
   }
 
   private orderToReach(c: Character, closest: (from: Point) => Point, reach: number, onArrive: (() => void) | null): boolean {
-    const order = MoveOrder.plan(this.ensureNav(), c.pos(), { kind: 'reach', closest, reach });
+    const order = MoveOrder.plan(this.ensureNav(), c.pos(), { kind: 'reach', closest, reach }, !c.controlled);
     if (!order) return false;
     c.order = order;
     c.onArrive = onArrive;
@@ -936,18 +1003,23 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
         return;
       }
       c.cancelOrder();
-      c.social = null;
-      c.mode = 'explore';
-      c.lockTarget = null;
-      c.climb = { from: c.pos(), to: far, t: 0, dur: 0.9 };
-      c.body.checkCollision.none = true;
-      c.motor = { ...c.motor, vx: 0, vy: 0, facing: Math.atan2(far.y - c.y, far.x - c.x) };
-      // Climbing isn't quiet, and anyone watching will remember it.
-      this.noise('thud', w.centre.x, w.centre.y, c, 4);
-      this.witness('saw_climb', w.centre.x, w.centre.y, c);
+      this.beginClimb(c, w, far);
     };
     if (Math.hypot(c.x - near.x, c.y - near.y) < 0.25 * M) begin();
     else if (!this.orderToReach(c, () => near, 0.15 * M, begin) && c.controlled) this.say("You can't get to that window.");
+  }
+
+  /** Climb through `w` to `far` (keeps any route they're following; `onDone` when they're through). */
+  private beginClimb(c: Character, w: Window, far: Point, onDone?: () => void): void {
+    c.social = null;
+    c.mode = 'explore';
+    c.lockTarget = null;
+    c.climb = { from: c.pos(), to: far, t: 0, dur: 0.9, onDone };
+    c.body.checkCollision.none = true;
+    c.motor = { ...c.motor, vx: 0, vy: 0, facing: Math.atan2(far.y - c.y, far.x - c.x) };
+    // Climbing isn't quiet, and anyone watching will remember it.
+    this.noise('thud', w.centre.x, w.centre.y, c, 4);
+    this.witness('saw_climb', w.centre.x, w.centre.y, c);
   }
 
   /** Move a climbing character through the window; returns true while they're climbing. */
@@ -965,9 +1037,11 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     c.pose.lift = Math.sin(k * Math.PI) * 0.55 * M;
     c.pose.crouched = true;
     if (k >= 1) {
+      const done = cl.onDone;
       c.climb = null;
       c.pose.lift = 0;
       c.body.checkCollision.none = false;
+      done?.();
     }
     return true;
   }
@@ -1220,6 +1294,10 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     const none = { move: { x: 0, y: 0 }, run: false };
     if (!c.order) return none;
     const st = c.order.step(c.pos(), dt);
+    if (st.link) {
+      this.handleLink(c, st.link);
+      return none;
+    }
     if (st.arrived) {
       if (c.controlled && c.order.goal.kind === 'point') this.markerFade = { ...c.order.destination, t: 0 };
       const cb = c.onArrive;
@@ -1506,7 +1584,16 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
       o.g.clear();
       o.bounds = obj.render(o.g, p);
       const sp = obj.sortPoint(p);
-      o.g.setDepth(p.upright ? 10 + p.depth(sp.x, sp.y) / 1000 + 0.0002 : obj.name === 'door' || obj.name === 'window' ? 12 : 11);
+      if (obj instanceof Window) {
+        // Glass sits in the opening, so the wall above and below it draws over it; the shutters
+        // sit on the outside face, in front of the wall if that face is towards you, behind it if not.
+        const key = 10 + p.depth(sp.x, sp.y) / 1000;
+        o.g.setDepth(key - 0.00004);
+        const outsideFacesViewer = p.toward ? -(obj.inward.x * p.toward.x + obj.inward.y * p.toward.y) >= -0.01 : true;
+        obj.outerG?.setDepth(outsideFacesViewer ? key + 0.0002 : key - 0.00004);
+      } else {
+        o.g.setDepth(p.upright ? 10 + p.depth(sp.x, sp.y) / 1000 + 0.0002 : obj.name === 'door' ? 12 : 11);
+      }
     }
     this.drawFire(time, dt);
     this.drawMidden(time);

@@ -210,7 +210,14 @@ When an item changes status, move it and add a dated note rather than silently r
   - **Glass** opens inwards and can be **latched only from inside** the room. You can see through it; closed, it muffles sound like the wall.
   - **Shutters** outside open and close from either side. Closed, they **block sight**. *(2026-11-08 21:56 UTC: open, they fold right back flat against the outside of the wall.)*
   - **Climb through** when both glass and shutters are open: walk up, climb over, land on the other side. It makes a little noise, and **anyone who sees it remembers it** ("Saw Edric climb through a window"), groundwork for burglary and witnesses.
-  - Windows always block walking and pathfinding; NPCs don't climb through them yet.
+  - ~~Windows always block walking and pathfinding; NPCs don't climb through them yet.~~ *Updated 2026-11-08 22:03 UTC, below.*
+- **2026-11-08 22:03 UTC: NPCs use doors and windows** (PLACEHOLDER rules):
+  - **Windows as a route:** NPCs can route through windows, at a cost of ~6 m of extra walking, so they only do it when it's genuinely shorter. From inside, they open it right up (unlatch, glass, shutters) and climb out; from outside, only if it's already open.
+  - **Locked doors:** from inside, an NPC wanting to leave unbars the door (cost ~2 m) and goes out, without relocking. From outside, a locked door is a wall (no keys yet).
+  - **Your character's click-to-walk never routes through windows,** so a click never sends you climbing unexpectedly.
+  - **Idle:** NPCs sometimes open or close windows and shutters.
+  - Built as "links" in the pathfinder: hops between two points with an action attached (climb / unbar).
+  - Emergent bits this already allows: a locked-in NPC lets themselves out; someone outside a locked house gets in through an open window (and is seen doing it).
 - Windows sit in walls with a low wall under them (sill, 0.9 m) and wall above (from 1.8 m). The whole window drops with its wall in cutaway / walls down.
 - The test house has one window in each wall. Placeholder art.
 

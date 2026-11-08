@@ -79,7 +79,9 @@ export class Character implements Targetable {
   heldUntil = 0;
   social: SocialState | null = null;
   /** Climbing through a window: moving from `from` to `to` over `dur` seconds. */
-  climb: { from: Point; to: Point; t: number; dur: number } | null = null;
+  climb: { from: Point; to: Point; t: number; dur: number; onDone?: () => void } | null = null;
+  /** Busy doing a route's link (e.g. opening a window to climb through). */
+  linkBusy = false;
 
   constructor(scene: Phaser.Scene, def: CharacterDef) {
     this.id = def.id;

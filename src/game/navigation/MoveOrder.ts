@@ -1,5 +1,5 @@
 import { PX_PER_METRE, tuning } from '../movement/tuning';
-import type { NavGrid, Point } from './NavGrid';
+import type { NavGrid, NavLink, Point, Waypoint } from './NavGrid';
 
 /**
  * A "go there" order: plans a route on the nav grid and turns it into motor
@@ -28,11 +28,15 @@ export interface OrderStep {
   arrived: boolean;
   /** Gave up: something is in the way. */
   stuck: boolean;
+  /** Reached a link (window, locked door): do its action, then call `linkDone()` to carry on. */
+  link?: NavLink;
 }
 
 export class MoveOrder {
   /** Remaining waypoints; the last one is the destination. */
-  path: Point[];
+  path: Waypoint[];
+  /** May this route use links (climbing through windows, unbarring doors)? NPCs yes; the player's clicks no. */
+  readonly useLinks: boolean;
   run: boolean;
   /** Being steered live (hold-to-follow); run/walk then depends on how far away the cursor is. */
   following = false;
@@ -41,18 +45,27 @@ export class MoveOrder {
 
   private constructor(
     readonly goal: MoveGoal,
-    path: Point[],
+    path: Waypoint[],
     run: boolean,
+    useLinks: boolean,
   ) {
     this.path = path;
     this.run = run;
+    this.useLinks = useLinks;
   }
 
   /** Plan an order from `from`. Returns null if there's no way there. */
-  static plan(nav: NavGrid, from: Point, goal: MoveGoal): MoveOrder | null {
-    const path = MoveOrder.route(nav, from, goal);
+  static plan(nav: NavGrid, from: Point, goal: MoveGoal, useLinks = false): MoveOrder | null {
+    const path = MoveOrder.route(nav, from, goal, useLinks);
     if (!path) return null;
-    return new MoveOrder(goal, path, pathLength(from, path) > RUN_DISTANCE);
+    return new MoveOrder(goal, path, pathLength(from, path) > RUN_DISTANCE, useLinks);
+  }
+
+  /** The link at the front of the route has been dealt with: carry on from its far side. */
+  linkDone(): void {
+    if (this.path[0]?.link) this.path.shift();
+    this.best = Infinity;
+    this.stuckFor = 0;
   }
 
   /** The point the order is heading for (the clicked spot, or the end of the route). */
@@ -63,7 +76,7 @@ export class MoveOrder {
   /** Re-aim a point order at a new spot (hold-to-follow). Keeps the old route if the new spot is unreachable. */
   retarget(nav: NavGrid, from: Point, to: Point): boolean {
     const goal: MoveGoal = { kind: 'point', x: to.x, y: to.y };
-    const path = MoveOrder.route(nav, from, goal);
+    const path = MoveOrder.route(nav, from, goal, this.useLinks);
     if (!path) return false;
     (this as { goal: MoveGoal }).goal = goal;
     this.path = path;
@@ -72,13 +85,13 @@ export class MoveOrder {
     return true;
   }
 
-  private static route(nav: NavGrid, from: Point, goal: MoveGoal): Point[] | null {
+  private static route(nav: NavGrid, from: Point, goal: MoveGoal, useLinks: boolean): Waypoint[] | null {
     if (goal.kind === 'point') {
       // Clicked inside something solid: aim for the nearest spot you could actually stand.
       const dest = nav.nearestFree(goal, 2 * PX_PER_METRE);
       if (!dest) return null;
       if (nav.lineClear(from, dest)) return [dest];
-      const path = nav.findPath(from, (p) => Math.hypot(p.x - dest.x, p.y - dest.y) <= nav.cellSize, dest);
+      const path = nav.findPath(from, (p) => Math.hypot(p.x - dest.x, p.y - dest.y) <= nav.cellSize, dest, 60000, useLinks);
       if (!path) return null;
       if (nav.lineClear(path[path.length - 1], dest)) path.push(dest);
       return path;
@@ -91,6 +104,8 @@ export class MoveOrder {
         return Math.hypot(q.x - p.x, q.y - p.y) <= goal.reach * 0.85;
       },
       aim,
+      60000,
+      useLinks,
     );
   }
 
@@ -103,7 +118,13 @@ export class MoveOrder {
       if (reachGap <= 0) return { ...idle, arrived: true, stuck: false };
     }
 
-    while (this.path.length > 1 && Math.hypot(this.path[0].x - pos.x, this.path[0].y - pos.y) < WAYPOINT_RADIUS) {
+    // At a link (window, locked door): stop and hand it over.
+    const head = this.path[0];
+    if (head?.link && Math.hypot(head.x - pos.x, head.y - pos.y) < WAYPOINT_RADIUS + 2) {
+      return { ...idle, arrived: false, stuck: false, link: head.link };
+    }
+
+    while (this.path.length > 1 && !this.path[0].link && Math.hypot(this.path[0].x - pos.x, this.path[0].y - pos.y) < WAYPOINT_RADIUS) {
       this.path.shift();
       this.best = Infinity;
       this.stuckFor = 0;

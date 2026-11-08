@@ -68,6 +68,8 @@ export class Door implements Interactable {
   readonly height = 2.0 * M;
   /** Drawn height, when its wall is cut down (cutaway / walls down); null = full height. */
   displayHeight: number | null = null;
+  /** Unit ground direction into the room it closes, if it's a room's door (for "from inside" rules). */
+  inward: Pt | null = null;
 
   /**
    * @param hingeX,hingeY  hinge position
@@ -352,6 +354,12 @@ export class Window implements Interactable {
   readonly inward: Pt;
   /** Set each frame: is its wall cut down (cutaway / walls down)? Then the window isn't drawn above the sill. */
   cut = false;
+  /**
+   * Second layer for the shutters, which sit on the outside face of the wall.
+   * The glass (drawn on the main layer) sits inside the opening, behind the wall
+   * above and below it; the shutters sit in front of it. Set by the scene.
+   */
+  outerG: Phaser.GameObjects.Graphics | null = null;
   static readonly SILL = 0.9 * M;
   static readonly HEAD = 1.8 * M;
 
@@ -411,6 +419,8 @@ export class Window implements Interactable {
     const outline = this.highlighted ? HIGHLIGHT : OUTLINE;
     const ow = this.highlighted ? 3 : 1.5;
 
+    const gs = this.outerG ?? g;
+    this.outerG?.clear();
     if (p.upright && this.cut) {
       // Its wall is cut down below the window: nothing to draw above the sill, but keep it clickable
       // (and outlined when hovered).
@@ -462,41 +472,35 @@ export class Window implements Interactable {
       });
     }
 
-    // Shutters: wooden leaves on the outside. Open, they fold right back flat against the outside
-    // of the wall, either side of the opening.
+    parts.sort((x, y) => x.depth - y.depth).forEach((part) => part.draw());
+
+    // Shutters: wooden leaves just proud of the outside face of the wall (their own layer, in front
+    // of the wall). Open, they fold right back flat against it, either side of the opening.
     const wood = { colour: 0x6b4a2b, top: 0x7a5634, outline, outlineWidth: ow };
+    const face = (horizontal ? r.height : r.width) / 2 + 3;
     if (this.shuttersOpen) {
-      const face = (horizontal ? r.height : r.width) / 2 + 3; // just proud of the outside wall face
       const leaf = span / 2 - 2;
-      const back = along + Math.PI; // from a0, away from the opening
-      const h0 = shift(a0, -face);
-      const h1 = shift(a1, -face);
-      parts.push({ depth: depthOf(h0), draw: () => drawLeaf(h0, back) });
-      parts.push({ depth: depthOf(h1), draw: () => drawLeaf(h1, along) });
-      // A leaf: a thin board with a line down it so it reads as two planks.
       const drawLeaf = (hinge: Pt, dir: number) => {
-        prism(g, p, slabPts(hinge.x, hinge.y, dir, leaf, 4), z0, zh, wood, b);
+        prism(gs, p, slabPts(hinge.x, hinge.y, dir, leaf, 4), z0, zh, wood, b);
         const m = { x: hinge.x + Math.cos(dir) * (leaf / 2) - this.inward.x * 2, y: hinge.y + Math.sin(dir) * (leaf / 2) - this.inward.y * 2 };
         const lo = p.toScreen(m.x, m.y, z0 + 2);
         const hi = p.toScreen(m.x, m.y, z0 + zh - 2);
-        g.lineStyle(1, 0x3a2716, 0.8);
-        g.lineBetween(lo.x, lo.y, hi.x, hi.y);
+        gs.lineStyle(1, 0x3a2716, 0.8);
+        gs.lineBetween(lo.x, lo.y, hi.x, hi.y);
       };
+      drawLeaf(shift(a0, -face), along + Math.PI);
+      drawLeaf(shift(a1, -face), along);
     } else {
-      const sp = shift(a0, -6);
-      parts.push({
-        depth: depthOf(shift(this.centre, -6)),
-        draw: () => {
-          prism(g, p, slabPts(sp.x, sp.y, along, span, 5), z0, zh, wood, b);
-          const mid = shift({ x: (a0.x + a1.x) / 2, y: (a0.y + a1.y) / 2 }, -9);
-          const lo = p.toScreen(mid.x, mid.y, z0);
-          const hi = p.toScreen(mid.x, mid.y, z0 + zh);
-          g.lineStyle(1.5, 0x3a2716, 1);
-          g.lineBetween(lo.x, lo.y, hi.x, hi.y);
-        },
-      });
+      // Closed: across the opening, flush against the outside face.
+      const sp = shift(a0, -face);
+      prism(gs, p, slabPts(sp.x, sp.y, along, span, 4), z0, zh, wood, b);
+      const mid = shift({ x: (a0.x + a1.x) / 2, y: (a0.y + a1.y) / 2 }, -face - 2);
+      const lo = p.toScreen(mid.x, mid.y, z0);
+      const hi = p.toScreen(mid.x, mid.y, z0 + zh);
+      gs.lineStyle(1.5, 0x3a2716, 1);
+      gs.lineBetween(lo.x, lo.y, hi.x, hi.y);
     }
-    parts.sort((x, y) => x.depth - y.depth).forEach((part) => part.draw());
+
 
     if (!p.upright) {
       // Seen from above: outline the opening so it reads as a window.
@@ -538,8 +542,18 @@ export class Window implements Interactable {
     return opts;
   }
 
+  /** Idle characters sometimes open up or shut the window (an everyday thing). */
   idleUse(): string | null {
-    return null;
+    if (!this.shuttersOpen) return 'openShutters';
+    if (!this.glassOpen) return this.latched ? 'closeShutters' : 'openWindow';
+    return 'closeWindow';
+  }
+
+  /** Open it right up to climb through (latch, glass, shutters), as someone inside the room would. */
+  openUpFromInside(): void {
+    this.latched = false;
+    this.glassOpen = true;
+    this.shuttersOpen = true;
   }
 
   perform(optionId: string, ctx: InteractContext): void {
