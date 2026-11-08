@@ -21,7 +21,7 @@ const DOOR_FIELDS: { key: keyof DoorTuning; label: string; min: number; max: num
   { key: 'closing', label: 'Door closing weight', min: 0, max: 25, step: 0.5, unit: '' },
 ];
 
-export function TuningPanel() {
+export function TuningPanel({ perf = false }: { perf?: boolean }) {
   const [open, setOpen] = useState(false);
   const [values, setValues] = useState<MovementTuning>({ ...tuning });
   const [doorValues, setDoorValues] = useState<DoorTuning>({ ...doorTuning });
@@ -110,6 +110,9 @@ export function TuningPanel() {
           <button className="mt-1 rounded bg-white/10 px-2 py-1 hover:bg-white/20" onClick={reset}>
             Reset to defaults
           </button>
+          <a className="mt-1 block rounded bg-white/10 px-2 py-1 text-center hover:bg-white/20" href={perf ? '?' : '?scene=perf'}>
+            {perf ? '← Back to the sandbox' : 'Performance test scene →'}
+          </a>
         </div>
       )}
     </div>

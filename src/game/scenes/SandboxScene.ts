@@ -28,6 +28,7 @@ import { PX_PER_METRE, tuning } from '../movement/tuning';
 import { MoveOrder } from '../navigation/MoveOrder';
 import { resistance, separate } from '../movement/shove';
 import { MOCK_PROFILES } from '../characters/mockProfiles';
+import { profiler } from '../perf/profiler';
 import { describeMemory, type MemoryKind } from '../perception/memory';
 import { SCENT, smellStrength, type SmellSource } from '../perception/scents';
 import { footstepLoudness, LOUDNESS, SIGHT, type NoiseKind } from '../perception/senseRules';
@@ -47,8 +48,8 @@ import { interruptsRest, MAX_REST_HOURS, REST_SPEED, type RestKind, type RestSti
  * simple) lives until you take control of one of them.
  */
 
-const WORLD_W = 2560;
-const WORLD_H = 1792;
+export const WORLD_W = 2560;
+export const WORLD_H = 1792;
 const M = PX_PER_METRE;
 /** How far from the body's centre a character can reach to use something. */
 const REACH = 0.95 * M;
@@ -92,7 +93,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
   readonly relationships = new Relationships();
   readonly rng: Rng = createRng(1347);
   readonly rig = new CameraRig();
-  private active!: Character;
+  protected active!: Character;
 
   private keys!: Record<
     'up' | 'down' | 'left' | 'right' | 'sprint' | 'crouch' | 'combat' | 'lock' | 'talk' | 'debug' | 'senses' | 'pause' | 'walls' | 'esc' | 'one' | 'two' | 'three' | 'four',
@@ -103,7 +104,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
   private navDirty = true;
   private doors: Door[] = [];
   private windows: Window[] = [];
-  private dummy!: Dummy;
+  private dummy?: Dummy;
   private inputSource: InputSource = 'mouse';
   private hovered: Interactable | null = null;
   private hoveredChar: Character | null = null;
@@ -130,14 +131,16 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
   private collisionGfx!: Phaser.GameObjects.Graphics;
   private overlayGfx!: Phaser.GameObjects.Graphics;
   private pendingSmells: SmellSource[] = [];
-  private fire!: { x: number; y: number; g: Phaser.GameObjects.Graphics; smokeTimer: number };
-  private midden!: { x: number; y: number; g: Phaser.GameObjects.Graphics };
+  private fire?: { x: number; y: number; g: Phaser.GameObjects.Graphics; smokeTimer: number };
+  private midden?: { x: number; y: number; g: Phaser.GameObjects.Graphics };
   /** The active view projection (top-down / ¾ / isometric). The simulation itself is always on the ground plane. */
   proj: Projection = makeProjection('topdown');
   private scenery!: Scenery;
   private objectGfx = new Map<Interactable, { g: Phaser.GameObjects.Graphics; bounds: Bounds }>();
   private charScreen = new Map<Character, ViewResult>();
   private hitNoticeAt = -Infinity;
+  /** Everyone's physics objects (the wall collider holds this array, so people added later collide too). */
+  private peopleObjs: Phaser.GameObjects.Arc[] = [];
   private hudTimer = 0;
   private rosterTimer = 0;
   /** Simulation time (ms). Runs with the simulation: stops when paused, speeds up while resting. */
@@ -151,8 +154,13 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
   /** How many times normal speed the last frame actually ran. */
   private speedNow = 1;
 
-  constructor() {
-    super('sandbox');
+  constructor(key = 'sandbox') {
+    super(key);
+  }
+
+  /** Who's in the world at the start (the first is the one you control). */
+  protected cast(): CharacterDef[] {
+    return CAST;
   }
 
   get now(): number {
@@ -171,9 +179,9 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     for (const obj of this.interactables) this.objectGfx.set(obj, { g: this.add.graphics(), bounds: emptyBounds() });
     for (const w of this.windows) w.outerG = this.add.graphics();
 
-    for (const def of CAST) this.characters.push(new Character(this, def));
-    const objs = this.characters.map((c) => c.obj);
-    this.physics.add.collider(objs, this.solids);
+    for (const def of this.cast()) this.characters.push(new Character(this, def));
+    this.peopleObjs = this.characters.map((c) => c.obj);
+    this.physics.add.collider(this.peopleObjs, this.solids);
     // People don't use Arcade's collider with each other (it splits overlaps 50/50 and zeroes
     // velocities); they're kept apart by separatePeople(), weighted by who they are.
 
@@ -227,7 +235,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
   }
 
   /** A solid block: physics body, sight blocker, and scenery to draw (with height for the angled views). */
-  private wall(solids: Phaser.Physics.Arcade.StaticGroup, x: number, y: number, w: number, h: number, colour = 0x8c8475, height = 2.4 * M, fade = true): void {
+  protected wall(solids: Phaser.Physics.Arcade.StaticGroup, x: number, y: number, w: number, h: number, colour = 0x8c8475, height = 2.4 * M, fade = true): void {
     this.sightBlockers.push({ kind: 'rect', x, y, w, h });
     this.scenery.add({ kind: 'box', x, y, w, h, height, colour, wall: fade });
     const r = this.add.rectangle(x + w / 2, y + h / 2, w, h).setVisible(false);
@@ -235,7 +243,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     solids.add(r);
   }
 
-  private buildWorld(solids: Phaser.Physics.Arcade.StaticGroup): void {
+  protected buildWorld(solids: Phaser.Physics.Arcade.StaticGroup): void {
     // House: 8 m × 6 m, 0.3 m walls, 1 m doorway in the south wall.
     const hx = 1152;
     const hy = 576;
@@ -661,7 +669,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
       return;
     }
     const people = this.characters.filter((c) => c !== a && c.isTargetable());
-    a.lockTarget = this.bestTarget(a, a.mode === 'combat' ? [this.dummy, ...people] : people);
+    a.lockTarget = this.bestTarget(a, a.mode === 'combat' && this.dummy ? [this.dummy, ...people] : people);
     if (!a.lockTarget) this.say(a.mode === 'combat' ? 'Nothing to lock on to.' : 'No one nearby to lock on to.');
   }
 
@@ -839,7 +847,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
 
   // ================================================================ World: shared actions (player and AI)
 
-  private ensureNav(): NavGrid {
+  protected ensureNav(): NavGrid {
     if (this.navDirty) {
       const obstacles: Obstacle[] = [];
       for (const child of this.solids.getChildren()) {
@@ -1206,7 +1214,23 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
 
   // ================================================================ update
 
-  update(_time: number, deltaMs: number): void {
+  update(time: number, deltaMs: number): void {
+    profiler.begin('update');
+    this.frameUpdate(time, deltaMs);
+    profiler.end('update');
+  }
+
+  /** Add someone to the world (e.g. the performance test's spawner). */
+  spawnPerson(def: CharacterDef): Character {
+    const c = new Character(this, def);
+    this.characters.push(c);
+    this.peopleObjs.push(c.obj);
+    this.senses.addCharacter(c);
+    c.brain.reset(this.now + this.rng() * 1500);
+    return c;
+  }
+
+  private frameUpdate(_time: number, deltaMs: number): void {
     const dt = Math.min(deltaMs / 1000, 0.05);
     const k = this.keys;
     const a = this.active;
@@ -1274,7 +1298,9 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
       this.simulate(dt, manual, hasManual, pointer);
     }
     this.updateHover(pointerScreen.x, pointerScreen.y);
+    profiler.begin('ui');
     this.emitUi(dt);
+    profiler.end('ui');
   }
 
   /**
@@ -1283,9 +1309,12 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
    */
   private simulate(dt: number, manual: Point, hasManual: boolean, pointer: Point): void {
     const k = this.keys;
+    profiler.tick();
     this.simMs += dt * 1000;
     this.clock.advance(dt);
+    profiler.begin('separation');
     this.separatePeople();
+    profiler.end('separation');
     // ---- doors swing under their own weight
     for (const door of this.doors) {
       const thud = door.update(dt);
@@ -1297,6 +1326,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     }
 
     // ---- everyone
+    profiler.begin('movement');
     for (const c of this.characters) {
       this.updateStatus(c, dt);
       if (c.status === 'ko') {
@@ -1317,7 +1347,13 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
       }
       this.pushDoors(c, dt, this.now);
 
-      if (!c.controlled) c.brain.update(c, this);
+      if (!c.controlled) {
+        profiler.end('movement');
+        profiler.begin('brains');
+        c.brain.update(c, this);
+        profiler.end('brains');
+        profiler.begin('movement');
+      }
       this.updateSocial(c);
 
       let move = { x: 0, y: 0 };
@@ -1364,10 +1400,11 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
       this.updatePose(c, dt);
     }
 
+    profiler.end('movement');
     this.updateFootsteps(dt);
+    profiler.begin('senses');
     this.senses.update(dt);
-    this.updateFootsteps(dt);
-    this.senses.update(dt);
+    profiler.end('senses');
   }
 
   // ---------------------------------------------------------------- waiting & sleeping
@@ -1637,7 +1674,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
       }
     }
     const d = this.dummy;
-    if (Math.hypot(wx - d.x, wy - d.y) <= d.radius + 6) {
+    if (d && Math.hypot(wx - d.x, wy - d.y) <= d.radius + 6) {
       this.noise('thud', d.x, d.y, c, 4);
       d.hits++;
       if (c.controlled) this.say(`Your ${hand} hand hits the dummy. (${d.hits})`);
@@ -1798,6 +1835,12 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
   // ================================================================ late update: drawing & camera
 
   private lateUpdate(time: number, deltaMs: number): void {
+    profiler.begin('draw');
+    this.drawFrame(time, deltaMs);
+    profiler.end('draw');
+  }
+
+  private drawFrame(time: number, deltaMs: number): void {
     const dt = Math.min(deltaMs / 1000, 0.05);
     const cam = this.cameras.main;
     const sw = this.switching;
@@ -1886,6 +1929,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
 
   private drawDummy(): void {
     const d = this.dummy;
+    if (!d) return;
     const p = this.proj;
     const g = d.g;
     g.clear();
@@ -1915,6 +1959,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
 
   private drawFire(time: number, dt: number): void {
     const f = this.fire;
+    if (!f) return;
     const p = this.proj;
     const g = f.g;
     g.clear();
@@ -1952,6 +1997,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
 
   private drawMidden(time: number): void {
     const m = this.midden;
+    if (!m) return;
     const p = this.proj;
     const g = m.g;
     g.clear();

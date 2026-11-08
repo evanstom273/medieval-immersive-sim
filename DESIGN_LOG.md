@@ -444,3 +444,12 @@ When an item changes status, move it and add a dated note rather than silently r
   - × 1.3 when braced (standing still, squared up or crouched), × 0.7 when out cold (limp)
 - Builds are placeholders in the mock profiles: Edric 1.75 m / 80 kg, Agnes 1.62 / 58, Maud 1.57 / 54, Wat 1.86 / 96. Sizes don't change how anyone's drawn yet.
 - Result: Maud walking into Wat stops dead (he moves ~0.2 m); Wat walking into Maud shoves her ~1.8 m in 3 s, and sprinting he bowls her ~4 m. Off-centre, you slide round people.
+
+### Performance test scene (tooling)
+*2026-11-08 23:07 UTC*
+
+- Open with **`?scene=perf`**, or Tuning → "Performance test scene". An open field with some crates, you, and as many people as you spawn (+1 … +500, or any number up to 5000). Everyone runs the full game simulation: brains, senses, bumping, physics, drawing. Reset reloads with nobody but you.
+- Live HUD: FPS, 1% low, ms/frame, ticks/s (world steps per second), a frame-time graph, heap (Chrome only), and ms per frame for each part: scene update (brains, movement, bumping, senses, UI feed), physics, drawing, render.
+- **Run 30 s test → CSV** records every frame and downloads a CSV: one row per frame with every timing, plus a header block with device, renderer, canvas size and the summary (average FPS, 1% low, p95 frame time, ticks/s).
+- First finding: **senses dominate**. Everyone checks sight against everyone else 10 times a second, so the cost grows with the square of the headcount. In the test browser: ~4 ms/frame at 50 people, ~52 ms at 200, ~725 ms at 500. Drawing and physics stay small. Not optimised: that's a separate decision.
+- Bug found and fixed along the way: since the waiting/sleeping change, senses and footstep noise had been running **twice per tick** in the normal game.

@@ -148,3 +148,36 @@ export interface RestDialogState {
   maxHours: number;
 }
 export const restDialogChannel = new Channel<RestDialogState | null>();
+
+// ------------------------------------------------------------------ performance test scene
+
+/** UI → perf scene. */
+export type PerfCommand = { kind: 'spawn'; count: number } | { kind: 'startTest' } | { kind: 'cancelTest' };
+export const perfCommands = new Channel<PerfCommand>();
+
+/** Perf scene → UI, a few times a second: live numbers over the last second. */
+export interface PerfStats {
+  fps: number;
+  low1Fps: number;
+  frameMs: number;
+  maxFrameMs: number;
+  ticksPerSec: number;
+  people: number;
+  heapMb: number | null;
+  /** Average ms per frame in each section over the last second. */
+  sections: Record<string, number>;
+  /** Recent frame times (ms), oldest first, for the graph. */
+  recentFrameMs: number[];
+  /** Seconds left on a running 30 s test, or null. */
+  testLeft: number | null;
+  renderer: string;
+}
+export const perfStatsChannel = new Channel<PerfStats>();
+
+/** Perf scene → UI: a finished test, ready to download. */
+export interface PerfResult {
+  filename: string;
+  csv: string;
+  summary: { avgFps: number; low1Fps: number; avgFrameMs: number; p95FrameMs: number; maxFrameMs: number; ticksPerSec: number; frames: number; people: number };
+}
+export const perfResultChannel = new Channel<PerfResult>();

@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { PerfScene } from './scenes/PerfScene';
 import { SandboxScene } from './scenes/SandboxScene';
 
 /**
@@ -7,7 +8,14 @@ import { SandboxScene } from './scenes/SandboxScene';
  * Phaser 4 has no `resolution` setting, so this is done by hand: game size = CSS
  * size × devicePixelRatio, displayed at zoom 1/devicePixelRatio.
  */
-export function createGame(parent: HTMLElement): Phaser.Game {
+/** Which scene to run: the sandbox, or the performance test (`?scene=perf`). */
+export type SceneChoice = 'sandbox' | 'perf';
+
+export function sceneFromUrl(): SceneChoice {
+  return new URLSearchParams(window.location.search).get('scene') === 'perf' ? 'perf' : 'sandbox';
+}
+
+export function createGame(parent: HTMLElement, choice: SceneChoice = 'sandbox'): Phaser.Game {
   const dpr = () => Math.min(window.devicePixelRatio || 1, 3);
   const size = () => ({
     w: Math.max(1, Math.round(parent.clientWidth * dpr())),
@@ -43,7 +51,7 @@ export function createGame(parent: HTMLElement): Phaser.Game {
     fps: {
       panicMax: 20,
     },
-    scene: [SandboxScene],
+    scene: [choice === 'perf' ? PerfScene : SandboxScene],
   });
 
   // Follow container size (orientation changes, folding/unfolding, window resizes) and DPR changes.

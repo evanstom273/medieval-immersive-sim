@@ -66,6 +66,11 @@ export class Senses {
     for (const c of host.characters) this.memories.set(c.id, new Memories());
   }
 
+  /** Someone new arrived (e.g. spawned in). */
+  addCharacter(c: Character): void {
+    if (!this.memories.has(c.id)) this.memories.set(c.id, new Memories());
+  }
+
   private key(o: Character, t: Character): string {
     return `${o.id}>${t.id}`;
   }
