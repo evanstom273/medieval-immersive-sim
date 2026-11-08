@@ -68,8 +68,8 @@ export function Hud() {
           {status}
           <div className="rounded bg-black/60 px-3 py-2 font-mono text-xs leading-5 text-stone-300">
             <div>WASD move · Ctrl sprint (hold) · Shift sneak (toggle)</div>
-            <div>R ready / relax · Click to use · Scroll to zoom · F3 collision</div>
-            <div>In combat: LMB right hand · RMB left hand</div>
+            <div>R ready / relax · Walk into doors · Click to use / lock · Scroll zoom · F3</div>
+            <div>In combat: LMB right hand · RMB left hand · F / middle click lock-on</div>
           </div>
         </div>
       )}

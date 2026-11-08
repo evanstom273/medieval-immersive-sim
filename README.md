@@ -19,8 +19,11 @@ npm run build    # typecheck + production build
 | Sprint | Hold Ctrl |
 | Sneak | Shift (toggle) |
 | Ready / relax (combat mode) | R |
-| Use something (exploring) | Left click — walks there if out of reach |
+| Open doors | Walk into them |
+| Lock / unlock a door | Click it (walks there if out of reach) |
+| Use something else (exploring) | Left click — walks there if out of reach |
 | Right hand / left hand (combat) | Left click / right click |
+| Lock on to a target (combat) | F or middle click |
 | Zoom | Scroll wheel |
 | Show collision | F3 |
 
@@ -36,6 +39,6 @@ Everything on screen is placeholder geometry for tuning feel — not final art.
 - `src/game/navigation/` — grid pathfinding. Pure TypeScript, no Phaser.
 - `src/game/camera/` — continuous zoom rig with view bands (direct control now, overview later). Pure TypeScript.
 - `src/game/input/` — touch input bridge.
-- `src/game/world/` — placeholder character and interactable objects (Phaser).
+- `src/game/world/` — placeholder character and interactable objects (Phaser), plus door swing physics (pure TypeScript).
 - `src/game/scenes/` — the movement test scene (Phaser).
 - `src/ui/` — React HUD, touch controls and tuning panel.

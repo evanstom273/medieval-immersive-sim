@@ -31,7 +31,9 @@ export function createGame(parent: HTMLElement): Phaser.Game {
     },
     physics: {
       default: 'arcade',
-      arcade: { debug: false },
+      // Variable step: the body moves every rendered frame, matching high-refresh screens
+      // (e.g. 120 Hz phones) instead of only on 60 Hz physics ticks.
+      arcade: { debug: false, fixedStep: false },
     },
     input: {
       activePointers: 3,

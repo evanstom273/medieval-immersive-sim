@@ -21,6 +21,8 @@ const REACH = 0.95 * PX_PER_METRE;
 /** Lock-on acquires targets within this range and drops them beyond LOCK_BREAK. */
 const LOCK_RANGE = 6 * PX_PER_METRE;
 const LOCK_BREAK = 10 * PX_PER_METRE;
+/** Camera catch-up rate (per second, exponential). Frame-rate independent. */
+const CAMERA_FOLLOW = 10;
 
 const KEY = Phaser.Input.Keyboard.KeyCodes;
 
@@ -37,7 +39,12 @@ export class MovementTestScene extends Phaser.Scene {
   private view!: CharacterView;
   private motor: MotorState = createMotorState(0);
   private mode: ControlMode = 'explore';
-  private keys!: Record<'up' | 'down' | 'left' | 'right' | 'sprint' | 'crouch' | 'combat' | 'debug', Phaser.Input.Keyboard.Key>;
+  private keys!: Record<'up' | 'down' | 'left' | 'right' | 'sprint' | 'crouch' | 'combat' | 'lock' | 'debug', Phaser.Input.Keyboard.Key>;
+  /** The player's physics game object; its position is the authoritative post-physics position. */
+  private playerObj!: Phaser.GameObjects.Arc;
+  private doors: Door[] = [];
+  private lockedNoticeAt = -Infinity;
+  private cameraFocus: { x: number; y: number } | null = null;
 
   private interactables: Interactable[] = [];
   private hovered: Interactable | null = null;
@@ -90,9 +97,12 @@ export class MovementTestScene extends Phaser.Scene {
     this.playerBody.setCircle(BODY_RADIUS);
     this.playerBody.setCollideWorldBounds(true);
     this.physics.add.collider(bodyObj, solids);
+    this.playerObj = bodyObj;
     this.view = new CharacterView(this, start.x, start.y).setDepth(20);
 
-    this.cameras.main.startFollow(bodyObj, true, 0.14, 0.14);
+    // Draw the character and move the camera AFTER physics has moved the body this frame,
+    // so the two can never disagree by a frame (which reads as blur/judder when moving).
+    this.events.on(Phaser.Scenes.Events.POST_UPDATE, this.lateUpdate, this);
 
     this.lockRing = this.add.graphics().setDepth(16);
 
@@ -140,7 +150,8 @@ export class MovementTestScene extends Phaser.Scene {
     this.wall(solids, hx, hy + hh - t, doorX - hx, t); // south, left of door
     this.wall(solids, doorX + doorW, hy + hh - t, hx + hw - (doorX + doorW), t); // south, right of door
 
-    const door = new Door(this, solids, doorX, hy + hh - t / 2, doorW, 10, -Math.PI / 2);
+    const door = new Door(this, doorX, hy + hh - t / 2, doorW, 10);
+    this.doors.push(door);
     const chest = new Chest(this, solids, hx + hw - 90, hy + 70, 56, 36);
     const sign = new Sign(this, solids, 920, 760, 'Movement test. Mind the dummy.');
     this.interactables.push(door, chest, sign);
@@ -205,6 +216,7 @@ export class MovementTestScene extends Phaser.Scene {
         sprint: KEY.CTRL,
         crouch: KEY.SHIFT,
         combat: KEY.R,
+        lock: KEY.F,
         debug: KEY.F3,
       },
       true,
@@ -214,7 +226,7 @@ export class MovementTestScene extends Phaser.Scene {
     // Registered in the bubble phase AFTER Phaser's listener: Phaser ignores events that are
     // already defaultPrevented, so blocking them any earlier would swallow the key.
     const guard = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && ['w', 'a', 's', 'd', 'r'].includes(e.key.toLowerCase())) e.preventDefault();
+      if ((e.ctrlKey || e.metaKey) && ['w', 'a', 's', 'd', 'r', 'f'].includes(e.key.toLowerCase())) e.preventDefault();
       if (e.key === 'F3') e.preventDefault();
     };
     window.addEventListener('keydown', guard);
@@ -323,6 +335,10 @@ export class MovementTestScene extends Phaser.Scene {
     // Touch is handled by the touch-controls layer; only the mouse comes through here.
     if (p.wasTouch) return;
     if (this.inputSource !== 'mouse') inputSourceChannel.emit('mouse');
+    if (p.middleButtonDown()) {
+      this.toggleLock();
+      return;
+    }
     if (this.mode === 'combat') {
       if (p.leftButtonDown()) this.punch('right');
       else if (p.rightButtonDown()) this.punch('left');
@@ -341,6 +357,10 @@ export class MovementTestScene extends Phaser.Scene {
       if (!b || !b.enable) continue;
       if (b.isCircle) out.push({ kind: 'circle', x: b.center.x, y: b.center.y, r: b.halfWidth });
       else out.push({ kind: 'rect', x: b.x, y: b.y, w: b.width, h: b.height });
+    }
+    for (const door of this.doors) {
+      const o = door.navObstacle();
+      if (o) out.push(o);
     }
     return out;
   }
@@ -391,11 +411,7 @@ export class MovementTestScene extends Phaser.Scene {
       angle: Math.atan2(p.y - this.playerBody.center.y, p.x - this.playerBody.center.x),
       until: this.time.now + 500,
     };
-    const ctx: InteractContext = {
-      say: (m) => this.say(m),
-      playerBlocks: (rect) =>
-        Phaser.Geom.Intersects.CircleToRectangle(new Phaser.Geom.Circle(this.playerBody.center.x, this.playerBody.center.y, BODY_RADIUS), rect),
-    };
+    const ctx: InteractContext = { say: (m) => this.say(m) };
     target.interact(ctx);
   }
 
@@ -415,12 +431,33 @@ export class MovementTestScene extends Phaser.Scene {
     const k = this.keys;
 
     if (Phaser.Input.Keyboard.JustDown(k.combat)) this.toggleCombat();
+    if (Phaser.Input.Keyboard.JustDown(k.lock)) this.toggleLock();
     if (Phaser.Input.Keyboard.JustDown(k.crouch)) this.motor = toggleCrouch(this.motor);
     if (Phaser.Input.Keyboard.JustDown(k.debug)) this.toggleDebug();
 
     const pointer = this.input.activePointer.positionToCamera(this.cameras.main) as Phaser.Math.Vector2;
     const cx = this.playerBody.center.x;
     const cy = this.playerBody.center.y;
+
+    // Doors: walking into one pushes it open; a locked one stops you.
+    for (const door of this.doors) {
+      door.update(dt);
+      const res = door.pushBy({ x: cx, y: cy, r: BODY_RADIUS }, dt);
+      const len = Math.hypot(res.pushX, res.pushY);
+      if (len > 0) {
+        this.playerObj.x += res.pushX;
+        this.playerObj.y += res.pushY;
+        // Kill velocity going into the door so it doesn't build up against it.
+        const nx = res.pushX / len;
+        const ny = res.pushY / len;
+        const into = this.playerBody.velocity.x * nx + this.playerBody.velocity.y * ny;
+        if (into < 0) this.playerBody.velocity.set(this.playerBody.velocity.x - nx * into, this.playerBody.velocity.y - ny * into);
+      }
+      if (res.touched && door.isLocked && time - this.lockedNoticeAt > 2500) {
+        this.lockedNoticeAt = time;
+        this.say('The door is locked.');
+      }
+    }
 
     // Keyboard, else the touch stick; either cancels click-to-walk.
     let move = { x: (k.right.isDown ? 1 : 0) - (k.left.isDown ? 1 : 0), y: (k.down.isDown ? 1 : 0) - (k.up.isDown ? 1 : 0) };
@@ -452,11 +489,6 @@ export class MovementTestScene extends Phaser.Scene {
 
     this.updatePose(dt);
     this.updateHover(pointer.x, pointer.y);
-    this.view.update(cx, cy, this.motor.facing, this.pose);
-    this.drawLockRing(time);
-
-    this.rig.update(dt);
-    this.cameras.main.setZoom(this.rig.rendererZoom(this.scale.width, this.scale.height, PX_PER_METRE));
 
     this.hudTimer -= dt;
     if (this.hudTimer <= 0) {
@@ -470,6 +502,24 @@ export class MovementTestScene extends Phaser.Scene {
         locked: this.lockTarget !== null,
       });
     }
+  }
+
+  /** After physics: draw the character where the body actually is, then frame it. */
+  private lateUpdate(time: number, deltaMs: number): void {
+    const dt = Math.min(deltaMs / 1000, 0.05);
+    const x = this.playerObj.x;
+    const y = this.playerObj.y;
+    this.view.update(x, y, this.motor.facing, this.pose);
+    this.drawLockRing(time);
+
+    this.rig.update(dt);
+    const cam = this.cameras.main;
+    cam.setZoom(this.rig.rendererZoom(this.scale.width, this.scale.height, PX_PER_METRE));
+    if (!this.cameraFocus) this.cameraFocus = { x, y };
+    const k = 1 - Math.exp(-CAMERA_FOLLOW * dt);
+    this.cameraFocus.x += (x - this.cameraFocus.x) * k;
+    this.cameraFocus.y += (y - this.cameraFocus.y) * k;
+    cam.centerOn(this.cameraFocus.x, this.cameraFocus.y);
   }
 
   /** Follow the planned route to the click target; give up if something stops us making progress. */

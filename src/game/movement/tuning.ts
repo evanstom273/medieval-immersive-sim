@@ -26,9 +26,9 @@ export interface MovementTuning {
 }
 
 export const DEFAULT_TUNING: Readonly<MovementTuning> = {
-  crouchSpeed: 0.9,
-  walkSpeed: 1.7,
-  sprintSpeed: 4.4,
+  crouchSpeed: 0.8,
+  walkSpeed: 1.4,
+  sprintSpeed: 3.6,
   acceleration: 14,
   deceleration: 18,
   turnRateExplore: 600,

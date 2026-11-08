@@ -68,6 +68,15 @@ When an item changes status, move it and add a dated note rather than silently r
 - **Combat mode:** toggled with a key (currently R). Out of combat, clicking uses things; in combat, LMB = right hand, RMB = left hand.
 - **Third "other" action:** not yet; hands only for now.
 - **Interact:** click the object. If out of reach, the character walks there (pathfinding) and uses it.
+- **2026-11-08 19:32 UTC — lock-on on desktop too:** F or middle click toggles it in combat. While locked you face the target instead of the mouse.
+
+### Doors are physical
+*2026-11-08 19:32 UTC*
+
+- Walk into a door to push it open. No clicking needed. It swings away from whichever side you push from, carries a little momentum, and stays where it's left.
+- **Clicking a door locks/unlocks it** for now. Eventually clicking opens a menu of other interactions.
+- A locked door won't move ("The door is locked."). You have to shut a door before you can lock it.
+- Pathfinding treats unlocked doors as passable (you'll push through) and locked doors as walls.
 
 ### Touch controls
 *2026-11-08 19:23 UTC*
@@ -177,11 +186,13 @@ When an item changes status, move it and add a dated note rather than silently r
 *2026-11-08 19:11 UTC*
 
 - **World scale:** `PX_PER_METRE = 64` is a placeholder so movement can be tuned in m/s. The real figure depends on the art scale.
-- **Default speeds:** sneak 0.9, walk 1.7, sprint 4.4 m/s; accel 14, decel 18 m/s². Placeholders, live-tunable in the prototype's debug panel.
+- **Default speeds:** sneak 0.8, walk 1.4, sprint 3.6 m/s; accel 14, decel 18 m/s². Placeholders, live-tunable in the prototype's debug panel. *(2026-11-08 19:32 UTC: lowered from 0.9 / 1.7 / 4.4 — felt too fast.)*
 - **Combat key** is R for now.
 - **Click-to-walk pathfinding:** 8 px grid A* with obstacle inflation and string-pulling, in pure TypeScript (`src/game/navigation`). Written so NPCs can use it later. Not yet decided whether it scales to whole towns or needs a navmesh / hierarchical approach.
 - **Reach checks** ignore line of sight for now (you could, in principle, use something through a thin wall).
 - **Character and objects** are placeholder geometry, not final art.
+- **Door placeholders (2026-11-08 19:32 UTC):** doors swing both ways up to 90° (real medieval doors usually swing one way). Anyone can lock any door: no keys, ownership or lockpicking yet. Doors don't collide with furniture while swinging. No door weight or resistance yet; a first attempt at faking weight shoved the player into the door frame.
+- **Rendering smoothness (2026-11-08 19:32 UTC):** physics steps every rendered frame (not fixed 60 Hz), and the character and camera update after physics with frame-rate-independent camera smoothing. This fixed a blur/judder while moving, most visible on high-refresh screens.
 
 ### Camera and zoom specifics
 *2026-11-08 19:23 UTC*

@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { closestOnLeaf, resolveDoorContact, stepDoor, type Circle, type ContactResult, type DoorGeom, type DoorSwing } from './doorPhysics';
 
 /**
  * PLACEHOLDER interactable objects for the movement test scene.
@@ -7,8 +8,6 @@ import Phaser from 'phaser';
 
 export interface InteractContext {
   say(message: string): void;
-  /** Is the given circle (e.g. the player's body) overlapping this rectangle in world space? */
-  playerBlocks(rect: Phaser.Geom.Rectangle): boolean;
 }
 
 export interface Interactable {
@@ -28,103 +27,103 @@ function clampToRect(r: Phaser.Geom.Rectangle, x: number, y: number): Phaser.Mat
   return new Phaser.Math.Vector2(Phaser.Math.Clamp(x, r.left, r.right), Phaser.Math.Clamp(y, r.top, r.bottom));
 }
 
-/** A hinged door. The leaf swings 90° about the hinge; collision is removed while open. */
+/**
+ * A hinged door you push open by walking into it. Swings either way, keeps a
+ * little momentum, and stays where it's left. Clicking it locks/unlocks
+ * (placeholder until there's an interaction menu); a locked door won't budge.
+ */
 export class Door implements Interactable {
   readonly name = 'door';
-  private open = false;
+  private locked = false;
   private highlighted = false;
+  private swing: DoorSwing = { angle: 0, angVel: 0 };
   private readonly leaf: Phaser.GameObjects.Graphics;
-  private readonly blocker: Phaser.GameObjects.Rectangle;
-  private readonly closedRect: Phaser.Geom.Rectangle;
+  readonly geom: DoorGeom;
 
   /**
-   * @param hingeX,hingeY  hinge position (left end of the leaf when closed)
+   * @param hingeX,hingeY  hinge position
    * @param length         leaf length (the doorway width)
    * @param thickness      leaf thickness
-   * @param openAngle      rotation when open (radians), e.g. -π/2 to swing "up"
+   * @param baseAngle      leaf direction when closed (radians)
    */
-  constructor(
-    private readonly scene: Phaser.Scene,
-    staticGroup: Phaser.Physics.Arcade.StaticGroup,
-    private readonly hingeX: number,
-    private readonly hingeY: number,
-    private readonly length: number,
-    private readonly thickness: number,
-    private readonly openAngle: number,
-  ) {
-    this.closedRect = new Phaser.Geom.Rectangle(hingeX, hingeY - thickness / 2, length, thickness);
-    this.blocker = scene.add.rectangle(this.closedRect.centerX, this.closedRect.centerY, length, thickness);
-    this.blocker.setVisible(false);
-    scene.physics.add.existing(this.blocker, true);
-    staticGroup.add(this.blocker);
-
+  constructor(scene: Phaser.Scene, hingeX: number, hingeY: number, length: number, thickness: number, baseAngle = 0) {
+    this.geom = { hingeX, hingeY, baseAngle, length, thickness, maxAngle: Math.PI / 2 };
     this.leaf = scene.add.graphics({ x: hingeX, y: hingeY }).setDepth(12);
     this.draw();
   }
 
+  get isLocked(): boolean {
+    return this.locked;
+  }
+
+  /** Coast the swing. Call once per frame. */
+  update(dt: number): void {
+    this.swing = stepDoor(this.geom, this.swing, dt);
+    this.leaf.setRotation(this.geom.baseAngle + this.swing.angle);
+  }
+
+  /** Let a circular body push the door. Returns how far to move the body to clear it. */
+  pushBy(body: Circle, dt: number): ContactResult {
+    const res = resolveDoorContact(this.geom, this.swing, body, this.locked, dt);
+    this.swing = res.swing;
+    this.leaf.setRotation(this.geom.baseAngle + this.swing.angle);
+    return res;
+  }
+
+  /** For pathfinding: a locked door is a wall; an unlocked one can be pushed through. */
+  navObstacle(): { kind: 'rect'; x: number; y: number; w: number; h: number } | null {
+    if (!this.locked) return null;
+    const { hingeX, hingeY, length, thickness, baseAngle } = this.geom;
+    const ex = hingeX + Math.cos(baseAngle) * length;
+    const ey = hingeY + Math.sin(baseAngle) * length;
+    const x = Math.min(hingeX, ex) - thickness / 2;
+    const y = Math.min(hingeY, ey) - thickness / 2;
+    return { kind: 'rect', x, y, w: Math.abs(ex - hingeX) + thickness, h: Math.abs(ey - hingeY) + thickness };
+  }
+
   private draw(): void {
     const g = this.leaf;
+    const { length: len, thickness: t } = this.geom;
     g.clear();
     g.fillStyle(0x6b4a2b, 1);
     g.lineStyle(this.highlighted ? 3 : 2, this.highlighted ? HIGHLIGHT : OUTLINE, 1);
-    g.fillRect(0, -this.thickness / 2, this.length, this.thickness);
-    g.strokeRect(0, -this.thickness / 2, this.length, this.thickness);
+    g.fillRect(0, -t / 2, len, t);
+    g.strokeRect(0, -t / 2, len, t);
     // Planks.
     g.lineStyle(1, 0x4a321c, 1);
-    for (let x = 16; x < this.length; x += 16) g.lineBetween(x, -this.thickness / 2 + 1, x, this.thickness / 2 - 1);
+    for (let x = 16; x < len; x += 16) g.lineBetween(x, -t / 2 + 1, x, t / 2 - 1);
     // Hinge pin.
     g.fillStyle(0x3a3a3a, 1);
     g.fillCircle(0, 0, 3);
-  }
-
-  /** Transform a world point into the leaf's local frame. */
-  private toLocal(x: number, y: number): Phaser.Math.Vector2 {
-    const a = -this.leaf.rotation;
-    const dx = x - this.hingeX;
-    const dy = y - this.hingeY;
-    return new Phaser.Math.Vector2(dx * Math.cos(a) - dy * Math.sin(a), dx * Math.sin(a) + dy * Math.cos(a));
-  }
-
-  private localRect(): Phaser.Geom.Rectangle {
-    return new Phaser.Geom.Rectangle(0, -this.thickness / 2, this.length, this.thickness);
+    // Iron bolt across the latch end when locked.
+    if (this.locked) {
+      g.fillStyle(0x2e2e2e, 1);
+      g.lineStyle(1, 0x111111, 1);
+      g.fillRect(len - 14, -t / 2 - 3, 10, t + 6);
+      g.strokeRect(len - 14, -t / 2 - 3, 10, t + 6);
+    }
   }
 
   hitTest(x: number, y: number): boolean {
-    const p = this.toLocal(x, y);
-    const r = this.localRect();
-    Phaser.Geom.Rectangle.Inflate(r, 4, 6);
-    return r.contains(p.x, p.y);
+    const p = closestOnLeaf(this.geom, this.swing, x, y);
+    return Math.hypot(x - p.x, y - p.y) <= this.geom.thickness / 2 + 6;
   }
 
   closestPoint(x: number, y: number): Phaser.Math.Vector2 {
-    const local = clampToRect(this.localRect(), this.toLocal(x, y).x, this.toLocal(x, y).y);
-    const a = this.leaf.rotation;
-    return new Phaser.Math.Vector2(
-      this.hingeX + local.x * Math.cos(a) - local.y * Math.sin(a),
-      this.hingeY + local.x * Math.sin(a) + local.y * Math.cos(a),
-    );
+    const p = closestOnLeaf(this.geom, this.swing, x, y);
+    return new Phaser.Math.Vector2(p.x, p.y);
   }
 
   interact(ctx: InteractContext): void {
-    if (this.open) {
-      if (ctx.playerBlocks(this.closedRect)) {
-        ctx.say("You can't close the door while you're standing in the doorway.");
-        return;
-      }
-      this.open = false;
-      (this.blocker.body as Phaser.Physics.Arcade.StaticBody).enable = true;
-      ctx.say('You close the door.');
-    } else {
-      this.open = true;
-      (this.blocker.body as Phaser.Physics.Arcade.StaticBody).enable = false;
-      ctx.say('You open the door.');
+    if (!this.locked && Math.abs(this.swing.angle) > 0.08) {
+      ctx.say('The door needs to be shut before you can lock it.');
+      return;
     }
-    this.scene.tweens.add({
-      targets: this.leaf,
-      rotation: this.open ? this.openAngle : 0,
-      duration: 260,
-      ease: 'Quad.easeOut',
-    });
+    this.locked = !this.locked;
+    if (this.locked) this.swing = { angle: 0, angVel: 0 };
+    this.leaf.setRotation(this.geom.baseAngle + this.swing.angle);
+    ctx.say(this.locked ? 'You lock the door.' : 'You unlock the door.');
+    this.draw();
   }
 
   setHighlight(on: boolean): void {
