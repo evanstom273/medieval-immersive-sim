@@ -394,8 +394,8 @@ function smallTextures(scene: Phaser.Scene, p: Projection): { hand: string; shad
 export class CharacterView {
   /** Draw at this depth instead of by ground position (e.g. lying on top of a bed). */
   depthOverride: number | null = null;
-  /** Ground ring under the character you control. */
-  private readonly ring: Phaser.GameObjects.Graphics;
+  /** Ground ring under the character you control (made the first time it's needed: most people never are). */
+  private ring: Phaser.GameObjects.Graphics | null = null;
   private ringShown = false;
   private readonly root: Phaser.GameObjects.Container;
   private readonly shadow: Phaser.GameObjects.Image;
@@ -412,7 +412,6 @@ export class CharacterView {
     _y: number,
     private readonly palette: Palette,
   ) {
-    this.ring = scene.add.graphics().setDepth(3);
     const img = () => new Phaser.GameObjects.Image(scene, 0, 0, '__WHITE');
     this.shadow = img();
     this.parts = Object.fromEntries(LAYERS.map((l) => [l, img()])) as Record<Layer, Phaser.GameObjects.Image>;
@@ -438,10 +437,11 @@ export class CharacterView {
 
   update(x: number, y: number, facing: number, pose: CharacterPose, p: Projection): ViewResult {
     if (pose.controlled || this.ringShown) {
-      this.ring.clear();
+      const ring = (this.ring ??= this.scene.add.graphics().setDepth(3));
+      ring.clear();
       if (pose.controlled) {
-        this.ring.lineStyle(2, 0xffffff, 0.55);
-        ringOnGround(this.ring, p, x, y, 25);
+        ring.lineStyle(2, 0xffffff, 0.55);
+        ringOnGround(ring, p, x, y, 25);
       }
       this.ringShown = pose.controlled;
     }
@@ -554,13 +554,13 @@ export class CharacterView {
   hide(): void {
     this.root.setVisible(false);
     if (this.ringShown) {
-      this.ring.clear();
+      this.ring?.clear();
       this.ringShown = false;
     }
   }
 
   destroy(): void {
     this.root.destroy();
-    this.ring.destroy();
+    this.ring?.destroy();
   }
 }

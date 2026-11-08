@@ -10,7 +10,13 @@ import type { NavGrid, NavLink, Point, Waypoint } from './NavGrid';
 export type MoveGoal =
   | { kind: 'point'; x: number; y: number }
   /** Get within `reach` of something (e.g. to use it). */
-  | { kind: 'reach'; closest: (from: Point) => Point; reach: number };
+  | {
+      kind: 'reach';
+      closest: (from: Point) => Point;
+      reach: number;
+      /** Optional fast distance from a point to the target (no temporary objects); used by the route search if given. */
+      distance?: (from: Point) => number;
+    };
 
 /** Trips longer than this run; shorter ones walk. */
 export const RUN_DISTANCE = 6 * PX_PER_METRE;
@@ -97,12 +103,16 @@ export class MoveOrder {
       return path;
     }
     const aim = goal.closest(from);
+    const near = goal.reach * 0.85;
+    const distance = goal.distance;
     return nav.findPath(
       from,
-      (p) => {
-        const q = goal.closest(p);
-        return Math.hypot(q.x - p.x, q.y - p.y) <= goal.reach * 0.85;
-      },
+      distance
+        ? (p) => distance(p) <= near
+        : (p) => {
+            const q = goal.closest(p);
+            return Math.hypot(q.x - p.x, q.y - p.y) <= near;
+          },
       aim,
       60000,
       useLinks,

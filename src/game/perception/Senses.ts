@@ -73,6 +73,12 @@ export class Senses {
   private lastTick = new Map<string, number>();
   private grid = new SpatialHash<Character>(SIGHT.range);
   private nearby: Character[] = [];
+  private listeners: Character[] = [];
+  private readonly noiseAt = { x: 0, y: 0 };
+  private readonly listenerAt = { x: 0, y: 0 };
+  /** Keep every footstep in recentNoises (only the debug overlay needs them). */
+  trackNoises = false;
+  private gridBuilt = false;
   private pruneAt = 0;
 
   constructor(private readonly host: SensesHost) {
@@ -141,7 +147,13 @@ export class Senses {
   update(dt: number): void {
     const now = this.host.now;
     this.scents.update(dt);
-    this.recentNoises = this.recentNoises.filter((n) => now - n.at < 700);
+    // Trim old noises in place (no new array every frame).
+    let w = 0;
+    for (const n of this.recentNoises) if (now - n.at < 700) this.recentNoises[w++] = n;
+    this.recentNoises.length = w;
+    // Who's where, for "who's near?" questions this frame (sight ticks and noises).
+    this.grid.build(this.host.characters);
+    this.gridBuilt = true;
 
     // Everyone moving leaves a faint trail; sneaking leaves a fainter one.
     for (const c of this.host.characters) {
@@ -162,7 +174,6 @@ export class Senses {
     const count = Math.min(all.length, Math.floor(this.cursorAcc));
     this.cursorAcc -= count;
     if (count === 0) return;
-    this.grid.build(all);
 
     for (let n = 0; n < count; n++) {
       const o = all[this.cursor++ % all.length];
@@ -229,12 +240,28 @@ export class Senses {
   noise(kind: NoiseKind, x: number, y: number, source?: Character, loudness = LOUDNESS[kind]): void {
     if (loudness <= 0) return;
     const now = this.host.now;
-    this.recentNoises.push({ kind, x, y, loudness, at: now });
-    for (const o of this.host.characters) {
+    // Only the debug overlay looks at these; footsteps are too many to keep for it unless it's on.
+    if (this.trackNoises || kind !== 'footsteps') this.recentNoises.push({ kind, x, y, loudness, at: now });
+    const reach = loudness * M;
+    if (!this.gridBuilt) {
+      this.grid.build(this.host.characters);
+      this.gridBuilt = true;
+    }
+    // Only people near enough could hear it (the grid is a frame old at most: allow a metre).
+    const listeners = this.grid.query(x, y, reach + M, this.listeners);
+    const at = this.noiseAt;
+    at.x = x;
+    at.y = y;
+    for (const o of listeners) {
       if (o === source || o.status === 'ko') continue;
-      const dist = Math.hypot(x - o.x, y - o.y);
-      if (dist >= loudness * M) continue; // out of earshot even with no walls: skip counting walls
-      const aud = audibility(dist, loudness, this.host.wallsBetween({ x: o.x, y: o.y }, { x, y }));
+      const dx = x - o.x;
+      const dy = y - o.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist >= reach) continue; // out of earshot even with no walls: skip counting walls
+      const from = this.listenerAt;
+      from.x = o.x;
+      from.y = o.y;
+      const aud = audibility(dist, loudness, this.host.wallsBetween(from, at));
       if (aud <= 0) continue;
       // Already watching whoever made it: nothing new learned by ear.
       if (source && this.awarenessOf(o, source) >= 1 && this.visibilityTo(o, source) > 0) continue;

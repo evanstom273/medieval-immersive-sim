@@ -78,8 +78,26 @@ export function speedOf(state: MotorState): number {
  * direction changes at speed carve a slightly wider line rather than snapping.
  */
 export function stepMotor(state: MotorState, input: MotorInput, t: MovementTuning, dt: number): MotorState {
-  const dir = normaliseMove(input.move);
-  const hasInput = dir.x !== 0 || dir.y !== 0;
+  return stepMotorInto({ ...state }, input, t, dt);
+}
+
+/**
+ * The same as stepMotor, but updates `state` in place and returns it: used every frame for
+ * every person, where making a new object each time adds up to a lot of garbage.
+ */
+export function stepMotorInto(state: MotorState, input: MotorInput, t: MovementTuning, dt: number): MotorState {
+  // Normalise the move input (inline: no temporary objects).
+  let mx = input.move.x;
+  let my = input.move.y;
+  const len = Math.sqrt(mx * mx + my * my);
+  if (len <= 1e-6) {
+    mx = 0;
+    my = 0;
+  } else if (len > 1) {
+    mx /= len;
+    my /= len;
+  }
+  const hasInput = mx !== 0 || my !== 0;
 
   // Sprinting stands you up out of a crouch.
   const crouched = state.crouched && !(input.sprint && hasInput);
@@ -88,13 +106,13 @@ export function stepMotor(state: MotorState, input: MotorInput, t: MovementTunin
   const speedMs = gait === 'crouch' ? t.crouchSpeed : gait === 'sprint' ? t.sprintSpeed : gait === 'walk' ? t.walkSpeed : 0;
   const targetSpeed = speedMs * PX_PER_METRE;
 
-  const desiredVx = dir.x * targetSpeed;
-  const desiredVy = dir.y * targetSpeed;
+  const desiredVx = mx * targetSpeed;
+  const desiredVy = my * targetSpeed;
 
   const rate = (hasInput ? t.acceleration : t.deceleration) * PX_PER_METRE * dt;
   const dx = desiredVx - state.vx;
   const dy = desiredVy - state.vy;
-  const dist = Math.hypot(dx, dy);
+  const dist = Math.sqrt(dx * dx + dy * dy);
   let vx: number;
   let vy: number;
   if (dist <= rate || dist === 0) {
@@ -110,10 +128,15 @@ export function stepMotor(state: MotorState, input: MotorInput, t: MovementTunin
   if (input.aimAngle !== null) {
     facing = turnToward(facing, input.aimAngle, ((t.turnRateCombat * Math.PI) / 180) * dt);
   } else if (hasInput) {
-    facing = turnToward(facing, Math.atan2(dir.y, dir.x), ((t.turnRateExplore * Math.PI) / 180) * dt);
+    facing = turnToward(facing, Math.atan2(my, mx), ((t.turnRateExplore * Math.PI) / 180) * dt);
   } else if (input.lookAngle !== null) {
     facing = turnToward(facing, input.lookAngle, ((t.turnRateExplore * Math.PI) / 180) * dt);
   }
 
-  return { vx, vy, facing, crouched, gait };
+  state.vx = vx;
+  state.vy = vy;
+  state.facing = facing;
+  state.crouched = crouched;
+  state.gait = gait;
+  return state;
 }

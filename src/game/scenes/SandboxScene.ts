@@ -23,7 +23,7 @@ import type { World } from '../characters/Brain';
 import { BODY_RADIUS, Character, type CharacterDef, type Targetable } from '../characters/Character';
 import { HIT_OPINION, MAX_HEALTH, PUNCH_DAMAGE, TEMPERAMENTS } from '../combat/combat';
 import { inputSourceChannel, touchCommands, touchStick, type InputSource, type TouchCommand } from '../input/touchInput';
-import { speedOf, stepMotor, toggleCrouch, type MotorInput } from '../movement/motor';
+import { speedOf, stepMotorInto, toggleCrouch, type MotorInput } from '../movement/motor';
 import { PX_PER_METRE, tuning } from '../movement/tuning';
 import { MoveOrder } from '../navigation/MoveOrder';
 import { resistance, separate } from '../movement/shove';
@@ -76,6 +76,9 @@ const YIELD_MS = 25000;
 const KO_MS = 15000;
 
 const KEY = Phaser.Input.Keyboard.KeyCodes;
+/** Shared "not moving" values (read-only), so standing still allocates nothing. */
+const ZERO: Point = Object.freeze({ x: 0, y: 0 }) as Point;
+const NO_MOVE = Object.freeze({ move: ZERO, run: false }) as { move: Point; run: boolean };
 
 const CAST: CharacterDef[] = [
   { id: 'edric', name: 'Edric', temperament: 'bold', palette: { tunic: 0x8a3b2e, hair: 0x3b2416 }, x: 760, y: 900 },
@@ -154,7 +157,11 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
   private objectGfx = new Map<Interactable, { g: Phaser.GameObjects.Graphics; bounds: Bounds }>();
   private charScreen = new Map<Character, ViewResult>();
   private hitNoticeAt = -Infinity;
-  /** Everyone's physics objects (the wall collider holds this array, so people added later collide too). */
+  /**
+   * Physics objects that collide with walls this frame: people in full detail. (The wall collider
+   * holds this array; it's refilled in place each frame. Off-screen people follow planned routes,
+   * which already keep clear of walls, so they skip the collision checks.)
+   */
   private peopleObjs: Phaser.GameObjects.Arc[] = [];
   private hudTimer = 0;
   private rosterTimer = 0;
@@ -164,6 +171,8 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
   private detailBox: { x0: number; y0: number; x1: number; y1: number } | null = null;
   private bumpGrid = new SpatialHash<Character>(BODY_RADIUS * 4);
   private bumpNear: Character[] = [];
+  /** Reused every frame for every person's motor input (no garbage). */
+  private readonly motorInput: MotorInput = { move: { x: 0, y: 0 }, sprint: false, aimAngle: null, lookAngle: null };
   /** Simulation time (ms). Runs with the simulation: stops when paused, speeds up while resting. */
   private simMs = 0;
   readonly clock = new GameClock();
@@ -192,6 +201,9 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
 
   create(): void {
     this.physics.world.setBounds(0, 0, this.size.w, this.size.h);
+    // Arcade rebuilds a tree of all moving bodies every frame for body-vs-body collisions; people
+    // don't collide through Arcade (see separatePeople), so skip it. (Walls use the static tree.)
+    this.physics.world.useTree = false;
     this.cameras.main.setBackgroundColor('#1c1b19');
 
     this.scenery = new Scenery(this, this.size.w, this.size.h);
@@ -1069,11 +1081,16 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
   }
 
   orderToCharacter(c: Character, target: Character, reach: number): boolean {
-    return this.orderToReach(c, () => target.pos(), reach, null);
+    const distance = (p: Point) => {
+      const dx = p.x - target.x;
+      const dy = p.y - target.y;
+      return Math.sqrt(dx * dx + dy * dy);
+    };
+    return this.orderToReach(c, () => target.pos(), reach, null, distance);
   }
 
-  private orderToReach(c: Character, closest: (from: Point) => Point, reach: number, onArrive: (() => void) | null): boolean {
-    const order = this.planOrder(c, { kind: 'reach', closest, reach });
+  private orderToReach(c: Character, closest: (from: Point) => Point, reach: number, onArrive: (() => void) | null, distance?: (from: Point) => number): boolean {
+    const order = this.planOrder(c, { kind: 'reach', closest, reach, distance });
     if (!order) return false;
     c.order = order;
     c.onArrive = onArrive;
@@ -1302,7 +1319,6 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
   spawnPerson(def: CharacterDef): Character {
     const c = new Character(this, def);
     this.characters.push(c);
-    this.peopleObjs.push(c.obj);
     this.senses.addCharacter(c);
     c.brain.reset(this.now + this.rng() * 1500);
     return c;
@@ -1336,6 +1352,10 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
   private frameUpdate(_time: number, deltaMs: number): void {
     const dt = Math.min(deltaMs / 1000, 0.05);
     this.updateDetailBox();
+    // Wall collisions for people in full detail only (refilled in place: no new array).
+    this.peopleObjs.length = 0;
+    for (const c of this.characters) if (this.fullDetail(c)) this.peopleObjs.push(c.obj);
+    this.senses.trackNoises = this.sensesOverlay;
     const k = this.keys;
     const a = this.active;
 
@@ -1460,7 +1480,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
       }
       this.updateSocial(c);
 
-      let move = { x: 0, y: 0 };
+      let move: Point = ZERO;
       let run = false;
       if (c.controlled && hasManual) move = manual;
       else {
@@ -1469,7 +1489,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
         run = o.run;
       }
       const held = !c.controlled && c.heldUntil > this.now;
-      if (held || c.status === 'yielded') move = { x: 0, y: 0 };
+      if (held || c.status === 'yielded') move = ZERO;
 
       if (c.lockTarget && (!c.lockTarget.isTargetable() || Math.hypot(c.lockTarget.x - c.x, c.lockTarget.y - c.y) > LOCK_BREAK)) {
         c.lockTarget = null;
@@ -1479,22 +1499,20 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
       if (c.lockTarget) aimAngle = c.angleTo(c.lockTarget);
       else if (c.mode === 'combat' && c.controlled && this.inputSource === 'mouse') aimAngle = c.angleTo(pointer);
       const sprintKey = c.controlled && (k.sprint.isDown || (touchStick.sprint && !c.motor.crouched));
-      const input: MotorInput = {
-        move,
-        // Long point-and-click trips run too, unless sneaking. Only the sprint key breaks a sneak.
-        sprint: sprintKey || (run && !c.motor.crouched),
-        aimAngle,
-        lookAngle: c.look && this.now < c.look.until ? c.look.angle : null,
-      };
+      const input = this.motorInput;
+      input.move = move;
+      // Long point-and-click trips run too, unless sneaking. Only the sprint key breaks a sneak.
+      input.sprint = sprintKey || (run && !c.motor.crouched);
+      input.aimAngle = aimAngle;
+      input.lookAngle = c.look && this.now < c.look.until ? c.look.angle : null;
       // The motor keeps its own velocity. (Reading it back from the physics body made every
       // touch, even a glancing one, wipe out your speed: Arcade zeroes the whole velocity on
       // contact, so you crept along at one frame's acceleration.) Only the part pushing straight
       // into something solid is dropped, so you don't walk on the spot against a wall.
-      let { vx, vy } = c.motor;
       const bl = c.body.blocked;
-      if ((bl.left && vx < 0) || (bl.right && vx > 0)) vx = 0;
-      if ((bl.up && vy < 0) || (bl.down && vy > 0)) vy = 0;
-      c.motor = stepMotor({ ...c.motor, vx, vy }, input, tuning, dt);
+      if ((bl.left && c.motor.vx < 0) || (bl.right && c.motor.vx > 0)) c.motor.vx = 0;
+      if ((bl.up && c.motor.vy < 0) || (bl.down && c.motor.vy > 0)) c.motor.vy = 0;
+      stepMotorInto(c.motor, input, tuning, dt);
       c.body.setVelocity(c.motor.vx + c.knock.x, c.motor.vy + c.knock.y);
       c.appliedKnock = { x: c.knock.x, y: c.knock.y };
       const decay = Math.exp(-12 * dt);
@@ -1688,7 +1706,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
   }
 
   private stepOrder(c: Character, dt: number): { move: Point; run: boolean } {
-    const none = { move: { x: 0, y: 0 }, run: false };
+    const none = NO_MOVE;
     if (!c.order) return none;
     const st = c.order.step(c.pos(), dt);
     if (st.link) {
@@ -2001,6 +2019,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     const view = this.cameras.main.worldView;
     const pad = 3 * M;
     this.scenery.cull({ x0: view.x - pad, y0: view.y - pad, x1: view.right + pad, y1: view.bottom + pad });
+    this.scenery.updateGround({ x0: view.x - pad, y0: view.y - pad, x1: view.right + pad, y1: view.bottom + pad });
     this.scenery.update(dt, { x: a.x, y: a.y }, this.charScreen.get(a)?.bounds ?? null);
     // Doors and windows cut down with their wall.
     for (const door of this.doors) {

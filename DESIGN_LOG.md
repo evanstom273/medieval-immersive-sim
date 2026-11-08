@@ -469,3 +469,11 @@ When an item changes status, move it and add a dated note rather than silently r
 - PLACEHOLDER/known: "near" is camera-based. When the overview zoom exists, zoomed out shows everything, so it'll need a rule like "near the camera's focus" and/or "household always full detail". Smelling blood off screen doesn't happen (it's part of the look-around), but blood is still there to be smelt when someone comes near.
 
 **Perf test field:** now 240 × 160 m (village-sized) with about one crate per 150 m², and people spawn across the whole field. Supporting fixes: route-finding reuses its working memory (it was allocating whole-map arrays per route), bumping uses a local grid instead of every pair, and scenery off camera isn't drawn.
+- *2026-11-08 23:59 UTC: garbage-collection hitches.* Allocation measured with Chrome's sampler at 500 people: about **48 → 19 MB/s** of garbage. Fixes:
+  - **Route-finding:** reuses its queue and tables; the queue no longer allocates on every swap; no new point per searched cell; goals can give a plain distance; no empty list per cell for links.
+  - **Movement:** steps people's motors in place and reuses one input object; standing still shares one "not moving" value.
+  - **Noise:** only nearby listeners are checked (the senses grid). The footstep log is only kept while the debug overlay is on.
+  - **Physics:** wall collisions only for people in full detail (as agreed for the middle tier: off-screen people walk planned routes without physics); Arcade's per-frame tree of all moving bodies is off (people don't collide through Arcade).
+  - **Drawing:** only the ground near the camera is drawn; the "controlled" ring is only created for people who are ever controlled.
+  - Checked: nobody ends up inside a crate; the sandbox's waiting, sleeping, waking and senses checks pass.
+- *Pre-existing quirk, noted (not changed):* if you can already see whoever made a noise, you don't "hear" it as news. So a shout from someone you're watching won't interrupt a wait.

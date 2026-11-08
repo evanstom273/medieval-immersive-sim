@@ -60,6 +60,10 @@ export class NavGrid {
   private stampBuf: Int32Array | null = null;
   private closedBuf: Int32Array | null = null;
   private searchId = 0;
+  private readonly heap = new MinHeap();
+  private readonly cameByBuf = new Map<number, NavLink>();
+  /** Scratch point handed to isGoal (not kept by callers). */
+  private readonly probe = { x: 0, y: 0 };
 
   constructor(
     readonly width: number,
@@ -224,15 +228,21 @@ export class NavGrid {
     };
     const isClosed = (i: number) => closedB[i] === id;
     /** The link used to arrive at a cell, if any. */
-    const cameBy = new Map<number, NavLink>();
-    const open = new MinHeap();
+    const cameBy = this.cameByBuf;
+    cameBy.clear();
+    const open = this.heap;
+    open.clear();
     const startI = sr * this.cols + sc;
+    const cols = this.cols;
+    const tx = heuristicTarget.x;
+    const ty = heuristicTarget.y;
     const h = (i: number) => {
-      const p = this.centre(i);
-      const dx = Math.abs(p.x - heuristicTarget.x) / cs;
-      const dy = Math.abs(p.y - heuristicTarget.y) / cs;
+      const c = i % cols;
+      const dx = Math.abs((c + 0.5) * cs - tx) / cs;
+      const dy = Math.abs(((i - c) / cols + 0.5) * cs - ty) / cs;
       return Math.max(dx, dy) + (SQRT2 - 1) * Math.min(dx, dy);
     };
+    const probe = this.probe;
     setG(startI, 0, -1);
     open.push(startI, h(startI));
 
@@ -242,14 +252,21 @@ export class NavGrid {
       const i = open.pop();
       if (isClosed(i)) continue;
       closedB[i] = id;
-      if (isGoal(this.centre(i))) {
+      const ic = i % cols;
+      probe.x = (ic + 0.5) * cs;
+      probe.y = ((i - ic) / cols + 0.5) * cs;
+      if (isGoal(probe)) {
         goalI = i;
         break;
       }
       if (++expanded > maxNodes) break;
       const c = i % this.cols;
       const r = (i - c) / this.cols;
-      for (const [dc, dr, cost] of DIRS) {
+      for (let d = 0; d < DIRS.length; d++) {
+        const dir = DIRS[d];
+        const dc = dir[0];
+        const dr = dir[1];
+        const cost = dir[2];
         const nc = c + dc;
         const nr = r + dr;
         if (this.isBlockedCell(nc, nr)) continue;
@@ -265,7 +282,8 @@ export class NavGrid {
         }
       }
       if (useLinks) {
-        for (const link of this.links.get(i) ?? []) {
+        const links = this.links.get(i);
+        if (links) for (const link of links) {
           const ni = this.cellIndex(link.to);
           if (isClosed(ni)) continue;
           const ng = gOf(i) + Math.hypot(link.to.x - link.from.x, link.to.y - link.from.y) / cs + (link.costMetres * 64) / cs;
@@ -332,6 +350,11 @@ class MinHeap {
   private items: number[] = [];
   private prios: number[] = [];
 
+  clear(): void {
+    this.items.length = 0;
+    this.prios.length = 0;
+  }
+
   get size(): number {
     return this.items.length;
   }
@@ -345,8 +368,12 @@ class MinHeap {
     while (i > 0) {
       const parent = (i - 1) >> 1;
       if (p[parent] <= p[i]) break;
-      [a[i], a[parent]] = [a[parent], a[i]];
-      [p[i], p[parent]] = [p[parent], p[i]];
+      const ta = a[i];
+      a[i] = a[parent];
+      a[parent] = ta;
+      const tp = p[i];
+      p[i] = p[parent];
+      p[parent] = tp;
       i = parent;
     }
   }
@@ -368,8 +395,12 @@ class MinHeap {
         if (l < a.length && p[l] < p[m]) m = l;
         if (r < a.length && p[r] < p[m]) m = r;
         if (m === i) break;
-        [a[i], a[m]] = [a[m], a[i]];
-        [p[i], p[m]] = [p[m], p[i]];
+        const ta = a[i];
+        a[i] = a[m];
+        a[m] = ta;
+        const tp = p[i];
+        p[i] = p[m];
+        p[m] = tp;
         i = m;
       }
     }

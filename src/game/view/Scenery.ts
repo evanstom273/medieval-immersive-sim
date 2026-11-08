@@ -36,6 +36,8 @@ export class Scenery {
   private pieces: Piece[] = [];
   private readonly ground: Phaser.GameObjects.Graphics;
   private proj: Projection | null = null;
+  /** The part of the ground currently drawn (screen space), or null = not drawn yet. */
+  private groundDrawn: Bounds | null = null;
   mode: WallMode = 'cutaway';
 
   constructor(
@@ -54,7 +56,8 @@ export class Scenery {
     this.proj = p;
     for (const d of this.pieces) d.g.destroy();
     this.pieces = [];
-    this.drawGround(p);
+    this.groundDrawn = null;
+    this.ground.clear();
     const floors = this.props.filter((q): q is Extract<StaticProp, { kind: 'floor' }> => q.kind === 'floor');
 
     for (const prop of this.props) {
@@ -117,6 +120,23 @@ export class Scenery {
   }
 
   /**
+   * Keep the ground drawn around the camera. Only the part near the view is drawn (Phaser
+   * re-processes every line of a Graphics object every frame, so a whole village's grid
+   * would cost a lot); it's redrawn, a bit larger than the view, when the view nears its edge.
+   */
+  updateGround(view: Bounds): void {
+    const p = this.proj;
+    if (!p) return;
+    const d = this.groundDrawn;
+    if (d && view.x0 >= d.x0 && view.y0 >= d.y0 && view.x1 <= d.x1 && view.y1 <= d.y1) return;
+    const w = view.x1 - view.x0;
+    const h = view.y1 - view.y0;
+    const region = { x0: view.x0 - w * 0.5, y0: view.y0 - h * 0.5, x1: view.x1 + w * 0.5, y1: view.y1 + h * 0.5 };
+    this.groundDrawn = region;
+    this.drawGround(p, region);
+  }
+
+  /**
    * Hide everything outside the camera's view (screen-space bounds, with a margin).
    * Phaser redraws every Graphics object every frame whether it's on screen or not,
    * so on a big map this is most of the scenery cost.
@@ -175,24 +195,32 @@ export class Scenery {
     g.setDepth(p.upright ? 10 + piece.depthKey / 1000 : 10);
   }
 
-  private drawGround(p: Projection): void {
+  private drawGround(p: Projection, region: Bounds): void {
     const g = this.ground;
     g.clear();
-    flat(g, p, rectPts(0, 0, this.worldW, this.worldH), 0, 0x5d6b45);
+    // The ground area under the region (screen corners back to the ground), clipped to the world.
+    const corners = [p.toGround(region.x0, region.y0), p.toGround(region.x1, region.y0), p.toGround(region.x0, region.y1), p.toGround(region.x1, region.y1)];
+    const gx0 = Math.max(0, Math.min(...corners.map((c) => c.x)));
+    const gx1 = Math.min(this.worldW, Math.max(...corners.map((c) => c.x)));
+    const gy0 = Math.max(0, Math.min(...corners.map((c) => c.y)));
+    const gy1 = Math.min(this.worldH, Math.max(...corners.map((c) => c.y)));
+    if (gx1 <= gx0 || gy1 <= gy0) return;
+    flat(g, p, rectPts(gx0, gy0, gx1 - gx0, gy1 - gy0), 0, 0x5d6b45);
     // 1 m grid, heavier every 5 m.
-    for (let x = 0; x <= this.worldW; x += M) {
-      const a = p.toScreen(x, 0);
-      const b = p.toScreen(x, this.worldH);
+    for (let x = Math.ceil(gx0 / M) * M; x <= gx1; x += M) {
+      const a = p.toScreen(x, gy0);
+      const b = p.toScreen(x, gy1);
       g.lineStyle(1, 0x000000, (x / M) % 5 === 0 ? 0.16 : 0.06);
       g.lineBetween(a.x, a.y, b.x, b.y);
     }
-    for (let y = 0; y <= this.worldH; y += M) {
-      const a = p.toScreen(0, y);
-      const b = p.toScreen(this.worldW, y);
+    for (let y = Math.ceil(gy0 / M) * M; y <= gy1; y += M) {
+      const a = p.toScreen(gx0, y);
+      const b = p.toScreen(gx1, y);
       g.lineStyle(1, 0x000000, (y / M) % 5 === 0 ? 0.16 : 0.06);
       g.lineBetween(a.x, a.y, b.x, b.y);
     }
   }
+
 }
 
 /** Top of a box: its base plus its height. */
