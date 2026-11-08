@@ -25,25 +25,37 @@ export interface ScentMark {
 
 export class ScentField {
   marks: ScentMark[] = [];
+  /** The same marks split by kind, so looking for blood doesn't wade through everyone's trails. */
+  private byKind = new Map<ScentKind, ScentMark[]>();
   private nextId = 1;
 
   add(m: Omit<ScentMark, 'id'>): ScentMark {
     const mark = { ...m, id: this.nextId++ };
     this.marks.push(mark);
+    let list = this.byKind.get(mark.kind);
+    if (!list) this.byKind.set(mark.kind, (list = []));
+    list.push(mark);
     return mark;
   }
 
   update(dt: number): void {
     for (const m of this.marks) m.strength -= m.fade * dt;
-    this.marks = this.marks.filter((m) => m.strength > 0);
+    compact(this.marks);
+    for (const list of this.byKind.values()) compact(list);
   }
 
   /** Marks within `radius` px of (x, y), strongest first. */
   near(x: number, y: number, radius: number, kind?: ScentKind): ScentMark[] {
-    return this.marks
-      .filter((m) => (!kind || m.kind === kind) && Math.hypot(m.x - x, m.y - y) <= radius)
-      .sort((a, b) => b.strength - a.strength);
+    const pool = kind ? (this.byKind.get(kind) ?? []) : this.marks;
+    return pool.filter((m) => Math.hypot(m.x - x, m.y - y) <= radius).sort((a, b) => b.strength - a.strength);
   }
+}
+
+/** Drop faded marks in place (no new array every frame). */
+function compact(list: ScentMark[]): void {
+  let w = 0;
+  for (const m of list) if (m.strength > 0) list[w++] = m;
+  list.length = w;
 }
 
 export type SmellKind = 'smoke' | 'dung';
