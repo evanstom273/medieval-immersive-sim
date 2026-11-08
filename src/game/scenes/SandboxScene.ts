@@ -385,11 +385,34 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
 
     // Registered after Phaser's own listener (Phaser ignores already-prevented events).
     const guard = (e: KeyboardEvent) => {
+      if (!kb.enabled) return; // typing in a text box: leave Ctrl+A etc. alone
       if ((e.ctrlKey || e.metaKey) && ['w', 'a', 's', 'd', 'r', 'f', 'e', '1', '2', '3', '4'].includes(e.key.toLowerCase())) e.preventDefault();
       if (e.key === 'F3' || e.key === 'F4') e.preventDefault();
     };
     window.addEventListener('keydown', guard);
     this.game.events.on(Phaser.Core.Events.BLUR, () => kb.resetKeys());
+
+    // While typing in a text box (e.g. the perf scene's spawn count), the game lets go of the
+    // keyboard: otherwise it swallows the keys it uses (1–4, WASD, Space…) and acts on them.
+    const typingIn = (el: EventTarget | null) => el instanceof HTMLElement && (el instanceof HTMLTextAreaElement || el.isContentEditable || (el instanceof HTMLInputElement && !['range', 'checkbox', 'radio', 'button', 'submit'].includes(el.type)));
+    const onFocusIn = (e: FocusEvent) => {
+      if (!typingIn(e.target)) return;
+      kb.enabled = false;
+      kb.disableGlobalCapture();
+      kb.resetKeys();
+    };
+    const onFocusOut = (e: FocusEvent) => {
+      if (!typingIn(e.target)) return;
+      kb.enabled = true;
+      kb.enableGlobalCapture();
+    };
+    document.addEventListener('focusin', onFocusIn);
+    document.addEventListener('focusout', onFocusOut);
+    // Clicking or tapping the game takes focus off the text box (the canvas eats the click, so it wouldn't on its own).
+    const onCanvasDown = () => {
+      if (typingIn(document.activeElement)) (document.activeElement as HTMLElement).blur();
+    };
+    this.game.canvas.addEventListener('pointerdown', onCanvasDown);
     this.input.mouse?.disableContextMenu();
     this.input.on(Phaser.Input.Events.POINTER_DOWN, (p: Phaser.Input.Pointer) => this.onPointerDown(p));
 
@@ -413,6 +436,9 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     ];
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       window.removeEventListener('keydown', guard);
+      document.removeEventListener('focusin', onFocusIn);
+      document.removeEventListener('focusout', onFocusOut);
+      this.game.canvas.removeEventListener('pointerdown', onCanvasDown);
       canvas.removeEventListener('wheel', onWheel);
       offs.forEach((off) => off());
     });
@@ -1228,6 +1254,31 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     this.senses.addCharacter(c);
     c.brain.reset(this.now + this.rng() * 1500);
     return c;
+  }
+
+  /** Take someone out of the world (e.g. the performance test lowering the headcount). Not the one you control. */
+  removePerson(c: Character): void {
+    if (c === this.active) return;
+    const i = this.characters.indexOf(c);
+    if (i < 0) return;
+    this.characters.splice(i, 1);
+    const j = this.peopleObjs.indexOf(c.obj);
+    if (j >= 0) this.peopleObjs.splice(j, 1);
+    // Anyone dealing with them stops.
+    for (const o of this.characters) {
+      if (o.lockTarget === c) o.lockTarget = null;
+      if (o.social?.target === c) o.social = null;
+      const st = o.brain.state as { foe?: Character; from?: Character; subject?: Character; other?: Character };
+      if (st.foe === c || st.from === c || st.subject === c || st.other === c) o.brain.reset(this.now);
+    }
+    if (this.hoveredChar === c) this.clearHover();
+    if (this.menu?.kind === 'character' && this.menu.target === c) this.closeMenu();
+    this.senses.removeCharacter(c);
+    this.charScreen.delete(c);
+    this.footstepTimer.delete(c.id);
+    c.view.destroy();
+    c.overhead.destroy();
+    c.obj.destroy();
   }
 
   private frameUpdate(_time: number, deltaMs: number): void {

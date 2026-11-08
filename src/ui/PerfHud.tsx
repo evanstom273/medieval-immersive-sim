@@ -129,7 +129,7 @@ export function PerfHud() {
       )}
 
       <div className="mt-3 font-sans">
-        <div className="text-white/50">Spawn people</div>
+        <div className="text-white/50">People: add, or set the total (you included)</div>
         <div className="mt-1 flex flex-wrap gap-1">
           {SPAWNS.map((n) => (
             <button key={n} className="rounded-full bg-white/10 px-2.5 py-1 hover:bg-white/20" onClick={() => perfCommands.emit({ kind: 'spawn', count: n })}>
@@ -142,18 +142,23 @@ export function PerfHud() {
           onSubmit={(e) => {
             e.preventDefault();
             const n = Math.floor(Number(custom));
-            if (n > 0) perfCommands.emit({ kind: 'spawn', count: Math.min(n, 5000) });
+            if (n >= 1) perfCommands.emit({ kind: 'setPeople', total: Math.min(n, 5000) });
+            // Hand the keyboard back to the game.
+            (document.activeElement as HTMLElement | null)?.blur();
           }}
         >
           <input
             type="number"
             min={1}
             max={5000}
+            aria-label="Total people"
             value={custom}
             onChange={(e) => setCustom(e.target.value)}
             className="w-20 rounded-full bg-white/10 px-2.5 py-1 text-white outline-none focus:ring-1 focus:ring-amber-300"
           />
-          <button className="rounded-full bg-white/10 px-2.5 py-1 hover:bg-white/20">Spawn</button>
+          <button className="rounded-full bg-white/10 px-2.5 py-1 hover:bg-white/20" title="Set the total number of people (you included): adds or removes people to match">
+            Set total
+          </button>
           <a className="ml-auto rounded-full px-2.5 py-1 text-white/50 hover:bg-white/10" href="?scene=perf" title="Reload the scene with nobody but you">
             Reset
           </a>

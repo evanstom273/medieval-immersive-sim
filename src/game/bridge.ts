@@ -152,7 +152,7 @@ export const restDialogChannel = new Channel<RestDialogState | null>();
 // ------------------------------------------------------------------ performance test scene
 
 /** UI → perf scene. */
-export type PerfCommand = { kind: 'spawn'; count: number } | { kind: 'startTest' } | { kind: 'cancelTest' };
+export type PerfCommand = { kind: 'spawn'; count: number } | { kind: 'setPeople'; total: number } | { kind: 'startTest' } | { kind: 'cancelTest' };
 export const perfCommands = new Channel<PerfCommand>();
 
 /** Perf scene → UI, a few times a second: live numbers over the last second. */

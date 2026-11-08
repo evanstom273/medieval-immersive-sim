@@ -82,6 +82,13 @@ export class PerfScene extends SandboxScene {
       case 'spawn':
         this.spawn(c.count);
         break;
+      case 'setPeople': {
+        // Total headcount, you included: spawn the difference, or remove the most recently spawned.
+        const total = Math.max(1, Math.floor(c.total));
+        if (total > this.characters.length) this.spawn(total - this.characters.length);
+        else while (this.characters.length > total) this.removePerson(this.characters[this.characters.length - 1]);
+        break;
+      }
       case 'startTest':
         profiler.startRecording();
         this.testEndsAt = performance.now() + TEST_SECONDS * 1000;

@@ -66,6 +66,16 @@ export class Senses {
     for (const c of host.characters) this.memories.set(c.id, new Memories());
   }
 
+  /** Someone left the world: forget everything keyed by them. */
+  removeCharacter(c: Character): void {
+    this.memories.delete(c.id);
+    for (const map of [this.awareness, this.noticedAt, this.lastPresence] as Map<string, number>[]) {
+      for (const k of [...map.keys()]) if (k.startsWith(`${c.id}>`) || k.endsWith(`>${c.id}`)) map.delete(k);
+    }
+    this.smelledMarks.delete(c.id);
+    this.trailTimer.delete(c.id);
+  }
+
   /** Someone new arrived (e.g. spawned in). */
   addCharacter(c: Character): void {
     if (!this.memories.has(c.id)) this.memories.set(c.id, new Memories());
