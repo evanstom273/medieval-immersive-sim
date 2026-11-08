@@ -163,7 +163,10 @@ export class CharacterView {
     const tunic = flash ? 0xffffff : pose.state === 'yielded' ? shade(this.palette.tunic, 0.82) : this.palette.tunic;
 
     // Shadow on the ground.
-    if (pose.state !== 'ko' && !pose.asleep) flat(g, p, ellipsePts(x, y, 0.3 * M, 0.3 * M, 0), 0, 0x000000, 0.2);
+    // A soft contact shadow at their feet: smooth, a little narrower than the body, fading at the edge.
+    if (pose.state !== 'ko' && !pose.asleep) {
+      for (const [r, alpha] of [[0.24, 0.06], [0.2, 0.07], [0.15, 0.08]] as const) flat(g, p, ellipsePts(x, y, r * M, r * M, 0, 48), 0, 0x000000, alpha);
+    }
 
     if (pose.state === 'ko' || pose.asleep) return this.drawLying(x, y, facing, pose, p, tunic, outlineCol, ow, flash);
 
@@ -234,27 +237,41 @@ export class CharacterView {
     const beltY = sy(0.6 * M * lowered);
     g.lineBetween(-bodyW / 2 + 2, beltY, bodyW / 2 - 2, beltY);
 
-    // Head.
+    // Head: a skin-coloured ball with the hair as a cap over the top and down the back
+    // (all hair when seen from behind). The hair follows the skull, so it never pokes out.
     const headR = 0.21 * M * across;
     const hx = fx * 0.04 * M * across;
     const hy = sy(1.36 * M * lowered);
-    g.fillStyle(this.palette.hair, 1);
-    g.lineStyle(ow, outlineCol, 1);
+    const skin = flash ? 0xffffff : SKIN;
+    const seenFace = fy > -0.4;
+    g.fillStyle(seenFace ? skin : this.palette.hair, 1);
     g.fillCircle(hx, hy, headR);
-    g.strokeCircle(hx, hy, headR);
-    if (fy > -0.4) {
-      // Face, turned towards their facing; hair stays as a cap on top and behind.
-      const fcx = hx + fx * headR * 0.32;
-      const fcy = hy + headR * 0.18;
-      g.fillStyle(flash ? 0xffffff : SKIN, 1);
-      g.fillEllipse(fcx, fcy, headR * (1.1 + 0.5 * Math.max(0, fy)), headR * 1.25);
+    if (seenFace) {
+      // Arc from low on the back of the head, over the top, to the hairline above the brow.
+      // (Canvas angles: 0 = right, 90° = down.) Front-on the hair is symmetrical; in profile
+      // it comes further down the back and sits higher at the front.
+      const side = Math.abs(fx);
+      const back = (Math.PI / 180) * (190 - 60 * side);
+      const front = (Math.PI / 180) * (350 - 30 * side);
+      const mirror = fx < 0 ? -1 : 1;
+      const pts: Pt[] = [];
+      const n = 24;
+      for (let i = 0; i <= n; i++) {
+        const a = back + ((front - back) * i) / n;
+        pts.push({ x: hx + Math.cos(a) * headR * mirror, y: hy + Math.sin(a) * headR });
+      }
+      // Hairline: straight back across the brow to just behind the ear, then down to the nape.
+      const browY = pts[pts.length - 1].y;
+      const earX = hx - 0.15 * headR * side * mirror;
+      pts.push({ x: earX, y: browY }, { x: earX, y: pts[0].y });
       g.fillStyle(this.palette.hair, 1);
-      g.fillEllipse(hx - fx * headR * 0.15, hy - headR * 0.55, headR * 1.9, headR * 0.8);
+      g.fillPoints(pts as Phaser.Math.Vector2[], true);
+
       // Eyes: two seen from the front, merging to one in profile. Shut (a line) when asleep or out cold.
       g.fillStyle(0x2a1d14, 1);
       const spread = headR * 0.32 * Math.max(0, fy);
-      const ex = fcx + fx * headR * 0.22;
-      const ey = fcy - headR * 0.08;
+      const ex = hx + fx * headR * 0.45;
+      const ey = hy + headR * 0.12;
       if (this.eyesShut) {
         g.lineStyle(1.4, 0x2a1d14, 1);
         for (const dx of spread > 1.2 ? [-spread, spread] : [fx * headR * 0.15]) g.lineBetween(ex + dx - 2, ey, ex + dx + 2, ey);
@@ -265,6 +282,8 @@ export class CharacterView {
         g.fillCircle(ex + fx * headR * 0.15, ey, 1.6);
       }
     }
+    g.lineStyle(ow, outlineCol, 1);
+    g.strokeCircle(hx, hy, headR);
     return { bodyW, headR, headX: hx, headY: hy, beltY };
   }
 
@@ -289,7 +308,9 @@ export class CharacterView {
     const along = Math.hypot(vx, vy);
     const up = p.up || 1;
     // Shadow on the floor (not in bed).
-    if (!pose.asleep) flat(g, p, ellipsePts(x, y, length * 0.5, 0.26 * M, facing), 0, 0x000000, 0.2);
+    if (!pose.asleep) {
+      for (const [k, alpha] of [[1, 0.06], [0.85, 0.07], [0.68, 0.08]] as const) flat(g, p, ellipsePts(x, y, length * 0.5 * k, 0.24 * M * k, facing, 48), 0, 0x000000, alpha);
+    }
 
     g.save();
     g.translateCanvas(fs.x, fs.y);
