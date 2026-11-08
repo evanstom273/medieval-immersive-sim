@@ -104,8 +104,6 @@ export type UiCommand =
   | { kind: 'menuClose' }
   | { kind: 'toggleSenses' }
   | { kind: 'setPaused'; paused: boolean }
-  | { kind: 'setView'; mode: 'topdown' | 'threequarter' | 'isometric' }
-  | { kind: 'cycleView' }
   | { kind: 'setWalls'; mode: 'up' | 'cutaway' | 'down' }
   | { kind: 'cycleWalls' }
   | { kind: 'cancelAction' };
@@ -122,9 +120,6 @@ export const switchChannel = new Channel<SwitchEvent>();
 
 /** Game → UI: Sims-style wall display mode. */
 export const wallsChannel = new Channel<'up' | 'cutaway' | 'down'>();
-
-/** Game → UI: which view projection is active. */
-export const viewChannel = new Channel<'topdown' | 'threequarter' | 'isometric'>();
 
 /** Game → UI: is the simulation paused? */
 export const pausedChannel = new Channel<boolean>();

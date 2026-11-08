@@ -187,6 +187,7 @@ When an item changes status, move it and add a dated note rather than silently r
 ### View: ¾ (three-quarter)
 *2026-11-08 21:45 UTC*
 
+- **2026-11-08 21:56 UTC: the other views are removed from the game.** ¾ is the only view; there's no view switcher. (The projection layer keeps the maths for the others, unused.) F3's collision view now draws in ¾.
 - **The game view is ¾:** an oblique view from the south. The world grid stays lined up with the screen (up is north, walls run straight across or up, rooms are rectangles), but you still see tops and front faces, and heights rise up the screen. Chosen over isometric because it's easier to read and reason about while keeping the 3D feel. It's the default; the others stay in the Tuning panel.
 - **Screen-relative WASD and touch stick** carry over.
 - **Next for the art:** draw the environment properly for ¾ per the art doc, and rewrite `ART_STYLE.md`'s perspective section to match.
@@ -207,7 +208,7 @@ When an item changes status, move it and add a dated note rather than silently r
 - **Doors** stand on a stone threshold with wall carried on above them (a lintel piece), instead of a gap over the door.
 - **Windows: glass and shutters** (both, since the setting isn't fully decided):
   - **Glass** opens inwards and can be **latched only from inside** the room. You can see through it; closed, it muffles sound like the wall.
-  - **Shutters** outside open and close from either side. Closed, they **block sight**.
+  - **Shutters** outside open and close from either side. Closed, they **block sight**. *(2026-11-08 21:56 UTC: open, they fold right back flat against the outside of the wall.)*
   - **Climb through** when both glass and shutters are open: walk up, climb over, land on the other side. It makes a little noise, and **anyone who sees it remembers it** ("Saw Edric climb through a window"), groundwork for burglary and witnesses.
   - Windows always block walking and pathfinding; NPCs don't climb through them yet.
 - Windows sit in walls with a low wall under them (sill, 0.9 m) and wall above (from 1.8 m). The whole window drops with its wall in cutaway / walls down.

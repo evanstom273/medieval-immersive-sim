@@ -8,11 +8,10 @@ import type { Projection, Pt } from '../view/projection';
  * PLACEHOLDER characters in the simple, readable style of RimWorld / Prison
  * Architect: a body, a head and floating hands, no limbs or animation.
  *
- * - Top-down view: seen from directly above, drawn facing +x and rotated.
- * - Angled views (¾, isometric): an upright figure facing one of 8 screen
- *   directions. Hands are placed at their exact positions on the ground plane
- *   (so aim and punches stay precise) and drawn in front of or behind the
- *   body depending on which side of it they're on.
+ An upright figure facing one of 8 screen directions (the game is drawn in
+ * ¾). Hands are placed at their exact positions on the ground plane (so aim
+ * and punches stay precise) and drawn in front of or behind the body
+ * depending on which side of it they're on.
  *
  * Layer order is body → head → hair → face, with hands slotted before or
  * after; held items and worn equipment would hang off the same anchors
@@ -126,24 +125,18 @@ export interface ViewResult {
 }
 
 export class CharacterView {
-  /** Top-down: drawn facing +x inside a rotated container. */
-  private readonly container: Phaser.GameObjects.Container;
-  private readonly topG: Phaser.GameObjects.Graphics;
-  /** Angled views: drawn directly in screen space. */
-  private readonly uprightG: Phaser.GameObjects.Graphics;
+  private readonly g: Phaser.GameObjects.Graphics;
   /** Ground ring under the character you control. */
   private readonly ring: Phaser.GameObjects.Graphics;
 
   constructor(
     scene: Phaser.Scene,
-    x: number,
-    y: number,
+    _x: number,
+    _y: number,
     private readonly palette: Palette,
   ) {
     this.ring = scene.add.graphics().setDepth(3);
-    this.topG = scene.add.graphics();
-    this.container = scene.add.container(x, y, [this.topG]).setDepth(20);
-    this.uprightG = scene.add.graphics().setDepth(20);
+    this.g = scene.add.graphics().setDepth(20);
   }
 
   update(x: number, y: number, facing: number, pose: CharacterPose, p: Projection): ViewResult {
@@ -152,80 +145,12 @@ export class CharacterView {
       this.ring.lineStyle(2, 0xffffff, 0.55);
       ringOnGround(this.ring, p, x, y, 25);
     }
-    if (!p.upright) {
-      this.uprightG.clear().setVisible(false);
-      this.container.setVisible(true).setDepth(20).setPosition(x, y).setRotation(facing);
-      this.drawTopDown(pose);
-      const s = p.toScreen(x, y);
-      return { bounds: { x0: s.x - 24, y0: s.y - 24, x1: s.x + 24, y1: s.y + 24 }, headTop: { x: s.x, y: s.y } };
-    }
-    this.container.setVisible(false);
-    this.uprightG.setVisible(true).setDepth(10 + p.depth(x, y) / 1000 + 0.0005);
+    this.g.setDepth(10 + p.depth(x, y) / 1000 + 0.0005);
     return this.drawUpright(x, y, facing, pose, p);
   }
 
-  // ------------------------------------------------------------------ top-down
-
-  private drawTopDown(pose: CharacterPose): void {
-    const g = this.topG;
-    g.clear();
-    const flash = pose.hitFlash > 0;
-    const tunic = flash ? 0xffffff : pose.crouched || pose.state === 'yielded' ? shade(this.palette.tunic, 0.78) : this.palette.tunic;
-    const outlineCol = pose.highlighted ? HIGHLIGHT : OUTLINE;
-    const outlineW = pose.highlighted ? 3 : 2;
-
-    if (pose.state === 'ko') {
-      g.fillStyle(0x000000, 0.18);
-      g.fillEllipse(0, 2, 96, 40);
-      g.fillStyle(shade(this.palette.tunic, 0.6), 1);
-      g.lineStyle(outlineW, outlineCol, 1);
-      g.fillEllipse(-26, 0, 34, 18);
-      g.strokeEllipse(-26, 0, 34, 18);
-      g.fillStyle(tunic, 1);
-      g.fillEllipse(4, 0, 40, 28);
-      g.strokeEllipse(4, 0, 40, 28);
-      g.fillStyle(SKIN, 1);
-      for (const s of [-1, 1]) {
-        g.fillCircle(10, 24 * s, 4.5);
-        g.strokeCircle(10, 24 * s, 4.5);
-      }
-      g.fillCircle(30, 0, 8.5);
-      g.strokeCircle(30, 0, 8.5);
-      g.fillStyle(this.palette.hair, 1);
-      g.fillEllipse(33, 0, 7, 15);
-      return;
-    }
-
-    g.fillStyle(0x000000, 0.18);
-    g.fillEllipse(1, 1, 30, 38);
-    for (const hand of ['left', 'right'] as const) {
-      const h = handOffset(hand, pose);
-      g.fillStyle(SKIN, 1);
-      g.lineStyle(1.5, OUTLINE, 1);
-      g.fillCircle(h.x, h.y, 4.5);
-      g.strokeCircle(h.x, h.y, 4.5);
-    }
-    const hunched = pose.crouched || pose.state === 'yielded';
-    const torsoDepth = hunched ? 22 : 17;
-    const torsoWidth = hunched ? 28 : 32;
-    g.fillStyle(tunic, 1);
-    g.lineStyle(outlineW, outlineCol, 1);
-    g.fillEllipse(0, 0, torsoDepth, torsoWidth);
-    g.strokeEllipse(0, 0, torsoDepth, torsoWidth);
-    const hx = hunched ? 5 : 1;
-    g.fillStyle(this.palette.hair, 1);
-    g.lineStyle(2, OUTLINE, 1);
-    g.fillCircle(hx, 0, 8.5);
-    g.strokeCircle(hx, 0, 8.5);
-    g.fillStyle(SKIN, 1);
-    g.fillEllipse(hx + 6, 0, 5, 9);
-    g.fillTriangle(hx + 8, -2.5, hx + 8, 2.5, hx + 12, 0);
-  }
-
-  // ------------------------------------------------------------------ upright (¾ and isometric)
-
   private drawUpright(x: number, y: number, facing: number, pose: CharacterPose, p: Projection): ViewResult {
-    const g = this.uprightG;
+    const g = this.g;
     g.clear();
     const flash = pose.hitFlash > 0;
     const outlineCol = pose.highlighted ? HIGHLIGHT : OUTLINE;
@@ -329,8 +254,7 @@ export class CharacterView {
   }
 
   destroy(): void {
-    this.container.destroy();
-    this.uprightG.destroy();
+    this.g.destroy();
     this.ring.destroy();
   }
 }

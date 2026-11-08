@@ -425,7 +425,6 @@ export class Window implements Interactable {
     const along = horizontal ? 0 : Math.PI / 2;
     const [a0, a1] = this.segment();
     const inAngle = Math.atan2(this.inward.y, this.inward.x);
-    const outAngle = inAngle + Math.PI;
     const z0 = p.upright ? Window.SILL : 0;
     const zh = p.upright ? Window.HEAD - Window.SILL : 0;
     const shift = (q: Pt, d: number): Pt => ({ x: q.x + this.inward.x * d, y: q.y + this.inward.y * d });
@@ -463,11 +462,26 @@ export class Window implements Interactable {
       });
     }
 
-    // Shutters: wooden leaves on the outside; open, they swing out against the wall.
+    // Shutters: wooden leaves on the outside. Open, they fold right back flat against the outside
+    // of the wall, either side of the opening.
     const wood = { colour: 0x6b4a2b, top: 0x7a5634, outline, outlineWidth: ow };
     if (this.shuttersOpen) {
-      parts.push({ depth: depthOf(shift(a0, -span / 4)), draw: () => prism(g, p, slabPts(shift(a0, -6).x, shift(a0, -6).y, outAngle, span / 2 - 2, 5), z0, zh, wood, b) });
-      parts.push({ depth: depthOf(shift(a1, -span / 4)), draw: () => prism(g, p, slabPts(shift(a1, -6).x, shift(a1, -6).y, outAngle, span / 2 - 2, 5), z0, zh, wood, b) });
+      const face = (horizontal ? r.height : r.width) / 2 + 3; // just proud of the outside wall face
+      const leaf = span / 2 - 2;
+      const back = along + Math.PI; // from a0, away from the opening
+      const h0 = shift(a0, -face);
+      const h1 = shift(a1, -face);
+      parts.push({ depth: depthOf(h0), draw: () => drawLeaf(h0, back) });
+      parts.push({ depth: depthOf(h1), draw: () => drawLeaf(h1, along) });
+      // A leaf: a thin board with a line down it so it reads as two planks.
+      const drawLeaf = (hinge: Pt, dir: number) => {
+        prism(g, p, slabPts(hinge.x, hinge.y, dir, leaf, 4), z0, zh, wood, b);
+        const m = { x: hinge.x + Math.cos(dir) * (leaf / 2) - this.inward.x * 2, y: hinge.y + Math.sin(dir) * (leaf / 2) - this.inward.y * 2 };
+        const lo = p.toScreen(m.x, m.y, z0 + 2);
+        const hi = p.toScreen(m.x, m.y, z0 + zh - 2);
+        g.lineStyle(1, 0x3a2716, 0.8);
+        g.lineBetween(lo.x, lo.y, hi.x, hi.y);
+      };
     } else {
       const sp = shift(a0, -6);
       parts.push({

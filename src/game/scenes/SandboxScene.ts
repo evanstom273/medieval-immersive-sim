@@ -4,7 +4,6 @@ import {
   menuChannel,
   pausedChannel,
   switchChannel,
-  viewChannel,
   wallsChannel,
   messageChannel,
   rosterChannel,
@@ -16,7 +15,7 @@ import {
 import { CameraRig } from '../camera/CameraRig';
 import { planSwitch, sampleSwitch, switchDuration, type SwitchPlan } from '../camera/switchTransition';
 import { circlePts, discOnGround, emptyBounds, flat, prism, rectPts, ringOnGround, type Bounds } from '../view/draw';
-import { makeProjection, projectedBounds, screenToGroundDir, VIEW_MODES, type Projection, type ViewMode } from '../view/projection';
+import { makeProjection, projectedBounds, screenToGroundDir, type Projection, type ViewMode } from '../view/projection';
 import { Scenery, WALL_MODES, type WallMode } from '../view/Scenery';
 import type { World } from '../characters/Brain';
 import { BODY_RADIUS, Character, type CharacterDef, type Targetable } from '../characters/Character';
@@ -75,8 +74,6 @@ interface Dummy extends Targetable {
   wobble: { x: number; y: number };
 }
 
-// v3: start everyone on ¾ (the chosen view), ignoring any view saved while comparing.
-const VIEW_STORAGE_KEY = 'mis.viewMode.v3';
 const WALLS_STORAGE_KEY = 'mis.wallMode';
 
 type OpenMenu = { kind: 'character'; target: Character } | { kind: 'object'; target: Interactable } | { kind: 'self' };
@@ -121,6 +118,8 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
   private sightGrid = new NavGrid(WORLD_W, WORLD_H, 8);
   private footstepTimer = new Map<string, number>();
   private sensesOverlay = false;
+  private collisionView = false;
+  private collisionGfx!: Phaser.GameObjects.Graphics;
   private overlayGfx!: Phaser.GameObjects.Graphics;
   private pendingSmells: SmellSource[] = [];
   private fire!: { x: number; y: number; g: Phaser.GameObjects.Graphics; smokeTimer: number };
@@ -173,12 +172,11 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     this.senses = new Senses(this);
     this.senses.smells.push(...this.pendingSmells);
     this.overlayGfx = this.add.graphics().setDepth(90);
+    this.collisionGfx = this.add.graphics().setDepth(95);
 
     this.lockRing = this.add.graphics().setDepth(16);
     this.routeGfx = this.add.graphics().setDepth(5);
 
-    // ¾ is the chosen view; the others stay available from the Tuning panel for comparison.
-    let saved: ViewMode = 'threequarter';
     let walls: WallMode = 'cutaway';
     try {
       const w = localStorage.getItem(WALLS_STORAGE_KEY) as WallMode | null;
@@ -187,13 +185,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
       /* storage unavailable */
     }
     this.setWalls(walls);
-    try {
-      const v = localStorage.getItem(VIEW_STORAGE_KEY) as ViewMode | null;
-      if (v && VIEW_MODES.includes(v)) saved = v;
-    } catch {
-      /* storage unavailable: default view */
-    }
-    this.setView(saved);
+    this.setView('threequarter');
 
     // Draw everyone and move the camera AFTER physics has moved bodies this frame.
     this.events.on(Phaser.Scenes.Events.POST_UPDATE, this.lateUpdate, this);
@@ -304,22 +296,16 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
 
   // ================================================================ view
 
-  /** Switch view projection. The simulation is untouched; only drawing and input mapping change. */
-  setView(mode: ViewMode): void {
+  /**
+   * The game is drawn in ¾. (The projection layer can do other views, but the
+   * game only uses ¾; the others were compared and dropped.)
+   */
+  private setView(mode: ViewMode): void {
     this.proj = makeProjection(mode);
     this.scenery.build(this.proj);
     const b = projectedBounds(this.proj, WORLD_W, WORLD_H, 3 * M);
     const pad = 4 * M;
     this.cameras.main.setBounds(b.x - pad, b.y - pad, b.width + pad * 2, b.height + pad * 2);
-    // The physics debug view only makes sense seen from above.
-    const world = this.physics.world;
-    if (mode !== 'topdown' && world.drawDebug) this.toggleDebug();
-    try {
-      localStorage.setItem(VIEW_STORAGE_KEY, mode);
-    } catch {
-      /* ignore */
-    }
-    viewChannel.emit(mode);
   }
 
   /** Sims-style walls: up, cutaway (cut down in front of rooms), or down. */
@@ -338,10 +324,6 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     this.setWalls(WALL_MODES[(i + 1) % WALL_MODES.length]);
   }
 
-  private cycleView(): void {
-    const i = VIEW_MODES.indexOf(this.proj.mode);
-    this.setView(VIEW_MODES[(i + 1) % VIEW_MODES.length]);
-  }
 
   private setupInput(): void {
     const kb = this.input.keyboard!;
@@ -475,12 +457,6 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
         break;
       case 'cancelAction':
         this.cancelAction();
-        break;
-      case 'setView':
-        this.setView(c.mode);
-        break;
-      case 'cycleView':
-        this.cycleView();
         break;
       case 'cycleWalls':
         this.cycleWalls();
@@ -1539,6 +1515,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     this.drawLockRing(time);
     this.drawRoute(a, time, dt);
     this.drawSensesOverlay(time);
+    this.drawCollisionView();
 
     const focus = switchFocus ?? this.followFocus(a, dt);
     const s = p.toScreen(focus.x, focus.y, p.upright ? 0.8 * M : 0);
@@ -1767,18 +1744,36 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     }
   }
 
+  /** F3: collision shapes outlined on the ground (physics bodies, nav-blocked areas aren't shown). */
   private toggleDebug(): void {
-    const world = this.physics.world;
-    if (!world.drawDebug && this.proj.mode !== 'topdown') {
-      this.say('The collision view only works in top-down.');
-      return;
-    }
-    if (!world.debugGraphic) world.createDebugGraphic();
-    world.drawDebug = !world.drawDebug;
-    world.debugGraphic.setVisible(world.drawDebug);
-    if (!world.drawDebug) world.debugGraphic.clear();
-    world.debugGraphic.setDepth(100);
+    this.collisionView = !this.collisionView;
   }
+
+  private drawCollisionView(): void {
+    const g = this.collisionGfx;
+    g.clear();
+    if (!this.collisionView) return;
+    const p = this.proj;
+    g.lineStyle(1.5, 0xff4fd8, 0.9);
+    for (const child of this.solids.getChildren()) {
+      const b = (child as Phaser.GameObjects.GameObject).body as Phaser.Physics.Arcade.StaticBody | null;
+      if (!b || !b.enable) continue;
+      if (b.isCircle) ringOnGround(g, p, b.center.x, b.center.y, b.halfWidth);
+      else {
+        const pts = rectPts(b.x, b.y, b.width, b.height).map((q) => p.toScreen(q.x, q.y));
+        g.strokePoints(pts as Phaser.Math.Vector2[], true);
+      }
+    }
+    g.lineStyle(1.5, 0x4fe0ff, 0.9);
+    for (const c of this.characters) if (!c.body.checkCollision.none) ringOnGround(g, p, c.body.center.x, c.body.center.y, BODY_RADIUS);
+    g.lineStyle(1.5, 0xffd84f, 0.9);
+    for (const d of this.doors) {
+      const a = p.toScreen(d.hingePoint().x, d.hingePoint().y);
+      const b = p.toScreen(d.latchPoint().x, d.latchPoint().y);
+      g.lineBetween(a.x, a.y, b.x, b.y);
+    }
+  }
+
 }
 
 /** Do segments a–b and c–d cross? */

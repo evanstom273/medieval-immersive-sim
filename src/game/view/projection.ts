@@ -9,6 +9,9 @@
  *   and heights rise up the screen, so you see tops and south faces.
  * - isometric: true 2:1 isometric from the south-east: ground axes run along
  *   the diagonals; you see tops, south faces and east faces.
+ *
+ * The game uses ¾ only. Top-down and isometric were compared in-game and
+ * dropped; their maths stays here (and tested), but nothing in the game uses them.
  */
 
 export type ViewMode = 'topdown' | 'threequarter' | 'isometric';
