@@ -7,7 +7,17 @@ import { closestOnLeaf, resolveDoorContact, stepDoor, type Circle, type ContactR
  */
 
 export interface InteractContext {
+  /** Tell the player something (only shown when the actor is the character they control). */
   say(message: string): void;
+}
+
+/** An entry in an interaction menu. */
+export interface MenuOption {
+  id: string;
+  label: string;
+  icon: string;
+  /** If set, the option shows but can't be picked, and this says why. */
+  disabled?: string;
 }
 
 export interface Interactable {
@@ -16,7 +26,11 @@ export interface Interactable {
   hitTest(x: number, y: number): boolean;
   /** Closest point on the object to a world point, for reach checks. */
   closestPoint(x: number, y: number): Phaser.Math.Vector2;
-  interact(ctx: InteractContext): void;
+  /** What can be done with it right now. */
+  options(): MenuOption[];
+  perform(optionId: string, ctx: InteractContext): void;
+  /** Something an idle character might wander over and do with it, or null if nothing. */
+  idleUse(): string | null;
   setHighlight(on: boolean): void;
 }
 
@@ -122,7 +136,18 @@ export class Door implements Interactable {
     return new Phaser.Math.Vector2(p.x, p.y);
   }
 
-  interact(ctx: InteractContext): void {
+  options(): MenuOption[] {
+    if (this.locked) return [{ id: 'unlock', label: 'Unlock', icon: '🔓' }];
+    const open = Math.abs(this.swing.angle) > 0.08;
+    return [{ id: 'lock', label: 'Lock', icon: '🔒', disabled: open ? 'Shut it first' : undefined }];
+  }
+
+  idleUse(): string | null {
+    return null;
+  }
+
+  perform(optionId: string, ctx: InteractContext): void {
+    if ((optionId === 'lock') === this.locked) return;
     if (!this.locked && Math.abs(this.swing.angle) > 0.08) {
       ctx.say('The door needs to be shut before you can lock it.');
       return;
@@ -199,7 +224,16 @@ export class Chest implements Interactable {
     return clampToRect(this.rect, x, y);
   }
 
-  interact(ctx: InteractContext): void {
+  options(): MenuOption[] {
+    return this.open ? [{ id: 'close', label: 'Close', icon: '📦' }] : [{ id: 'open', label: 'Open', icon: '📦' }];
+  }
+
+  idleUse(): string | null {
+    return this.open ? 'close' : 'open';
+  }
+
+  perform(optionId: string, ctx: InteractContext): void {
+    if ((optionId === 'open') === this.open) return;
     this.open = !this.open;
     ctx.say(this.open ? 'You open the chest. It is empty.' : 'You close the chest.');
     this.draw();
@@ -259,7 +293,15 @@ export class Sign implements Interactable {
     return clampToRect(this.rect, x, y);
   }
 
-  interact(ctx: InteractContext): void {
+  options(): MenuOption[] {
+    return [{ id: 'read', label: 'Read', icon: '📜' }];
+  }
+
+  idleUse(): string | null {
+    return 'read';
+  }
+
+  perform(_optionId: string, ctx: InteractContext): void {
     ctx.say(`The sign reads: "${this.text}"`);
   }
 

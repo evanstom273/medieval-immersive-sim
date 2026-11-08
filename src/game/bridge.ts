@@ -1,4 +1,5 @@
 import type { Gait } from './movement/motor';
+import type { MenuOption } from './world/interactables';
 
 /** Minimal pub/sub so Phaser can talk to the React HUD without either importing the other. */
 export class Channel<T> {
@@ -33,3 +34,54 @@ export interface HudState {
 
 export const hudChannel = new Channel<HudState>();
 export const messageChannel = new Channel<string>();
+
+// ------------------------------------------------------------------ roster & menus
+
+
+export interface RosterMember {
+  id: string;
+  name: string;
+  /** CSS colour of their tunic, for portraits. */
+  colour: string;
+  health: number;
+  maxHealth: number;
+  status: 'ok' | 'yielded' | 'ko';
+  mode: ControlMode;
+  controlled: boolean;
+  temperament: string;
+  temperamentNote: string;
+  /** What they're up to, e.g. "Chatting with Agnes". */
+  activity: string;
+}
+
+export interface RelationshipRow {
+  id: string;
+  name: string;
+  /** Active character's opinion of them. */
+  mine: number;
+  /** Their opinion of the active character. */
+  theirs: number;
+}
+
+export interface RosterState {
+  members: RosterMember[];
+  activeId: string;
+  relationships: RelationshipRow[];
+}
+
+export const rosterChannel = new Channel<RosterState>();
+
+export interface MenuState {
+  /** Screen position (CSS px, relative to the game container) to centre the menu on. */
+  x: number;
+  y: number;
+  title: string;
+  subtitle?: string;
+  options: MenuOption[];
+}
+
+export const menuChannel = new Channel<MenuState | null>();
+
+/** UI → game. */
+export type UiCommand = { kind: 'switchTo'; id: string } | { kind: 'menuChoice'; optionId: string } | { kind: 'menuClose' };
+export const uiCommands = new Channel<UiCommand>();

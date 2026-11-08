@@ -270,8 +270,8 @@ export function TouchControls() {
 function Btn(props: { size: number; right: number; bottom: number; on?: boolean; onPress: () => void; children: ReactNode }) {
   return (
     <button
-      className={`absolute flex items-center justify-center rounded-full border-2 font-serif text-xs text-stone-100 active:scale-95 ${
-        props.on ? 'border-amber-200/80 bg-amber-700/70' : 'border-white/30 bg-black/45'
+      className={`absolute flex items-center justify-center rounded-full text-xs font-medium text-white shadow-lg ring-1 backdrop-blur-sm active:scale-95 ${
+        props.on ? 'bg-white/90 text-neutral-900 ring-white' : 'bg-neutral-900/65 ring-white/15'
       }`}
       style={{ width: props.size, height: props.size, right: props.right, bottom: props.bottom }}
       // Act on press, not release, and keep the touch away from the stick/tap layer.

@@ -1,13 +1,6 @@
 import { useEffect, useState } from 'react';
-import { hudChannel, messageChannel, type HudState } from '../game/bridge';
+import { messageChannel } from '../game/bridge';
 import { inputSourceChannel, type InputSource } from '../game/input/touchInput';
-
-const GAIT_LABEL: Record<HudState['gait'], string> = {
-  still: 'Standing',
-  crouch: 'Sneaking',
-  walk: 'Walking',
-  sprint: 'Sprinting',
-};
 
 interface Message {
   id: number;
@@ -16,61 +9,55 @@ interface Message {
 
 let nextId = 0;
 
+/** Message log (top centre) and, on desktop, a controls reminder (bottom right). */
 export function Hud() {
-  const [state, setState] = useState<HudState | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [source, setSource] = useState<InputSource>(() => inputSourceChannel.last ?? 'mouse');
+  const [help, setHelp] = useState(true);
 
-  useEffect(() => hudChannel.on(setState), []);
-  useEffect(() => inputSourceChannel.on(setSource), []);
+  // Re-read on mount: the touch layer may have announced itself after this component first rendered.
+  useEffect(() => {
+    setSource(inputSourceChannel.last ?? 'mouse');
+    return inputSourceChannel.on(setSource);
+  }, []);
   useEffect(
     () =>
       messageChannel.on((text) => {
-        setMessages((m) => [...m.slice(-4), { id: nextId++, text }]);
+        const id = nextId++;
+        setMessages((m) => [...m.slice(-3), { id, text }]);
+        // Messages fade after a while.
+        setTimeout(() => setMessages((m) => m.filter((x) => x.id !== id)), 9000);
       }),
     [],
   );
-
   const touch = source === 'touch';
-  const gait = state ? (state.gait === 'still' && state.crouched ? 'Crouched' : GAIT_LABEL[state.gait]) : '—';
-
-  const status = (
-    <div className="w-fit rounded bg-black/60 px-3 py-2 text-sm leading-6">
-      <div>
-        <span className={state?.mode === 'combat' ? 'font-bold text-red-300' : 'text-stone-300'}>
-          {state?.mode === 'combat' ? 'Combat ready' : 'Exploring'}
-        </span>
-        <span className="mx-2 text-stone-500">·</span>
-        <span>{gait}</span>
-      </div>
-      <div className="font-mono text-xs text-stone-400">
-        {state ? state.speed.toFixed(2) : '0.00'} m/s · view {state ? state.span.toFixed(1) : '—'} m
-      </div>
-    </div>
-  );
 
   return (
-    <div
-      className="pointer-events-none absolute inset-0 flex flex-col p-4 font-serif text-stone-100"
-      style={{ paddingTop: 'max(1rem, env(safe-area-inset-top))', paddingLeft: 'max(1rem, env(safe-area-inset-left))' }}
-    >
-      {/* On touch the status sits top-left, out from under the thumbs. */}
-      {touch && status}
-      <div className={`flex max-w-xl flex-col gap-1 ${touch ? 'mt-2' : 'mt-auto mb-3'}`}>
+    <div className="pointer-events-none absolute inset-0 text-white">
+      <div
+        className="absolute left-1/2 flex w-max max-w-[min(36rem,calc(100vw-2rem))] -translate-x-1/2 flex-col items-center gap-1"
+        style={{ top: touch ? 'max(76px, calc(env(safe-area-inset-top) + 64px))' : 16 }}
+      >
         {messages.map((m) => (
-          <div key={m.id} className="w-fit rounded bg-black/55 px-3 py-1 text-sm">
+          <div key={m.id} className="rounded-full bg-neutral-900/70 px-3 py-1 text-center text-sm shadow ring-1 ring-white/10 backdrop-blur-sm">
             {m.text}
           </div>
         ))}
       </div>
       {!touch && (
-        <div className="flex items-end justify-between gap-4">
-          {status}
-          <div className="rounded bg-black/60 px-3 py-2 font-mono text-xs leading-5 text-stone-300">
-            <div>WASD move · Ctrl sprint (hold) · Shift sneak (toggle)</div>
-            <div>R ready / relax · Walk into doors · Click to use / lock · Scroll zoom · F3</div>
-            <div>In combat: LMB right hand · RMB left hand · F / middle click lock-on</div>
-          </div>
+        <div className="pointer-events-auto absolute right-4 bottom-4 rounded-2xl bg-neutral-900/70 px-3 py-2 text-xs leading-5 text-white/70 ring-1 ring-white/10 backdrop-blur-sm">
+          <button className="w-full text-left font-medium text-white/80" onClick={(e) => (setHelp(!help), e.currentTarget.blur())}>
+            {help ? '▾' : '▸'} Controls
+          </button>
+          {help && (
+            <div className="mt-1">
+              <div>WASD move · Ctrl run · Shift sneak</div>
+              <div>Click ground to walk · hold to follow</div>
+              <div>Click people & things for options</div>
+              <div>1–4 switch person · Scroll zoom</div>
+              <div>R fight stance · LMB/RMB punch · F lock-on</div>
+            </div>
+          )}
         </div>
       )}
     </div>

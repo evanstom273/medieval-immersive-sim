@@ -96,9 +96,11 @@ export class MoveOrder {
 
   step(pos: Point, dt: number): OrderStep {
     const idle = { move: { x: 0, y: 0 }, run: false };
+    let reachGap = Infinity;
     if (this.goal.kind === 'reach') {
       const q = this.goal.closest(pos);
-      if (Math.hypot(q.x - pos.x, q.y - pos.y) <= this.goal.reach) return { ...idle, arrived: true, stuck: false };
+      reachGap = Math.hypot(q.x - pos.x, q.y - pos.y) - this.goal.reach;
+      if (reachGap <= 0) return { ...idle, arrived: true, stuck: false };
     }
 
     while (this.path.length > 1 && Math.hypot(this.path[0].x - pos.x, this.path[0].y - pos.y) < WAYPOINT_RADIUS) {
@@ -133,12 +135,11 @@ export class MoveOrder {
     }
     // Ease off only as much as needed to stop on the spot: the speed you can still brake from
     // in the remaining distance (with a margin), as a fraction of the current gait's top speed.
-    let ease = 1;
-    if (this.goal.kind === 'point') {
-      const top = (this.run ? tuning.sprintSpeed : tuning.walkSpeed) * PX_PER_METRE;
-      const canStopFrom = Math.sqrt(2 * 0.7 * tuning.deceleration * PX_PER_METRE * remaining);
-      ease = Math.min(1, Math.max(0.15, canStopFrom / top));
-    }
+    // For reach goals, brake for the point where you're within reach (e.g. arm's length from a person).
+    const stopIn = this.goal.kind === 'point' ? remaining : Math.min(remaining, reachGap);
+    const top = (this.run ? tuning.sprintSpeed : tuning.walkSpeed) * PX_PER_METRE;
+    const canStopFrom = Math.sqrt(2 * 0.7 * tuning.deceleration * PX_PER_METRE * Math.max(0, stopIn));
+    const ease = Math.min(1, Math.max(0.15, canStopFrom / top));
     if (d < 1e-6) return { ...idle, arrived: false, stuck: false };
     return { move: { x: (dx / d) * ease, y: (dy / d) * ease }, run: this.run, arrived: false, stuck: false };
   }

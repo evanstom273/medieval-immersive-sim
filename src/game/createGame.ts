@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { MovementTestScene } from './scenes/MovementTestScene';
+import { SandboxScene } from './scenes/SandboxScene';
 
 /**
  * The canvas is sized in DEVICE pixels and displayed at CSS size, so high-density
@@ -43,7 +43,7 @@ export function createGame(parent: HTMLElement): Phaser.Game {
     fps: {
       panicMax: 20,
     },
-    scene: [MovementTestScene],
+    scene: [SandboxScene],
   });
 
   // Follow container size (orientation changes, folding/unfolding, window resizes) and DPR changes.

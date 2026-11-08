@@ -18,3 +18,15 @@ body {
   user-select: none;
   -webkit-tap-highlight-color: transparent;
 }
+
+/* Radial menu options pop out from the centre. */
+@keyframes radial-pop {
+  from {
+    opacity: 0;
+    scale: 0.5;
+  }
+}
+.radial-pop {
+  translate: -50% -50%;
+  animation: radial-pop 140ms ease-out both;
+}

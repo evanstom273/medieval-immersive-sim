@@ -102,6 +102,17 @@ When an item changes status, move it and add a dated note rather than silently r
 - **Combat aiming on touch: lock-on.** Lock targets the nearest enemy within range, preferring what's in front. While locked you face the target; unlocked, facing follows movement. Lock breaks if the target gets too far away.
 - Touch and mouse switch automatically based on which was used last (for touchscreen laptops).
 
+### People sandbox: multiple characters, autonomy, social actions, combat, UI
+*2026-11-08 20:18 UTC*
+
+- **Test cast:** four unrelated characters (Edric, Agnes, Maud, Wat). **All playable for testing**, so the family control rule isn't applied yet (they aren't related). Switch with the portrait bar (click/tap) or keys 1–4. Whoever you leave carries on autonomously, and the camera pans to whoever you take over.
+- **Autonomy (when not controlled):** idle wandering, using nearby objects, and chatting with each other. No needs model yet.
+- **Interactions:** clicking/tapping a person or object opens a **radial menu** around it. People: social actions, Fight, Take control. Objects: their options (door Lock/Unlock, chest Open/Close, sign Read). Yourself: Yield/Stand up, Sneak. Clicking the ground still walks there. *(Supersedes "clicking a door locks it": doors now use the menu, as planned.)*
+- **Dialogue: Sims-style social actions with emote bubbles.** Chat, Joke, Compliment, Embrace, Argue, Insult. No written lines. Both characters show emote bubbles; the outcome shifts **one-directional opinions** (what A thinks of B ≠ what B thinks of A). Friendly actions land more often with people who already like you.
+- **Combat responses depend on temperament:** Bold fight back, Wary run (fighting if cornered), Meek yield. Everyone yields once beaten down far enough. **Defeat = yield/surrender**; knockout only if you keep hitting someone who has yielded. No deaths yet.
+- **Shared mechanics:** NPCs walk, talk, punch and use things through exactly the same code as the player; the brain only decides what to do.
+- **UI style: clean & modern.** Neutral translucent panels and crisp type; the art carries the medieval feel. Portrait bar with health rings and status badges; a card for the active character (activity, health, temperament, relationships both ways).
+
 ---
 
 ## Undecided
@@ -205,6 +216,18 @@ When an item changes status, move it and add a dated note rather than silently r
 - **Click-to-walk pathfinding:** 8 px grid A* with obstacle inflation and string-pulling, in pure TypeScript (`src/game/navigation`). Written so NPCs can use it later. Not yet decided whether it scales to whole towns or needs a navmesh / hierarchical approach.
 - **Point-and-click numbers (2026-11-08 19:53 UTC):** run if the route is over 6 m; while following, run beyond 4 m and walk again inside 3 m; hold 180 ms (mouse) / 250 ms (touch) to start following. Clicking inside something solid walks to the nearest standable spot within 2 m. Placeholders.
 - **Move orders** (`src/game/navigation/MoveOrder.ts`) are pure TypeScript and driver-agnostic, so NPCs can use the same "go there" logic later.
+- **People sandbox placeholders (2026-11-08 20:18 UTC):**
+  - temperaments Bold/Wary/Meek; yield at 25%/45%/immediately
+  - punches 9 (right) / 6 (left), and each hit lowers the victim's opinion of the attacker by 10
+  - yield lasts 25 s, knockout 15 s (you wake on 20 health)
+  - health regenerates after 8 s without being hit
+  - social success chances and opinion shifts per action (`src/game/social/socialActions.ts`)
+  - starting opinions random (seeded)
+  - idle choice weights: wander 5, idle 2.5, use object 1, chat 2
+
+  The whole cast is a test cast.
+- **Not yet (2026-11-08 20:18 UTC):** bystanders don't react to violence they see (no witnesses/crime yet); no grudges or revenge after a knockout; insults never escalate to fights on their own; no action queue (one thing at a time); NPCs don't open doors deliberately, they just push through.
+- **Seeded randomness (2026-11-08 20:18 UTC):** NPC choices and social outcomes use a seeded RNG (`src/game/util/rng.ts`), a first step toward reproducible simulation.
 - **Reach checks** ignore line of sight for now (you could, in principle, use something through a thin wall).
 - **Character and objects** are placeholder geometry, not final art.
 - **Door placeholders (2026-11-08 19:32 UTC):** ~~doors swing both ways up to 90° (real medieval doors usually swing one way).~~ *Moved to Agreed 2026-11-08 19:33 UTC.* Anyone can lock any door: no keys, ownership or lockpicking yet. Doors don't collide with furniture while swinging. No door weight or resistance yet; a first attempt at faking weight shoved the player into the door frame. *(2026-11-08 19:37 UTC: doors made lighter: they keep swinging after a push (momentum 1.4×) and slow gently (friction 2.2/s). Both are live-tunable in the debug panel; values are placeholders.)* *(2026-11-08 19:42 UTC: added closing weight 7, bounce 30%, thud threshold 0.8 rad/s. Closing weight is tunable; all placeholders.)*

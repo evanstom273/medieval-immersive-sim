@@ -20,14 +20,14 @@ npm run build    # typecheck + production build
 | Sneak | Shift (toggle) |
 | Ready / relax (combat mode) | R |
 | Open doors | Walk into them |
-| Lock / unlock a door | Click it (walks there if out of reach) |
-| Use something else (exploring) | Left click — walks there if out of reach |
+| Interact with a person or thing | Click it for a radial menu (talk, fight, take control; lock doors, open chests…) |
+| Switch character | 1–4, or click a portrait |
 | Right hand / left hand (combat) | Left click / right click |
 | Lock on to a target (combat) | F or middle click |
 | Zoom | Scroll wheel |
 | Show collision | F3 |
 
-On touch screens: drag on the left half for a floating stick (push to the rim to sprint), tap the ground to walk there (press and hold to follow your finger), tap things to use them, pinch to zoom. The buttons bottom-right are Sneak, Ready/Relax, and in combat Left, Right and Lock.
+On touch screens: drag on the left half for a floating stick (push to the rim to sprint), tap the ground to walk there (press and hold to follow your finger), tap people and things for their menu, tap a portrait to switch (tap your own for your card), pinch to zoom. The buttons bottom-right are Sneak, Ready/Relax, and in combat Left, Right and Lock.
 
 The **Movement tuning** panel (top right) live-edits speeds, acceleration and turn rates.
 
@@ -40,5 +40,7 @@ Everything on screen is placeholder geometry for tuning feel — not final art.
 - `src/game/camera/` — continuous zoom rig with view bands (direct control now, overview later). Pure TypeScript.
 - `src/game/input/` — touch input bridge.
 - `src/game/world/` — placeholder character and interactable objects (Phaser), plus door swing physics (pure TypeScript).
-- `src/game/scenes/` — the movement test scene (Phaser).
-- `src/ui/` — React HUD, touch controls and tuning panel.
+- `src/game/characters/` — characters (shared by player and NPCs) and the NPC brain.
+- `src/game/social/`, `src/game/combat/` — relationships, social actions, combat rules. Pure TypeScript.
+- `src/game/scenes/` — the sandbox scene (Phaser).
+- `src/ui/` — React HUD, portraits & character card, radial menu, touch controls, tuning panel.
