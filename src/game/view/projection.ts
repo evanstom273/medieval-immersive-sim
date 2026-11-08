@@ -86,6 +86,22 @@ export function makeProjection(mode: ViewMode): Projection {
   }
 }
 
+/**
+ * A direction on screen (e.g. from WASD or the touch stick: up = (0, −1)) →
+ * the ground direction that moves that way on screen, keeping the input's
+ * strength (length). So "up" always walks up the screen, whatever the view.
+ */
+export function screenToGroundDir(p: Projection, dx: number, dy: number): Pt {
+  const len = Math.hypot(dx, dy);
+  if (len < 1e-6) return { x: 0, y: 0 };
+  const o = p.toGround(0, 0);
+  const g = p.toGround(dx, dy);
+  const gx = g.x - o.x;
+  const gy = g.y - o.y;
+  const glen = Math.hypot(gx, gy) || 1;
+  return { x: (gx / glen) * len, y: (gy / glen) * len };
+}
+
 /** Screen-space bounds of a ground rectangle, with room for things up to `maxHeight` tall. */
 export function projectedBounds(p: Projection, w: number, h: number, maxHeight: number): { x: number; y: number; width: number; height: number } {
   const pts = [

@@ -15,7 +15,7 @@ import {
 import { CameraRig } from '../camera/CameraRig';
 import { planSwitch, sampleSwitch, switchDuration, type SwitchPlan } from '../camera/switchTransition';
 import { circlePts, discOnGround, emptyBounds, flat, prism, rectPts, ringOnGround, type Bounds } from '../view/draw';
-import { makeProjection, projectedBounds, VIEW_MODES, type Projection, type ViewMode } from '../view/projection';
+import { makeProjection, projectedBounds, screenToGroundDir, VIEW_MODES, type Projection, type ViewMode } from '../view/projection';
 import { Scenery } from '../view/Scenery';
 import type { World } from '../characters/Brain';
 import { BODY_RADIUS, Character, type CharacterDef, type Targetable } from '../characters/Character';
@@ -74,7 +74,8 @@ interface Dummy extends Targetable {
   wobble: { x: number; y: number };
 }
 
-const VIEW_STORAGE_KEY = 'mis.viewMode';
+// v2: start everyone on isometric after it was chosen, ignoring any view saved while comparing.
+const VIEW_STORAGE_KEY = 'mis.viewMode.v2';
 
 type OpenMenu = { kind: 'character'; target: Character } | { kind: 'object'; target: Interactable } | { kind: 'self' };
 
@@ -173,7 +174,8 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     this.lockRing = this.add.graphics().setDepth(16);
     this.routeGfx = this.add.graphics().setDepth(5);
 
-    let saved: ViewMode = 'topdown';
+    // Isometric is the chosen view; the others stay available from the Tuning panel for comparison.
+    let saved: ViewMode = 'isometric';
     try {
       const v = localStorage.getItem(VIEW_STORAGE_KEY) as ViewMode | null;
       if (v && VIEW_MODES.includes(v)) saved = v;
@@ -985,6 +987,8 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     // ---- the active character's input
     let manual = { x: (k.right.isDown ? 1 : 0) - (k.left.isDown ? 1 : 0), y: (k.down.isDown ? 1 : 0) - (k.up.isDown ? 1 : 0) };
     if (manual.x === 0 && manual.y === 0) manual = { ...touchStick.move };
+    // WASD and the stick are screen-relative: up walks up the screen in whichever view.
+    manual = screenToGroundDir(this.proj, manual.x, manual.y);
     if (this.switching) manual = { x: 0, y: 0 };
     const hasManual = manual.x !== 0 || manual.y !== 0;
     if (hasManual && a.status !== 'ko') {

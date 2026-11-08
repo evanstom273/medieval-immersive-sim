@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { VIEW_MODES, makeProjection } from './projection';
+import { VIEW_MODES, makeProjection, screenToGroundDir } from './projection';
 
 describe('projections', () => {
   it('round-trip ground → screen → ground in every view', () => {
@@ -32,6 +32,26 @@ describe('projections', () => {
     // In isometric, the "toward the viewer" direction is south-east.
     expect(iso.toward!.x).toBeGreaterThan(0);
     expect(iso.toward!.y).toBeGreaterThan(0);
+  });
+
+  it('screen-relative input: up/right on screen walk up/right on screen in every view', () => {
+    for (const mode of VIEW_MODES) {
+      const p = makeProjection(mode);
+      for (const [dx, dy] of [
+        [0, -1],
+        [1, 0],
+        [-1, 1],
+      ]) {
+        const g = screenToGroundDir(p, dx, dy);
+        const a = p.toScreen(500, 500);
+        const b = p.toScreen(500 + g.x * 10, 500 + g.y * 10);
+        // Same screen direction…
+        const ang = Math.atan2(b.y - a.y, b.x - a.x);
+        expect(Math.abs(ang - Math.atan2(dy, dx))).toBeLessThan(1e-6);
+        // …and the input's strength is kept.
+        expect(Math.hypot(g.x, g.y)).toBeCloseTo(Math.hypot(dx, dy));
+      }
+    }
   });
 
   it('isometric is 2:1', () => {

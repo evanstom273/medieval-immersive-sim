@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react';
-import { hudChannel, pausedChannel, rosterChannel, uiCommands, viewChannel, type HudState, type RosterMember, type RosterState } from '../game/bridge';
+import { hudChannel, pausedChannel, rosterChannel, uiCommands, type HudState, type RosterMember, type RosterState } from '../game/bridge';
 import { MOCK_PROFILES, NEEDS } from '../game/characters/mockProfiles';
 import { inputSourceChannel, type InputSource } from '../game/input/touchInput';
-import { VIEW_LABEL, type ViewMode } from '../game/view/projection';
 import { Avatar, CharacterTab, NeedsTab, PeopleTab, SkillsTab, TABS, type Tab } from './characterPanel';
 
 /**
@@ -95,11 +94,8 @@ export function BottomBar() {
             {!touch && <Identity member={active} />}
           </div>
 
-          {/* ---- centre: time, and the view switcher */}
-          <div className={`flex items-center self-center ${touch ? 'gap-1' : 'gap-2'}`}>
-            <TimeControls paused={paused} touch={touch} help={help} setHelp={setHelp} />
-            <ViewSwitcher touch={touch} />
-          </div>
+          {/* ---- centre: time */}
+          <TimeControls paused={paused} touch={touch} help={help} setHelp={setHelp} />
 
           {/* ---- right: panel tabs (panel pops up above on desktop) */}
           <div className="relative flex flex-col items-end">
@@ -311,26 +307,3 @@ function CurrentAction({ member: m, touch }: { member: RosterMember; touch: bool
   );
 }
 
-const VIEW_ICON: Record<ViewMode, string> = { topdown: '⬛', threequarter: '▱', isometric: '◇' };
-
-/** Cycles top-down → ¾ → isometric (for comparing perspectives). */
-function ViewSwitcher({ touch }: { touch: boolean }) {
-  const [mode, setMode] = useState<ViewMode>(() => viewChannel.last ?? 'topdown');
-  useEffect(() => {
-    setMode(viewChannel.last ?? 'topdown');
-    return viewChannel.on(setMode);
-  }, []);
-  return (
-    <button
-      className={`flex items-center justify-center gap-1.5 rounded-full bg-white/5 text-white ring-1 ring-white/10 hover:bg-white/10 ${touch ? 'h-9 w-9 text-xs' : 'h-11 px-3 text-sm'}`}
-      title="Change view: top-down → ¾ → isometric"
-      onClick={(e) => {
-        uiCommands.emit({ kind: 'cycleView' });
-        e.currentTarget.blur();
-      }}
-    >
-      <span className="text-white/70">{VIEW_ICON[mode]}</span>
-      {!touch && <span>{VIEW_LABEL[mode]}</span>}
-    </button>
-  );
-}

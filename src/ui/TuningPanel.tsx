@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { DEFAULT_TUNING, tuning, type MovementTuning } from '../game/movement/tuning';
 import { DEFAULT_DOOR_TUNING, doorTuning, type DoorTuning } from '../game/world/doorPhysics';
-import { uiCommands } from '../game/bridge';
+import { uiCommands, viewChannel } from '../game/bridge';
+import { VIEW_LABEL, VIEW_MODES, type ViewMode } from '../game/view/projection';
 
 /** Debug panel for live-tuning movement feel. Writes straight into the shared tuning object. */
 
@@ -25,6 +26,11 @@ export function TuningPanel() {
   const [open, setOpen] = useState(false);
   const [values, setValues] = useState<MovementTuning>({ ...tuning });
   const [doorValues, setDoorValues] = useState<DoorTuning>({ ...doorTuning });
+  const [view, setView] = useState<ViewMode>(() => viewChannel.last ?? 'isometric');
+  useEffect(() => {
+    setView(viewChannel.last ?? 'isometric');
+    return viewChannel.on(setView);
+  }, []);
 
   const setDoor = (key: keyof DoorTuning, value: number) => {
     doorTuning[key] = value;
@@ -98,6 +104,23 @@ export function TuningPanel() {
               />
             </label>
           ))}
+          <div className="mt-1 flex flex-col gap-1">
+            <span>View (for comparison)</span>
+            <div className="flex gap-1">
+              {VIEW_MODES.map((m) => (
+                <button
+                  key={m}
+                  className={`flex-1 rounded px-1 py-1 ${view === m ? 'bg-white text-neutral-900' : 'bg-white/10 hover:bg-white/20'}`}
+                  onClick={(e) => {
+                    uiCommands.emit({ kind: 'setView', mode: m });
+                    e.currentTarget.blur();
+                  }}
+                >
+                  {VIEW_LABEL[m]}
+                </button>
+              ))}
+            </div>
+          </div>
           <button
             className="mt-1 rounded bg-white/10 px-2 py-1 hover:bg-white/20"
             onClick={(e) => {

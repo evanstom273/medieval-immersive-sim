@@ -25,7 +25,7 @@ When an item changes status, move it and add a dated note rather than silently r
 
 - `ART_STYLE.md` is the authoritative visual reference: detailed, layered, cel-shaded SVG.
 - No pixel art, no isometric diamond grid, no flat/minimalist graphics.
-- **2026-11-08 19:11 UTC — correction:** the view is **full top-down** (straight overhead), *not* elevated three-quarter as `ART_STYLE.md` currently says. `ART_STYLE.md`'s perspective section needs updating to match; its other principles stand.
+- ~~**2026-11-08 19:11 UTC — correction:** the view is **full top-down** (straight overhead), *not* elevated three-quarter as `ART_STYLE.md` currently says. `ART_STYLE.md`'s perspective section needs updating to match; its other principles stand.~~ *Superseded 2026-11-08 21:37 UTC: the view is **true 2:1 isometric** (see below).*
 - 1 SVG unit = 1 world pixel. Assets are authored at native size and placed at scale 1.
 - Interactive objects (doors, furniture, containers, etc.) stay as separate assets.
 
@@ -177,6 +177,13 @@ When an item changes status, move it and add a dated note rather than silently r
 - **Environments keep the art doc's direction** (detailed, layered, cel-shaded SVG). The character simplification applies to characters only.
 - In top-down, characters are seen from above; in the angled views they're upright figures facing one of **8 directions**, with hands placed exactly where they're aiming so combat stays precise.
 
+### View: isometric
+*2026-11-08 21:37 UTC*
+
+- **The game view is true 2:1 isometric**, chosen after comparing all three in-game. It's now the default; top-down and ¾ stay available in the Tuning panel for comparison and debugging.
+- **WASD and the touch stick are screen-relative:** up walks up the screen, right walks right, whatever the view.
+- **Next for the art:** draw the environment properly for isometric per the art doc, and rewrite `ART_STYLE.md`'s perspective section (it still describes three-quarter).
+
 ---
 
 ## Undecided
@@ -210,7 +217,7 @@ When an item changes status, move it and add a dated note rather than silently r
   - **True 2:1 isometric:** from the south-east, ground axes along the diagonals.
 - The simulation is unchanged: it all happens on the ground plane, and the view is just a projection (`src/game/view/projection.ts`). Clicks, taps and mouse aim map back to the ground.
 - **For the comparison only:** the environment is placeholder blocks with height (walls 2.4 m, crates 0.8 m, door 2 m…). In the angled views, walls split into 1 m chunks for correct draw order, and chunks hiding the character you control fade out.
-- **To decide:** which view to keep (or whether to keep more than one). Then the environment art gets drawn properly for that view per the art doc, and `ART_STYLE.md`'s perspective section gets rewritten to match.
+- ~~**To decide:** which view to keep.~~ *Decided 2026-11-08 21:37 UTC: isometric.* Then the environment art gets drawn properly for that view per the art doc, and `ART_STYLE.md`'s perspective section gets rewritten to match.
 - *Supersedes, if a non-top-down view is chosen:* "the view is full top-down" in Visual direction above.
 
 ### Historical setting and legal structure
