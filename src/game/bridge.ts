@@ -106,7 +106,9 @@ export type UiCommand =
   | { kind: 'setPaused'; paused: boolean }
   | { kind: 'setWalls'; mode: 'up' | 'cutaway' | 'down' }
   | { kind: 'cycleWalls' }
-  | { kind: 'cancelAction' };
+  | { kind: 'cancelAction' }
+  /** Answer to the rest dialog: rest this many hours, or null to cancel. */
+  | { kind: 'rest'; hours: number | null };
 
 /** Game → UI: a character switch started / landed. */
 export interface SwitchEvent {
@@ -124,3 +126,23 @@ export const wallsChannel = new Channel<'up' | 'cutaway' | 'down'>();
 /** Game → UI: is the simulation paused? */
 export const pausedChannel = new Channel<boolean>();
 export const uiCommands = new Channel<UiCommand>();
+
+/** Game → UI: the game clock (placeholder day length; see time/clock.ts). */
+export interface ClockState {
+  time: string;
+  date: string;
+  isDaytime: boolean;
+  /** How many times normal speed time is running (1 normally; more while waiting or sleeping). */
+  speed: number;
+}
+export const clockChannel = new Channel<ClockState>();
+
+/** Game → UI: the TES-style "how long?" dialog for waiting or sleeping, or null to close it. */
+export interface RestDialogState {
+  kind: 'wait' | 'sleep';
+  /** Hour of day now, for showing when you'd finish. */
+  hourNow: number;
+  defaultHours: number;
+  maxHours: number;
+}
+export const restDialogChannel = new Channel<RestDialogState | null>();

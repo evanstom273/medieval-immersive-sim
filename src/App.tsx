@@ -4,6 +4,7 @@ import { Hud } from './ui/Hud';
 import { BottomBar } from './ui/BottomBar';
 import { SwitchCard } from './ui/SwitchCard';
 import { RadialMenu } from './ui/RadialMenu';
+import { RestDialog } from './ui/RestDialog';
 import { TouchControls } from './ui/TouchControls';
 import { TuningPanel } from './ui/TuningPanel';
 
@@ -26,6 +27,7 @@ export function App() {
       <TuningPanel />
       <RadialMenu />
       <SwitchCard />
+      <RestDialog />
     </div>
   );
 }

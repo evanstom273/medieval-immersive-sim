@@ -236,7 +236,27 @@ When an item changes status, move it and add a dated note rather than silently r
 - **Direct control always runs at normal speed (1×).** Fast-forward exists only in the overview. Pausing is still allowed.
 - So the day length is how long everything takes while you're in someone's shoes, waiting and sleeping included. Skipping time (a night, a wait) means zooming out to the overview.
 - Implications: zooming out becomes part of everyday play (e.g. sleeping through the night), so the overview needs to be pleasant to drop into for that. The greyed-out speed buttons on the direct-control bar contradict this and should come off (they belong to the overview).
-- *Under consideration (2026-11-08 22:21 UTC):* an exception tied to actions: a TES-style wait (choose how many hours) and/or sleeping/waiting that speeds time up, ending when the action ends. Not a free speed control. Open: a skip/fade versus a visible speed-up; what can interrupt it (noises, people, threats via the senses system).
+- ~~*Under consideration (2026-11-08 22:21 UTC):* an exception tied to actions: a TES-style wait (choose how many hours) and/or sleeping/waiting that speeds time up, ending when the action ends. Not a free speed control. Open: a skip/fade versus a visible speed-up; what can interrupt it (noises, people, threats via the senses system).~~ *(superseded below)*
+
+### Waiting and sleeping
+*2026-11-08 22:31 UTC*
+
+**Agreed:**
+- Both a **TES-style wait** (pick how many hours) and **sleep**. Both show a **visible speed-up**: you watch the world carry on fast around you. Time goes back to normal the moment it ends.
+- **Your senses can cut it short.** Noises, someone hitting you, seeing a fight. Sleeping takes more to rouse you than waiting does, and sleepers see nothing (eyes shut).
+- This is the only exception to "no fast-forward in direct control". The ▶▶/▶▶▶ buttons are off the bar.
+
+**Implemented, with my PLACEHOLDER calls (change freely):**
+- Wait: **Wait…** on your own menu (click yourself). Sleep: click the **bed** (a placeholder bed in the house's north-west corner). Both open a "how long?" dialog (1–24 h) that pauses the game behind it. Sleep defaults to "until dawn" if that's within 12 hours, else 8 hours.
+- Speed while resting: **60×** (an 8-hour sleep ≈ 10 real seconds at the placeholder day length). Slower machines get less, because it's capped at a 10 ms budget per frame; the bar shows the actual speed (e.g. "×60").
+- What interrupts it: being hit (always); a shout, raised voices, a thud or a door bang if heard clearly enough (higher bar when asleep, and footsteps and chatter never do); hearing fighting; and while waiting only, seeing an attack or smelling blood. Moving, clicking, fighting, talking, sneaking or switching person also ends it. Cancel via the action chip ✕.
+- Nobody talks to a sleeping character. People chatting to you while you *wait* don't interrupt it (undecided whether they should).
+
+### Game clock
+*2026-11-08 22:31 UTC*
+
+- The clock runs, using the decided calendar. The bar shows the time (☀️/🌙) and "Day · Month · Year". Month and weekday names are undecided, so they're numbers for now.
+- PLACEHOLDERS: a full day lasts **30 real minutes** (one constant, `DAY_REAL_MINUTES`; day length is still undecided), day runs 06:00–18:00, and the game starts at 07:00 on day 1. No lighting change at night yet.
 
 ---
 

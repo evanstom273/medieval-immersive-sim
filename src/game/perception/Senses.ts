@@ -87,7 +87,7 @@ export class Senses {
 
   /** How visible a point/person is to `o` right now (0 = can't see it). */
   visibilityTo(o: Character, t: { x: number; y: number; crouched?: boolean; speed?: number }): number {
-    if (o.status === 'ko') return 0;
+    if (o.status === 'ko' || o.asleep) return 0;
     const clear = this.host.sightClear({ x: o.x, y: o.y }, t);
     return visibility({ x: o.x, y: o.y, facing: o.motor.facing }, { x: t.x, y: t.y, crouched: !!t.crouched, speed: t.speed ?? 1.4 }, clear);
   }

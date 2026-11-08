@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { hudChannel, pausedChannel, rosterChannel, uiCommands, wallsChannel, type HudState, type RosterMember, type RosterState } from '../game/bridge';
+import { clockChannel, hudChannel, pausedChannel, rosterChannel, uiCommands, wallsChannel, type ClockState, type HudState, type RosterMember, type RosterState } from '../game/bridge';
 import { MOCK_PROFILES, NEEDS } from '../game/characters/mockProfiles';
 import { inputSourceChannel, type InputSource } from '../game/input/touchInput';
 import { Avatar, CharacterTab, NeedsTab, PeopleTab, SkillsTab, TABS, type Tab } from './characterPanel';
@@ -12,7 +12,8 @@ import { Avatar, CharacterTab, NeedsTab, PeopleTab, SkillsTab, TABS, type Tab } 
  * - right: the character panel (Needs / Skills / People / Self) above its tabs.
  * Plus a "current action" chip at the top left.
  *
- * Mood, needs, skills, the clock and the speed buttons are PLACEHOLDERS.
+ * Mood, needs and skills are PLACEHOLDERS. The clock is real (day length is a placeholder).
+ * No speed buttons: direct control has no fast-forward (only waiting / sleeping speed time up).
  */
 export function BottomBar() {
   const [roster, setRoster] = useState<RosterState | null>(null);
@@ -215,6 +216,8 @@ function Identity({ member: m }: { member: RosterMember }) {
 }
 
 function TimeControls({ paused, touch, help, setHelp }: { paused: boolean; touch: boolean; help: boolean; setHelp: (v: boolean) => void }) {
+  const [clock, setClock] = useState<ClockState | null>(clockChannel.last ?? null);
+  useEffect(() => clockChannel.on(setClock), []);
   const btn = `flex items-center justify-center rounded-full transition ${touch ? 'h-8 w-8 text-xs' : 'h-9 w-9 text-sm'}`;
   return (
     <div className="relative flex shrink-0 flex-col items-center gap-1 self-center">
@@ -229,20 +232,6 @@ function TimeControls({ paused, touch, help, setHelp }: { paused: boolean; touch
         >
           {paused ? '▶' : '❚❚'}
         </button>
-        {!touch &&
-          ['▶', '▶▶', '▶▶▶'].map((label, i) => (
-            <button
-              key={label}
-              className={`${btn} w-auto px-2 text-xs ${i === 0 && !paused ? 'bg-white/15' : i > 0 ? 'cursor-not-allowed text-white/30' : 'hover:bg-white/10'}`}
-              title={i === 0 ? 'Normal speed' : 'Faster speeds: waiting on the time model (undecided)'}
-              onClick={(e) => {
-                if (i === 0) uiCommands.emit({ kind: 'setPaused', paused: false });
-                e.currentTarget.blur();
-              }}
-            >
-              {label}
-            </button>
-          ))}
         <button
           className={`${btn} text-xs ${help ? 'bg-white/15' : 'hover:bg-white/10'}`}
           title="Controls"
@@ -254,9 +243,16 @@ function TimeControls({ paused, touch, help, setHelp }: { paused: boolean; touch
           ?
         </button>
       </div>
-      {!touch && (
-        <div className="text-[11px] text-white/50" title="Placeholder: the clock isn't simulated yet">
-          {paused ? 'Paused · ' : ''}Day 1 · Morning
+      {clock && (
+        <div className="flex flex-col items-center leading-tight" title="Placeholder day length (see the design log)">
+          <span className={`text-white/80 tabular-nums ${touch ? 'text-[11px]' : 'text-xs'}`}>
+            {clock.isDaytime ? '☀️' : '🌙'}
+            {touch ? '' : ' '}
+            {clock.time}
+            {/* On phones the pause button already shows it's paused; space is tight. */}
+            {paused && !touch ? ' · Paused' : clock.speed > 1 ? ` ×${clock.speed}` : ''}
+          </span>
+          {!touch && <span className="text-[11px] text-white/45">{clock.date}</span>}
         </div>
       )}
       {help && (
@@ -287,7 +283,7 @@ function TimeControls({ paused, touch, help, setHelp }: { paused: boolean; touch
 /** Top-left: what you're doing right now, with a cancel button. */
 function CurrentAction({ member: m, touch }: { member: RosterMember; touch: boolean }) {
   if (!m.busy) return null;
-  const icon = m.mode === 'combat' ? '⚔️' : /^(Going to|Chat|Joke|Compliment|Embrace|Argue|Insult)/.test(m.activity) ? '💬' : /Running|Walking/.test(m.activity) ? '👣' : '•';
+  const icon = /^Sleeping/.test(m.activity) ? '💤' : /^Waiting/.test(m.activity) ? '⏳' : m.mode === 'combat' ? '⚔️' : /^(Going to|Chat|Joke|Compliment|Embrace|Argue|Insult)/.test(m.activity) ? '💬' : /Running|Walking/.test(m.activity) ? '👣' : '•';
   return (
     <div
       className="pointer-events-auto fixed z-20 flex items-center gap-2 rounded-full bg-neutral-900/80 py-1 pr-1 pl-3 text-sm text-white shadow-lg ring-1 ring-white/10 backdrop-blur-sm"

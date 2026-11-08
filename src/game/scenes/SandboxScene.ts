@@ -8,6 +8,8 @@ import {
   messageChannel,
   rosterChannel,
   uiCommands,
+  clockChannel,
+  restDialogChannel,
   type MenuState,
   type RosterMember,
   type UiCommand,
@@ -33,7 +35,9 @@ import { Relationships, opinionWord } from '../social/relationships';
 import { REACTION_ICON, SOCIAL_ACTIONS, describeSocial, resolveSocial, socialAction, type SocialActionId } from '../social/socialActions';
 import { between, createRng, type Rng } from '../util/rng';
 import { handOffset, PUNCH_EXTEND, PUNCH_TOTAL, type Hand, type ViewResult } from '../world/CharacterView';
-import { Chest, Door, Sign, Window, type InteractContext, type Interactable, type MenuOption } from '../world/interactables';
+import { Bed, Chest, Door, Sign, Window, type InteractContext, type Interactable, type MenuOption } from '../world/interactables';
+import { formatDate, formatDuration, formatTime, GameClock, DAWN_HOUR } from '../time/clock';
+import { interruptsRest, MAX_REST_HOURS, REST_SPEED, type RestKind, type RestStimulus } from '../time/rest';
 
 /**
  * PLACEHOLDER sandbox: a field, a small house with a door, a chest, a sign,
@@ -75,6 +79,8 @@ interface Dummy extends Targetable {
 }
 
 const WALLS_STORAGE_KEY = 'mis.wallMode';
+/** While resting, spend at most this long (real ms) per frame simulating; slow machines rest a little slower. */
+const REST_FRAME_BUDGET_MS = 10;
 
 type OpenMenu = { kind: 'character'; target: Character } | { kind: 'object'; target: Interactable } | { kind: 'self' };
 
@@ -132,13 +138,23 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
   private hitNoticeAt = -Infinity;
   private hudTimer = 0;
   private rosterTimer = 0;
+  /** Simulation time (ms). Runs with the simulation: stops when paused, speeds up while resting. */
+  private simMs = 0;
+  readonly clock = new GameClock();
+  private clockTimer = 0;
+  /** The active character waiting or sleeping (TES-style), time sped up until `untilS` (game seconds). */
+  private rest: { kind: RestKind; untilS: number; bed: Bed | null } | null = null;
+  /** The "how long?" dialog is open (the game is paused behind it). */
+  private restAsk: { kind: RestKind; bed: Bed | null; wasPaused: boolean } | null = null;
+  /** How many times normal speed the last frame actually ran. */
+  private speedNow = 1;
 
   constructor() {
     super('sandbox');
   }
 
   get now(): number {
-    return this.time.now;
+    return this.simMs;
   }
 
   // ================================================================ setup
@@ -251,6 +267,9 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     this.scenery.add({ kind: 'paving', x: doorX, y: hy + hh - t, w: doorW, h: t, colour: 0x9a9286 });
     this.scenery.add({ kind: 'box', x: doorX, y: hy + hh - t, w: doorW, h: t, z0: door.height, height: 2.4 * M - door.height, colour: 0x8c8475, wall: true });
     const chest = new Chest(this, solids, hx + hw - 90, hy + 70, 56, 36);
+    // PLACEHOLDER bed in the north-west corner, pillow against the west wall.
+    const bed = new Bed(this, solids, hx + t + 2 + 64, hy + t + 4 + 32, 128, 64);
+    this.interactables.push(bed);
     const sign = new Sign(this, solids, 920, 760, 'Movement test. Mind the dummy.');
     this.interactables.push(door, chest, sign);
 
@@ -472,6 +491,9 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
       case 'menuChoice':
         this.chooseMenu(c.optionId);
         break;
+      case 'rest':
+        this.answerRest(c.hours);
+        break;
     }
   }
 
@@ -503,6 +525,8 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
    * ground walks there.
    */
   private pressAt(sx: number, sy: number, hold: boolean, touch: boolean): void {
+    if (this.restAsk) return;
+    this.endRest();
     const a = this.active;
     const { x, y } = this.ground({ x: sx, y: sy });
     const who = this.characterAt(sx, sy);
@@ -592,6 +616,10 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
 
   /** Stop whatever the active character is doing (walking somewhere, talking, squaring up). */
   private cancelAction(): void {
+    if (this.rest) {
+      this.endRest(this.rest.kind === 'sleep' ? 'You get up.' : 'You stop waiting.');
+      return;
+    }
     const a = this.active;
     a.cancelOrder();
     a.social = null;
@@ -601,6 +629,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
   }
 
   private toggleCombat(): void {
+    this.endRest();
     const a = this.active;
     if (a.status !== 'ok') return;
     a.mode = a.mode === 'explore' ? 'combat' : 'explore';
@@ -618,6 +647,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
    * Works in and out of combat: out of combat it's people only, and you keep facing them.
    */
   private toggleLock(): void {
+    this.endRest();
     const a = this.active;
     if (a.status !== 'ok') return;
     if (a.lockTarget) {
@@ -631,6 +661,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
 
   /** Talk: open the menu for whoever you're locked on to, or the nearest person in front of you. */
   private talk(): void {
+    this.endRest();
     const a = this.active;
     if (a.status === 'ko') return;
     const locked = a.lockTarget instanceof Character ? a.lockTarget : null;
@@ -667,6 +698,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
   private switchTo(id: string): void {
     const next = this.characters.find((c) => c.id === id);
     if (!next) return;
+    if (next !== this.active) this.endRest();
     if (this.switching) {
       // Can't interrupt a switch, but remember the choice rather than ignoring it.
       this.queuedSwitch = next === this.switching.next ? null : next.id;
@@ -766,6 +798,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
         : [
             { id: 'yield', label: 'Yield', icon: '🏳️' },
             { id: 'sneak', label: a.motor.crouched ? 'Stop sneaking' : 'Sneak', icon: '🤫' },
+            { id: 'wait', label: 'Wait…', icon: '⏳', disabled: a.mode === 'combat' ? 'Not mid-fight' : undefined },
           ];
     this.openMenu({ kind: 'self' }, { x: a.x, y: a.y }, a.name, 'You', options);
   }
@@ -793,6 +826,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
         if (optionId === 'yield') this.yieldTo(a, null);
         else if (optionId === 'stand') this.standUp(a);
         else if (optionId === 'sneak') a.motor = toggleCrouch(a.motor);
+        else if (optionId === 'wait') this.askRest('wait', null);
         break;
     }
   }
@@ -853,6 +887,10 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
   }
 
   perceive(c: Character, p: Perception): void {
+    if (c === this.active && this.rest) {
+      const why = interruptsRest(this.rest.kind, toStimulus(p));
+      if (why) this.endRest(why);
+    }
     if (!c.controlled) {
       c.brain.onPerceive(c, p, this);
       return;
@@ -997,7 +1035,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     const doIt = () => {
       const p = obj.closestPoint(c.x, c.y);
       c.look = { angle: c.angleTo(p), until: this.now + 500 };
-      const ctx: InteractContext = { say: (msg) => c.controlled && this.say(msg) };
+      const ctx: InteractContext = { say: (msg) => c.controlled && this.say(msg), sleepIn: (bed) => c === this.active && this.askRest('sleep', bed) };
       obj.perform(optionId, ctx);
       this.navDirty = true; // e.g. a door got locked
     };
@@ -1080,6 +1118,10 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
 
   startSocial(c: Character, target: Character, action: SocialActionId): boolean {
     if (target === c || c.status !== 'ok') return false;
+    if (target.asleep) {
+      if (c.controlled) this.say(`${target.name} is asleep.`);
+      return false;
+    }
     if (target.status !== 'ok' || target.brain.state.kind === 'fight' || target.brain.state.kind === 'flee') {
       if (c.controlled) this.say(`${target.name} is in no state to talk.`);
       return false;
@@ -1156,15 +1198,19 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
 
   // ================================================================ update
 
-  update(time: number, deltaMs: number): void {
+  update(_time: number, deltaMs: number): void {
     const dt = Math.min(deltaMs / 1000, 0.05);
     const k = this.keys;
     const a = this.active;
 
-    if (Phaser.Input.Keyboard.JustDown(k.pause)) this.setPaused(!this.paused);
+    // The rest dialog keeps the game paused until it's answered.
+    if (Phaser.Input.Keyboard.JustDown(k.pause) && !this.restAsk) this.setPaused(!this.paused);
     if (Phaser.Input.Keyboard.JustDown(k.walls)) this.cycleWalls();
     if (this.paused) {
-      if (Phaser.Input.Keyboard.JustDown(k.esc)) this.closeMenu();
+      if (Phaser.Input.Keyboard.JustDown(k.esc)) {
+        if (this.restAsk) this.answerRest(null);
+        else this.closeMenu();
+      }
       return;
     }
 
@@ -1176,7 +1222,10 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     if (Phaser.Input.Keyboard.JustDown(k.combat)) this.toggleCombat();
     if (Phaser.Input.Keyboard.JustDown(k.lock)) this.toggleLock();
     if (Phaser.Input.Keyboard.JustDown(k.talk)) this.talk();
-    if (Phaser.Input.Keyboard.JustDown(k.crouch) && a.status === 'ok') a.motor = toggleCrouch(a.motor);
+    if (Phaser.Input.Keyboard.JustDown(k.crouch) && a.status === 'ok') {
+      this.endRest();
+      a.motor = toggleCrouch(a.motor);
+    }
     if (Phaser.Input.Keyboard.JustDown(k.debug)) this.toggleDebug();
     if (Phaser.Input.Keyboard.JustDown(k.senses)) this.sensesOverlay = !this.sensesOverlay;
     if (Phaser.Input.Keyboard.JustDown(k.esc)) this.closeMenu();
@@ -1195,6 +1244,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     if (this.switching) manual = { x: 0, y: 0 };
     const hasManual = (manual.x !== 0 || manual.y !== 0) && !a.climb;
     if (hasManual && a.status !== 'ko') {
+      this.endRest();
       a.cancelOrder();
       a.social = null;
       this.press = null;
@@ -1206,10 +1256,28 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
         if (!this.input.activePointer.leftButtonDown()) this.press = null;
         else this.press.point = { x: pointer.x, y: pointer.y };
       }
-      if (this.press && time - this.press.since >= HOLD_TO_FOLLOW_MS) this.follow(time);
+      if (this.press && this.now - this.press.since >= HOLD_TO_FOLLOW_MS) this.follow(this.now);
     }
 
-    // ---- doors swing under their own weight, once per frame
+    if (this.rest) {
+      this.restFrames(dt, manual, hasManual, pointer);
+    } else {
+      this.speedNow = 1;
+      this.simulate(dt, manual, hasManual, pointer);
+    }
+    this.updateHover(pointerScreen.x, pointerScreen.y);
+    this.emitUi(dt);
+  }
+
+  /**
+   * One step of the world: doors, everyone, footsteps, senses, the clock.
+   * Normally once a frame; several times a frame while resting (time sped up).
+   */
+  private simulate(dt: number, manual: Point, hasManual: boolean, pointer: Point): void {
+    const k = this.keys;
+    this.simMs += dt * 1000;
+    this.clock.advance(dt);
+    // ---- doors swing under their own weight
     for (const door of this.doors) {
       const thud = door.update(dt);
       if (thud > 0) {
@@ -1233,7 +1301,12 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
         this.stepClimb(c, dt);
         continue;
       }
-      this.pushDoors(c, dt, time);
+      if (c.asleep) {
+        c.body.setVelocity(0, 0);
+        this.updatePose(c, dt);
+        continue;
+      }
+      this.pushDoors(c, dt, this.now);
 
       if (!c.controlled) c.brain.update(c, this);
       this.updateSocial(c);
@@ -1246,7 +1319,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
         move = o.move;
         run = o.run;
       }
-      const held = !c.controlled && c.heldUntil > time;
+      const held = !c.controlled && c.heldUntil > this.now;
       if (held || c.status === 'yielded') move = { x: 0, y: 0 };
 
       if (c.lockTarget && (!c.lockTarget.isTargetable() || Math.hypot(c.lockTarget.x - c.x, c.lockTarget.y - c.y) > LOCK_BREAK)) {
@@ -1262,7 +1335,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
         // Long point-and-click trips run too, unless sneaking. Only the sprint key breaks a sneak.
         sprint: sprintKey || (run && !c.motor.crouched),
         aimAngle,
-        lookAngle: c.look && time < c.look.until ? c.look.angle : null,
+        lookAngle: c.look && this.now < c.look.until ? c.look.angle : null,
       };
       // The body's velocity includes last frame's knockback; take that out before the motor uses it.
       const vx = c.body.velocity.x - c.appliedKnock.x;
@@ -1279,8 +1352,105 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
 
     this.updateFootsteps(dt);
     this.senses.update(dt);
-    this.updateHover(pointerScreen.x, pointerScreen.y);
-    this.emitUi(dt);
+    this.updateFootsteps(dt);
+    this.senses.update(dt);
+  }
+
+  // ---------------------------------------------------------------- waiting & sleeping
+
+  /** Time sped up: run the world several steps this frame (physics included), within a time budget. */
+  private restFrames(dt: number, manual: Point, hasManual: boolean, pointer: Point): void {
+    const started = performance.now();
+    const world = this.physics.world;
+    let steps = 0;
+    this.time.timeScale = REST_SPEED;
+    while (this.rest && steps < REST_SPEED) {
+      if (steps > 0) {
+        // Phaser already stepped physics once this frame; each extra world step needs its own physics step.
+        world.postUpdate();
+        world.update(0, dt * 1000);
+      }
+      this.simulate(dt, manual, hasManual, pointer);
+      steps++;
+      if (this.rest && this.clock.seconds >= this.rest.untilS) {
+        this.endRest(this.rest.kind === 'sleep' ? 'You wake up.' : 'You finish waiting.');
+        break;
+      }
+      if (performance.now() - started > REST_FRAME_BUDGET_MS) break;
+    }
+    this.speedNow = Math.max(1, steps);
+  }
+
+  /** Open the TES-style "how long?" dialog (pauses the game behind it). */
+  private askRest(kind: RestKind, bed: Bed | null): void {
+    const a = this.active;
+    if (this.rest || this.restAsk || a.status !== 'ok' || a.mode === 'combat') return;
+    this.closeMenu();
+    this.restAsk = { kind, bed, wasPaused: this.paused };
+    this.setPaused(true);
+    // Sleep defaults to until dawn (if that's a night's sleep away), otherwise 8 hours; waiting to 1 hour.
+    const toDawn = Math.round(this.clock.hoursUntil(DAWN_HOUR));
+    const defaultHours = kind === 'sleep' ? (toDawn <= 12 ? Math.max(1, toDawn) : 8) : 1;
+    restDialogChannel.emit({ kind, hourNow: this.clock.hourOfDay, defaultHours, maxHours: MAX_REST_HOURS });
+  }
+
+  private answerRest(hours: number | null): void {
+    const ask = this.restAsk;
+    if (!ask) return;
+    this.restAsk = null;
+    restDialogChannel.emit(null);
+    this.setPaused(ask.wasPaused);
+    if (hours && hours > 0) this.startRest(ask.kind, Math.min(MAX_REST_HOURS, hours), ask.bed);
+  }
+
+  private startRest(kind: RestKind, hours: number, bed: Bed | null): void {
+    const a = this.active;
+    if (a.status !== 'ok') return;
+    a.cancelOrder();
+    a.social = null;
+    a.lockTarget = null;
+    this.press = null;
+    this.rest = { kind, untilS: this.clock.seconds + hours * 3600, bed };
+    const span = `${hours} hour${hours === 1 ? '' : 's'}`;
+    if (kind === 'sleep') {
+      a.asleep = true;
+      if (a.motor.crouched) a.motor = toggleCrouch(a.motor);
+      if (bed) {
+        bed.occupant = a.id;
+        const spot = bed.sleepSpot();
+        a.body.checkCollision.none = true;
+        a.obj.setPosition(spot.x, spot.y);
+        a.body.reset(spot.x, spot.y);
+        a.motor = { ...a.motor, vx: 0, vy: 0, facing: spot.facing };
+      }
+      this.say(`You lie down to sleep for ${span}.`);
+    } else this.say(`You settle in to wait for ${span}.`);
+  }
+
+  /** Stop waiting / wake up (with a message if given). Does nothing if not resting. */
+  private endRest(message?: string): void {
+    const r = this.rest;
+    if (!r) return;
+    this.rest = null;
+    this.time.timeScale = 1;
+    this.speedNow = 1;
+    const a = this.active;
+    if (a.asleep) {
+      a.asleep = false;
+      a.pose.lift = 0;
+      if (r.bed) {
+        r.bed.occupant = null;
+        // Get up on the open side of the bed.
+        const b = r.bed.rect;
+        const want = { x: b.centerX, y: b.bottom + BODY_RADIUS + 6 };
+        const p = this.ensureNav().nearestFree(want, 2 * M) ?? want;
+        a.obj.setPosition(p.x, p.y);
+        a.body.reset(p.x, p.y);
+        a.body.checkCollision.none = false;
+        a.motor = { ...a.motor, facing: Math.PI / 2 };
+      }
+    }
+    if (message) this.say(message);
   }
 
   private updateStatus(c: Character, dt: number): void {
@@ -1393,6 +1563,8 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     pose.mode = c.mode;
     pose.crouched = c.motor.crouched;
     pose.state = c.status;
+    pose.asleep = c.asleep;
+    if (c.asleep) pose.lift = Bed.HEIGHT;
     pose.controlled = c.controlled;
     pose.highlighted = c === this.hoveredChar;
     const speed = speedOf(c.motor);
@@ -1439,6 +1611,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     victim.knock = { x: Math.cos(away) * 160, y: Math.sin(away) * 160 };
     victim.social = null;
     if (victim.heldUntil !== Infinity) victim.heldUntil = 0;
+    if (victim === this.active && this.rest) this.endRest(interruptsRest(this.rest.kind, { kind: 'hit', by: attacker.name }) ?? undefined);
     this.relationships.adjust(victim.id, attacker.id, HIT_OPINION);
     // Seen by anyone looking; heard by anyone else in earshot; a little blood is left behind.
     this.senses.attack(attacker, victim);
@@ -1478,6 +1651,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
   // ================================================================ UI feed
 
   private activityOf(c: Character): string {
+    if (c === this.active && this.rest) return `${this.rest.kind === 'sleep' ? 'Sleeping' : 'Waiting'} · ${formatDuration(this.rest.untilS - this.clock.seconds)} left`;
     if (c.status === 'ko') return 'Out cold';
     if (c.status === 'yielded') return 'Yielding';
     if (c.social) {
@@ -1519,6 +1693,12 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
 
   private emitUi(dt: number): void {
     const a = this.active;
+    this.clockTimer -= dt;
+    if (this.clockTimer <= 0) {
+      this.clockTimer = 0.1;
+      const parts = this.clock.parts();
+      clockChannel.emit({ time: formatTime(parts), date: formatDate(parts), isDaytime: parts.isDaytime, speed: this.rest ? this.speedNow : 1 });
+    }
     this.hudTimer -= dt;
     if (this.hudTimer <= 0) {
       this.hudTimer = 0.1;
@@ -1547,7 +1727,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
         temperamentNote: TEMPERAMENTS[c.temperament].description,
         activity: this.activityOf(c),
         // Only something you're controlling can be cancelled from the action chip.
-        busy: c.controlled && !!(c.order || c.social || c.mode === 'combat' || c.lockTarget),
+        busy: c.controlled && !!(this.rest || c.order || c.social || c.mode === 'combat' || c.lockTarget),
       }));
       rosterChannel.emit({
         members,
@@ -1595,13 +1775,18 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
 
     const p = this.proj;
     for (const c of this.characters) {
+      const bed = c.asleep ? (this.interactables.find((o) => o instanceof Bed && o.occupant === c.id) as Bed | undefined) : undefined;
+      if (bed) {
+        const sp = bed.sortPoint(p);
+        c.view.depthOverride = 10 + p.depth(sp.x, sp.y) / 1000 + 0.0004;
+      } else c.view.depthOverride = null;
       const r = c.view.update(c.x, c.y, c.motor.facing, c.pose, p);
       this.charScreen.set(c, r);
       const showBar = c.health < MAX_HEALTH - 0.5 || c.mode === 'combat';
       c.overhead.setIndicator(this.awarenessIndicator(c));
       // Overhead.update lifts by 18 px itself; seen from above that's from their centre, upright from the top of their head.
       const at = p.upright ? { x: r.headTop.x, y: r.headTop.y + 14 } : { x: c.x, y: c.y };
-      c.overhead.update(at.x, at.y, screenScale, time, c.health, MAX_HEALTH, showBar);
+      c.overhead.update(at.x, at.y, screenScale, this.now, c.health, MAX_HEALTH, showBar);
     }
     const a = this.active;
     this.scenery.update(dt, { x: a.x, y: a.y }, this.charScreen.get(a)?.bounds ?? null);
@@ -1629,7 +1814,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     }
     this.drawFire(time, dt);
     this.drawMidden(time);
-    this.drawDummy(time);
+    this.drawDummy();
 
     this.drawLockRing(time);
     this.drawRoute(a, time, dt);
@@ -1654,14 +1839,14 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     return this.proj.upright ? 10 + this.proj.depth(x, y) / 1000 : topdownDepth;
   }
 
-  private drawDummy(time: number): void {
+  private drawDummy(): void {
     const d = this.dummy;
     const p = this.proj;
     const g = d.g;
     g.clear();
     const x = d.x + d.wobble.x;
     const y = d.y + d.wobble.y;
-    const sack = time < d.flashUntil ? 0xf0dca0 : 0xc9a65f;
+    const sack = this.now < d.flashUntil ? 0xf0dca0 : 0xc9a65f;
     if (p.upright) {
       flat(g, p, circlePts(d.x, d.y, 18, 16), 0, 0x000000, 0.2);
       prism(g, p, circlePts(x, y, 3, 8), 0, 1.6 * M, { colour: 0x6b4a2b, outline: null });
@@ -1916,4 +2101,16 @@ function ellipse(cx: number, cy: number, rx: number, ry: number): Point[] {
     out.push({ x: cx + Math.cos(a) * rx, y: cy + Math.sin(a) * ry });
   }
   return out;
+}
+
+/** The bits of a perception that matter for whether it interrupts a rest. */
+function toStimulus(p: Perception): RestStimulus {
+  switch (p.kind) {
+    case 'sawAttack':
+      return { kind: 'sawAttack', attacker: p.attacker.name, victim: p.victim.name };
+    case 'heard':
+      return { kind: 'heard', noise: p.noise, audibility: p.audibility };
+    default:
+      return { kind: p.kind };
+  }
 }

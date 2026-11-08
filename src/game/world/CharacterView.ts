@@ -50,8 +50,10 @@ export interface CharacterPose {
   hitFlash: number;
   highlighted: boolean;
   controlled: boolean;
-  /** Raised off the ground (world px), e.g. while climbing through a window. */
+  /** Raised off the ground (world px), e.g. while climbing through a window, or lying in bed. */
   lift: number;
+  /** Lying down asleep (drawn like lying out cold, but in colour). */
+  asleep: boolean;
 }
 
 export function createPose(): CharacterPose {
@@ -66,6 +68,7 @@ export function createPose(): CharacterPose {
     highlighted: false,
     controlled: false,
     lift: 0,
+    asleep: false,
   };
 }
 
@@ -126,6 +129,8 @@ export interface ViewResult {
 
 export class CharacterView {
   private readonly g: Phaser.GameObjects.Graphics;
+  /** Draw at this depth instead of by ground position (e.g. lying on top of a bed). */
+  depthOverride: number | null = null;
   /** Ground ring under the character you control. */
   private readonly ring: Phaser.GameObjects.Graphics;
 
@@ -145,7 +150,7 @@ export class CharacterView {
       this.ring.lineStyle(2, 0xffffff, 0.55);
       ringOnGround(this.ring, p, x, y, 25);
     }
-    this.g.setDepth(10 + p.depth(x, y) / 1000 + 0.0005);
+    this.g.setDepth(this.depthOverride ?? 10 + p.depth(x, y) / 1000 + 0.0005);
     return this.drawUpright(x, y, facing, pose, p);
   }
 
@@ -158,18 +163,21 @@ export class CharacterView {
     const tunic = flash ? 0xffffff : pose.state === 'yielded' ? shade(this.palette.tunic, 0.82) : this.palette.tunic;
 
     // Shadow on the ground.
-    flat(g, p, ellipsePts(x, y, 0.3 * M, 0.3 * M, 0), 0, 0x000000, 0.2);
+    if (!pose.asleep) flat(g, p, ellipsePts(x, y, 0.3 * M, 0.3 * M, 0), 0, 0x000000, 0.2);
 
-    if (pose.state === 'ko') {
-      // Lying on the ground along their facing.
+    if (pose.state === 'ko' || pose.asleep) {
+      // Lying along their facing: on the ground, or (asleep) on whatever they're lying on.
       const c = Math.cos(facing);
       const s = Math.sin(facing);
-      flat(g, p, ellipsePts(x - c * 0.45 * M, y - s * 0.45 * M, 0.28 * M, 0.12 * M, facing), 3, shade(this.palette.tunic, 0.6), 1, outlineCol, ow);
-      flat(g, p, ellipsePts(x, y, 0.32 * M, 0.2 * M, facing), 6, tunic, 1, outlineCol, ow);
-      for (const side of [-1, 1]) flat(g, p, ellipsePts(x + c * 0.1 * M - s * side * 0.38 * M, y + s * 0.1 * M + c * side * 0.38 * M, 0.07 * M, 0.07 * M, 0), 4, SKIN, 1, OUTLINE, 1.2);
-      flat(g, p, ellipsePts(x + c * 0.5 * M, y + s * 0.5 * M, 0.17 * M, 0.17 * M, 0), 8, SKIN, 1, outlineCol, ow);
-      flat(g, p, ellipsePts(x + c * 0.56 * M, y + s * 0.56 * M, 0.12 * M, 0.17 * M, facing), 9, this.palette.hair, 1);
-      const b = p.toScreen(x, y);
+      const z = pose.lift;
+      flat(g, p, ellipsePts(x - c * 0.45 * M, y - s * 0.45 * M, 0.28 * M, 0.12 * M, facing), z + 3, shade(this.palette.tunic, 0.6), 1, outlineCol, ow);
+      flat(g, p, ellipsePts(x, y, 0.32 * M, 0.2 * M, facing), z + 6, tunic, 1, outlineCol, ow);
+      // Asleep: arms by their sides rather than flung out.
+      const reach = pose.asleep ? 0.24 : 0.38;
+      for (const side of [-1, 1]) flat(g, p, ellipsePts(x + c * 0.1 * M - s * side * reach * M, y + s * 0.1 * M + c * side * reach * M, 0.07 * M, 0.07 * M, 0), z + 4, SKIN, 1, OUTLINE, 1.2);
+      flat(g, p, ellipsePts(x + c * 0.5 * M, y + s * 0.5 * M, 0.17 * M, 0.17 * M, 0), z + 8, SKIN, 1, outlineCol, ow);
+      flat(g, p, ellipsePts(x + c * 0.56 * M, y + s * 0.56 * M, 0.12 * M, 0.17 * M, facing), z + 9, this.palette.hair, 1);
+      const b = p.toScreen(x, y, z);
       return { bounds: { x0: b.x - 0.7 * M, y0: b.y - 0.5 * M, x1: b.x + 0.7 * M, y1: b.y + 0.5 * M }, headTop: { x: b.x, y: b.y - 0.3 * M } };
     }
 

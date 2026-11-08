@@ -15,6 +15,8 @@ const M = PX_PER_METRE;
 export interface InteractContext {
   /** Tell the player something (only shown when the actor is the character they control). */
   say(message: string): void;
+  /** Lie down in a bed (the character you control: asks how long first). */
+  sleepIn?(bed: Bed): void;
 }
 
 /** An entry in an interaction menu. */
@@ -259,6 +261,73 @@ export class Chest implements Interactable {
     if ((optionId === 'open') === this.open) return;
     this.open = !this.open;
     ctx.say(this.open ? 'You open the chest. It is empty.' : 'You close the chest.');
+  }
+
+  setHighlight(on: boolean): void {
+    this.highlighted = on;
+  }
+}
+
+/**
+ * PLACEHOLDER bed: a low frame with a mattress and pillow. Solid; whoever
+ * sleeps in it lies on top. Pillow end is the -x end.
+ */
+export class Bed implements Interactable {
+  readonly name = 'bed';
+  static readonly HEIGHT = 0.42 * M;
+  private highlighted = false;
+  readonly rect: Phaser.Geom.Rectangle;
+  /** Who's in it, if anyone. */
+  occupant: string | null = null;
+
+  constructor(scene: Phaser.Scene, staticGroup: Phaser.Physics.Arcade.StaticGroup, x: number, y: number, w: number, h: number) {
+    this.rect = new Phaser.Geom.Rectangle(x - w / 2, y - h / 2, w, h);
+    const body = scene.add.rectangle(x, y, w, h).setVisible(false);
+    scene.physics.add.existing(body, true);
+    staticGroup.add(body);
+  }
+
+  /** Where a sleeper lies (body centre) and which way they face (head on the pillow). */
+  sleepSpot(): { x: number; y: number; facing: number } {
+    return { x: this.rect.centerX + 0.05 * M, y: this.rect.centerY, facing: Math.PI };
+  }
+
+  sortPoint(p: Projection): Pt {
+    return frontCorner(this.rect, p);
+  }
+
+  render(g: Phaser.GameObjects.Graphics, p: Projection): Bounds {
+    const r = this.rect;
+    const outline = this.highlighted ? HIGHLIGHT : OUTLINE;
+    const ow = this.highlighted ? 3 : 1.5;
+    const h = p.upright ? Bed.HEIGHT : 0;
+    const b = emptyBounds();
+    prism(g, p, rectPts(r.x, r.y, r.width, r.height), 0, h * 0.6, { colour: 0x6b4a2b, outline, outlineWidth: ow }, b);
+    prism(g, p, rectPts(r.x + 3, r.y + 3, r.width - 6, r.height - 6), h * 0.6, h * 0.4, { colour: 0xcfc3a2, top: 0xd9cfb2, outline, outlineWidth: ow }, b);
+    // Blanket over the foot end, pillow at the head.
+    flat(g, p, rectPts(r.x + r.width * 0.38, r.y + 3, r.width * 0.62 - 3, r.height - 6), h, 0x7d5a8a, 1, outline, 1);
+    flat(g, p, rectPts(r.x + 6, r.y + 8, r.width * 0.2, r.height - 16), h + 2, 0xeee6d0, 1, outline, 1);
+    return b;
+  }
+
+  hitTest(x: number, y: number): boolean {
+    return this.rect.contains(x, y);
+  }
+
+  closestPoint(x: number, y: number): Phaser.Math.Vector2 {
+    return clampToRect(this.rect, x, y);
+  }
+
+  options(): MenuOption[] {
+    return [{ id: 'sleep', label: 'Sleep', icon: '🛏️', disabled: this.occupant ? 'Someone is in it' : undefined }];
+  }
+
+  idleUse(): string | null {
+    return null;
+  }
+
+  perform(optionId: string, ctx: InteractContext): void {
+    if (optionId === 'sleep' && !this.occupant) ctx.sleepIn?.(this);
   }
 
   setHighlight(on: boolean): void {
