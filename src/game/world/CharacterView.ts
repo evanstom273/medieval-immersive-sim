@@ -163,23 +163,9 @@ export class CharacterView {
     const tunic = flash ? 0xffffff : pose.state === 'yielded' ? shade(this.palette.tunic, 0.82) : this.palette.tunic;
 
     // Shadow on the ground.
-    if (!pose.asleep) flat(g, p, ellipsePts(x, y, 0.3 * M, 0.3 * M, 0), 0, 0x000000, 0.2);
+    if (pose.state !== 'ko' && !pose.asleep) flat(g, p, ellipsePts(x, y, 0.3 * M, 0.3 * M, 0), 0, 0x000000, 0.2);
 
-    if (pose.state === 'ko' || pose.asleep) {
-      // Lying along their facing: on the ground, or (asleep) on whatever they're lying on.
-      const c = Math.cos(facing);
-      const s = Math.sin(facing);
-      const z = pose.lift;
-      flat(g, p, ellipsePts(x - c * 0.45 * M, y - s * 0.45 * M, 0.28 * M, 0.12 * M, facing), z + 3, shade(this.palette.tunic, 0.6), 1, outlineCol, ow);
-      flat(g, p, ellipsePts(x, y, 0.32 * M, 0.2 * M, facing), z + 6, tunic, 1, outlineCol, ow);
-      // Asleep: arms by their sides rather than flung out.
-      const reach = pose.asleep ? 0.24 : 0.38;
-      for (const side of [-1, 1]) flat(g, p, ellipsePts(x + c * 0.1 * M - s * side * reach * M, y + s * 0.1 * M + c * side * reach * M, 0.07 * M, 0.07 * M, 0), z + 4, SKIN, 1, OUTLINE, 1.2);
-      flat(g, p, ellipsePts(x + c * 0.5 * M, y + s * 0.5 * M, 0.17 * M, 0.17 * M, 0), z + 8, SKIN, 1, outlineCol, ow);
-      flat(g, p, ellipsePts(x + c * 0.56 * M, y + s * 0.56 * M, 0.12 * M, 0.17 * M, facing), z + 9, this.palette.hair, 1);
-      const b = p.toScreen(x, y, z);
-      return { bounds: { x0: b.x - 0.7 * M, y0: b.y - 0.5 * M, x1: b.x + 0.7 * M, y1: b.y + 0.5 * M }, headTop: { x: b.x, y: b.y - 0.3 * M } };
-    }
+    if (pose.state === 'ko' || pose.asleep) return this.drawLying(x, y, facing, pose, p, tunic, outlineCol, ow, flash);
 
     // Which of 8 screen directions they're facing. (`lift` raises the whole figure, e.g. climbing.)
     const base = p.toScreen(x, y, pose.lift);
@@ -190,7 +176,6 @@ export class CharacterView {
     const up = p.up;
     const across = p.across;
     const lowered = pose.crouched || pose.state === 'yielded' ? 0.74 : 1;
-    const sy = (z: number) => base.y - z * up;
 
     // Hands: exact positions on the ground plane, behind or in front of the body.
     const hz = handHeight(pose);
@@ -198,33 +183,60 @@ export class CharacterView {
       const gp = handGround(x, y, facing, hand, pose);
       return { s: p.toScreen(gp.x, gp.y, hz), behind: p.depth(gp.x, gp.y) < p.depth(x, y) - 1 };
     });
-    const drawHand = (h: { s: Pt }) => {
-      g.fillStyle(flash ? 0xffffff : SKIN, 1);
-      g.lineStyle(1.2, OUTLINE, 1);
-      g.fillCircle(h.s.x, h.s.y, 0.075 * M * across);
-      g.strokeCircle(h.s.x, h.s.y, 0.075 * M * across);
-    };
+    const drawHand = (h: { s: Pt }) => this.hand(h.s.x, h.s.y, 0.075 * M * across, flash);
     hands.filter((h) => h.behind).forEach(drawHand);
 
+    g.save();
+    g.translateCanvas(base.x, base.y);
+    const fig = this.figure({ fx, fy, up, across, lowered, tunic, outlineCol, ow, flash });
+    g.restore();
+
+    hands.filter((h) => !h.behind).forEach(drawHand);
+
+    const bounds = emptyBounds();
+    bounds.x0 = base.x - Math.max(fig.bodyW / 2, 0.35 * M * across);
+    bounds.x1 = base.x + Math.max(fig.bodyW / 2, 0.35 * M * across);
+    bounds.y0 = base.y + fig.headY - fig.headR - 4;
+    bounds.y1 = base.y + 6;
+    return { bounds, headTop: { x: base.x + fig.headX, y: base.y + fig.headY - fig.headR + 6 } };
+  }
+
+  private hand(sx: number, sy: number, r: number, flash: boolean): void {
+    const g = this.g;
+    g.fillStyle(flash ? 0xffffff : SKIN, 1);
+    g.lineStyle(1.2, OUTLINE, 1);
+    g.fillCircle(sx, sy, r);
+    g.strokeCircle(sx, sy, r);
+  }
+
+  /**
+   * The figure (legs, tunic, belt, head and face) drawn with its feet at the
+   * origin and "up" along screen -y. Standing, that's drawn straight; lying
+   * down, the same drawing is rotated onto the floor.
+   */
+  private figure(o: { fx: number; fy: number; up: number; across: number; lowered: number; tunic: number; outlineCol: number; ow: number; flash: boolean }) {
+    const g = this.g;
+    const { fx, fy, up, across, lowered, tunic, outlineCol, ow, flash } = o;
+    const sy = (z: number) => -z * up;
     // Body: a rounded block, wider seen from the front/back than from the side.
     const bodyW = (0.3 + 0.22 * Math.abs(fy)) * M * across;
     const bodyTop = sy(1.12 * M * lowered);
     const bodyBottom = sy(0.04 * M);
     const r = Math.min(bodyW / 2, 0.16 * M);
     g.fillStyle(shade(this.palette.tunic, 0.55), 1); // hose
-    g.fillRoundedRect(base.x - bodyW * 0.38, sy(0.42 * M * lowered), bodyW * 0.76, bodyBottom - sy(0.42 * M * lowered), 4);
+    g.fillRoundedRect(-bodyW * 0.38, sy(0.42 * M * lowered), bodyW * 0.76, bodyBottom - sy(0.42 * M * lowered), 4);
     g.fillStyle(tunic, 1);
     g.lineStyle(ow, outlineCol, 1);
-    g.fillRoundedRect(base.x - bodyW / 2, bodyTop, bodyW, sy(0.3 * M * lowered) - bodyTop, r);
-    g.strokeRoundedRect(base.x - bodyW / 2, bodyTop, bodyW, sy(0.3 * M * lowered) - bodyTop, r);
+    g.fillRoundedRect(-bodyW / 2, bodyTop, bodyW, sy(0.3 * M * lowered) - bodyTop, r);
+    g.strokeRoundedRect(-bodyW / 2, bodyTop, bodyW, sy(0.3 * M * lowered) - bodyTop, r);
     // Belt.
     g.lineStyle(2, shade(this.palette.tunic, 0.5), 1);
     const beltY = sy(0.6 * M * lowered);
-    g.lineBetween(base.x - bodyW / 2 + 2, beltY, base.x + bodyW / 2 - 2, beltY);
+    g.lineBetween(-bodyW / 2 + 2, beltY, bodyW / 2 - 2, beltY);
 
     // Head.
     const headR = 0.21 * M * across;
-    const hx = base.x + fx * 0.04 * M * across;
+    const hx = fx * 0.04 * M * across;
     const hy = sy(1.36 * M * lowered);
     g.fillStyle(this.palette.hair, 1);
     g.lineStyle(ow, outlineCol, 1);
@@ -238,27 +250,62 @@ export class CharacterView {
       g.fillEllipse(fcx, fcy, headR * (1.1 + 0.5 * Math.max(0, fy)), headR * 1.25);
       g.fillStyle(this.palette.hair, 1);
       g.fillEllipse(hx - fx * headR * 0.15, hy - headR * 0.55, headR * 1.9, headR * 0.8);
-      // Eyes: two seen from the front, merging to one in profile.
+      // Eyes: two seen from the front, merging to one in profile. Shut (a line) when asleep or out cold.
       g.fillStyle(0x2a1d14, 1);
       const spread = headR * 0.32 * Math.max(0, fy);
       const ex = fcx + fx * headR * 0.22;
       const ey = fcy - headR * 0.08;
-      if (spread > 1.2) {
+      if (this.eyesShut) {
+        g.lineStyle(1.4, 0x2a1d14, 1);
+        for (const dx of spread > 1.2 ? [-spread, spread] : [fx * headR * 0.15]) g.lineBetween(ex + dx - 2, ey, ex + dx + 2, ey);
+      } else if (spread > 1.2) {
         g.fillCircle(ex - spread, ey, 1.6);
         g.fillCircle(ex + spread, ey, 1.6);
       } else {
         g.fillCircle(ex + fx * headR * 0.15, ey, 1.6);
       }
     }
+    return { bodyW, headR, headX: hx, headY: hy, beltY };
+  }
 
-    hands.filter((h) => !h.behind).forEach(drawHand);
+  private eyesShut = false;
 
-    const bounds = emptyBounds();
-    bounds.x0 = base.x - Math.max(bodyW / 2, 0.35 * M * across);
-    bounds.x1 = base.x + Math.max(bodyW / 2, 0.35 * M * across);
-    bounds.y0 = hy - headR - 4;
-    bounds.y1 = base.y + 6;
-    return { bounds, headTop: { x: hx, y: hy - headR + 6 } };
+  /**
+   * Lying flat on their back along their facing (head that way): the standing
+   * figure, rotated to lie on the floor (or on a bed, via `lift`) and
+   * foreshortened by the view, so it reads as the same person.
+   */
+  private drawLying(x: number, y: number, facing: number, pose: CharacterPose, p: Projection, tunic: number, outlineCol: number, ow: number, flash: boolean): ViewResult {
+    const g = this.g;
+    const c = Math.cos(facing);
+    const s = Math.sin(facing);
+    const length = 1.57 * M; // feet to the top of the head
+    const z = pose.lift + 0.1 * M; // the body has some thickness
+    const feet = { x: x - c * length * 0.5, y: y - s * length * 0.5 };
+    const fs = p.toScreen(feet.x, feet.y, z);
+    const hs = p.toScreen(feet.x + c * length, feet.y + s * length, z);
+    const vx = hs.x - fs.x;
+    const vy = hs.y - fs.y;
+    const along = Math.hypot(vx, vy);
+    const up = p.up || 1;
+    // Shadow on the floor (not in bed).
+    if (!pose.asleep) flat(g, p, ellipsePts(x, y, length * 0.5, 0.26 * M, facing), 0, 0x000000, 0.2);
+
+    g.save();
+    g.translateCanvas(fs.x, fs.y);
+    g.rotateCanvas(Math.atan2(vy, vx) + Math.PI / 2);
+    g.scaleCanvas(1, Math.max(0.05, along / (length * up)));
+    // Face up, seen from the front; arms by their sides (flung out when knocked out).
+    this.eyesShut = true;
+    const fig = this.figure({ fx: 0, fy: 1, up, across: p.across, lowered: 1, tunic, outlineCol, ow, flash });
+    this.eyesShut = false;
+    const out = pose.asleep ? 0.62 : 1.05;
+    for (const side of [-1, 1]) this.hand(side * fig.bodyW * out, fig.beltY, 0.075 * M * p.across, flash);
+    g.restore();
+
+    const pad = 0.4 * M;
+    const bounds = { x0: Math.min(fs.x, hs.x) - pad, y0: Math.min(fs.y, hs.y) - pad, x1: Math.max(fs.x, hs.x) + pad, y1: Math.max(fs.y, hs.y) + pad };
+    return { bounds, headTop: { x: hs.x, y: Math.min(fs.y, hs.y) - 0.3 * M } };
   }
 
   destroy(): void {

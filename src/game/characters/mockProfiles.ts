@@ -1,11 +1,15 @@
 /**
  * PLACEHOLDER character profile data for the character panel: needs, skills,
  * age, traits and background. Static mock values only, to settle the panel's
- * layout and content. Nothing here is simulated or read by the game yet.
+ * layout and content. Mostly not simulated yet; the exceptions are build,
+ * traits and the Labour skill, which decide how hard someone is to shove
+ * (see movement/shove.ts).
  *
  * Health, temperament, relationships and memories in the panel are live and
  * come from the simulation, not from here.
  */
+
+import type { Build } from '../movement/shove';
 
 export type NeedId = 'hunger' | 'rest' | 'warmth' | 'comfort' | 'hygiene' | 'social';
 
@@ -55,6 +59,8 @@ export interface SkillValue {
 
 export interface MockProfile {
   age: number;
+  /** Height and weight (PLACEHOLDER). */
+  build: Build;
   occupation: string;
   traits: string[];
   background: string;
@@ -67,6 +73,7 @@ const s = (level: number, progress = 0.3): SkillValue => ({ level, progress });
 
 export const MOCK_PROFILES: Record<string, MockProfile> = {
   edric: {
+    build: { heightM: 1.75, weightKg: 80 },
     age: 34,
     occupation: 'Carter',
     traits: ['Hot-headed', 'Loyal', 'Hard-working'],
@@ -75,6 +82,7 @@ export const MOCK_PROFILES: Record<string, MockProfile> = {
     skills: { brawling: s(5, 0.6), stealth: s(1), labour: s(6, 0.2), persuasion: s(2), haggling: s(3, 0.7), letters: s(0, 0), baking: s(0, 0), smithing: s(1), farming: s(2), carpentry: s(3, 0.5) },
   },
   agnes: {
+    build: { heightM: 1.62, weightKg: 58 },
     age: 27,
     occupation: 'Alewife',
     traits: ['Gentle', 'Observant', 'Gossip'],
@@ -83,6 +91,7 @@ export const MOCK_PROFILES: Record<string, MockProfile> = {
     skills: { brawling: s(0, 0.1), stealth: s(2), labour: s(3), persuasion: s(5, 0.4), haggling: s(6, 0.8), letters: s(1, 0.6), baking: s(4), smithing: s(0, 0), farming: s(2), carpentry: s(0, 0) },
   },
   maud: {
+    build: { heightM: 1.57, weightKg: 54 },
     age: 52,
     occupation: 'Widow, spinner',
     traits: ['Cautious', 'Shrewd', 'Devout'],
@@ -91,6 +100,7 @@ export const MOCK_PROFILES: Record<string, MockProfile> = {
     skills: { brawling: s(0, 0), stealth: s(4, 0.5), labour: s(2), persuasion: s(4), haggling: s(7, 0.2), letters: s(3, 0.4), baking: s(5, 0.9), smithing: s(0, 0), farming: s(4), carpentry: s(1) },
   },
   wat: {
+    build: { heightM: 1.86, weightKg: 96 },
     age: 19,
     occupation: "Smith's apprentice",
     traits: ['Brash', 'Cheerful', 'Strong'],

@@ -426,3 +426,21 @@ When an item changes status, move it and add a dated note rather than silently r
 - **SVG rendering in Phaser:** Phaser rasterises SVG to textures. Camera zoom and high-DPI displays would scale those textures, which conflicts with the native-scale rule. Needs a strategy (fixed zoom + DPR-aware rasterisation, per-zoom re-rasterisation, etc.).
 - **Normal maps from SVG geometry:** not built into Phaser; would need a custom build step or separately authored normal layers. Worth prototyping on a single asset.
 - **Save growth:** an authoritative event log and NPC memories grow without bound; some form of compaction or forgetting will eventually be needed.
+
+### Lying down; bumping into people
+*2026-11-08 22:50 UTC*
+
+**Agreed:**
+- Knocked out and asleep use **the same figure as standing, lying on its back** (rotated onto the floor or the bed and foreshortened by the view), not a separate flat drawing.
+- **How much people shove each other depends on the person** (traits, size, etc.).
+
+**Implemented, with my PLACEHOLDER calls:**
+- Lying: face up with eyes shut. Arms at the sides when asleep, flung out when knocked out.
+- Movement fix (bug): touching anything used to wipe your speed every frame, so you crawled past people and objects. Now only the part of your movement going straight into something solid is cancelled.
+- People no longer use the physics engine's own collision with each other (it split every bump 50/50). When two people bump, each gives way in proportion to how easy they are to shift. "Resistance" is roughly kilograms of stand:
+  - weight × (1 + Labour skill / 20, standing in for strength)
+  - × temperament: bold 1.15, wary 1, meek 0.8
+  - × traits: Strong 1.25, Stubborn 1.2, Hot-headed / Brash 1.15, Cautious 0.9, Gentle 0.85
+  - × 1.3 when braced (standing still, squared up or crouched), × 0.7 when out cold (limp)
+- Builds are placeholders in the mock profiles: Edric 1.75 m / 80 kg, Agnes 1.62 / 58, Maud 1.57 / 54, Wat 1.86 / 96. Sizes don't change how anyone's drawn yet.
+- Result: Maud walking into Wat stops dead (he moves ~0.2 m); Wat walking into Maud shoves her ~1.8 m in 3 s, and sprinting he bowls her ~4 m. Off-centre, you slide round people.

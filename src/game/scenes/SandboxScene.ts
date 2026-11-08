@@ -26,6 +26,8 @@ import { inputSourceChannel, touchCommands, touchStick, type InputSource, type T
 import { speedOf, stepMotor, toggleCrouch, type MotorInput } from '../movement/motor';
 import { PX_PER_METRE, tuning } from '../movement/tuning';
 import { MoveOrder } from '../navigation/MoveOrder';
+import { resistance, separate } from '../movement/shove';
+import { MOCK_PROFILES } from '../characters/mockProfiles';
 import { describeMemory, type MemoryKind } from '../perception/memory';
 import { SCENT, smellStrength, type SmellSource } from '../perception/scents';
 import { footstepLoudness, LOUDNESS, SIGHT, type NoiseKind } from '../perception/senseRules';
@@ -172,7 +174,8 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     for (const def of CAST) this.characters.push(new Character(this, def));
     const objs = this.characters.map((c) => c.obj);
     this.physics.add.collider(objs, this.solids);
-    this.physics.add.collider(objs, objs);
+    // People don't use Arcade's collider with each other (it splits overlaps 50/50 and zeroes
+    // velocities); they're kept apart by separatePeople(), weighted by who they are.
 
     // Everyone starts with mild, varied opinions of everyone else.
     for (const a of this.characters) {
@@ -1282,6 +1285,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     const k = this.keys;
     this.simMs += dt * 1000;
     this.clock.advance(dt);
+    this.separatePeople();
     // ---- doors swing under their own weight
     for (const door of this.doors) {
       const thud = door.update(dt);
@@ -1467,6 +1471,31 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
       }
     }
     if (message) this.say(message);
+  }
+
+  /** Keep people from overlapping; whoever's easier to shift gives way more (see movement/shove.ts). */
+  private separatePeople(): void {
+    const people = this.characters.filter((c) => !c.body.checkCollision.none);
+    const moves = separate(
+      people.map((c) => {
+        const prof = MOCK_PROFILES[c.id];
+        const r = resistance({
+          build: prof?.build ?? { heightM: 1.7, weightKg: 70 },
+          strength: prof?.skills.labour?.level ?? 3,
+          temperament: c.temperament,
+          traits: prof?.traits ?? [],
+          braced: c.mode === 'combat' || c.motor.crouched || speedOf(c.motor) < 0.3 * M,
+          limp: c.status === 'ko',
+        });
+        return { x: c.x, y: c.y, r: BODY_RADIUS, resistance: r };
+      }),
+    );
+    people.forEach((c, i) => {
+      const m = moves[i];
+      if (m.dx === 0 && m.dy === 0) return;
+      c.obj.x += m.dx;
+      c.obj.y += m.dy;
+    });
   }
 
   private updateStatus(c: Character, dt: number): void {
