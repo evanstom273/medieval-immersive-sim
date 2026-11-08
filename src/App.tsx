@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { createGame } from './game/createGame';
 import { Hud } from './ui/Hud';
 import { BottomBar } from './ui/BottomBar';
+import { SwitchCard } from './ui/SwitchCard';
 import { RadialMenu } from './ui/RadialMenu';
 import { TouchControls } from './ui/TouchControls';
 import { TuningPanel } from './ui/TuningPanel';
@@ -24,6 +25,7 @@ export function App() {
       <BottomBar />
       <TuningPanel />
       <RadialMenu />
+      <SwitchCard />
     </div>
   );
 }

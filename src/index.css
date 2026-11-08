@@ -19,6 +19,26 @@ body {
   -webkit-tap-highlight-color: transparent;
 }
 
+/* Character switch name card. */
+@keyframes switch-card {
+  0% {
+    opacity: 0;
+    translate: -50% 12px;
+  }
+  12%,
+  80% {
+    opacity: 1;
+    translate: -50% 0;
+  }
+  100% {
+    opacity: 0;
+    translate: -50% -6px;
+  }
+}
+.switch-card {
+  animation: switch-card 2.4s ease-out both;
+}
+
 /* Radial menu options pop out from the centre. */
 @keyframes radial-pop {
   from {

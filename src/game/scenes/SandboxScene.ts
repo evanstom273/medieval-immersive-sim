@@ -3,6 +3,7 @@ import {
   hudChannel,
   menuChannel,
   pausedChannel,
+  switchChannel,
   messageChannel,
   rosterChannel,
   uiCommands,
@@ -11,6 +12,7 @@ import {
   type UiCommand,
 } from '../bridge';
 import { CameraRig } from '../camera/CameraRig';
+import { planSwitch, sampleSwitch, switchDuration, type SwitchPlan } from '../camera/switchTransition';
 import type { World } from '../characters/Brain';
 import { BODY_RADIUS, Character, type CharacterDef, type Targetable } from '../characters/Character';
 import { HIT_OPINION, MAX_HEALTH, PUNCH_DAMAGE, TEMPERAMENTS } from '../combat/combat';
@@ -97,6 +99,8 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
   private cameraFocus: { x: number; y: number } | null = null;
   private lockedNoticeAt = -Infinity;
   private paused = false;
+  /** A GTA-style switch in flight: control passes to `next` when the camera lands. */
+  private switching: { plan: SwitchPlan; t: number; next: Character } | null = null;
   senses!: Senses;
   /** Walls etc. that block sight and muffle sound (not inflated, unlike the nav grid). */
   private sightBlockers: Obstacle[] = [];
@@ -327,6 +331,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     const canvas = this.game.canvas;
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
+      if (this.switching) return;
       const px = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaMode === 2 ? e.deltaY * 400 : e.deltaY;
       this.rig.zoomBy(Math.exp(Phaser.Math.Clamp(px, -200, 200) * 0.0015));
     };
@@ -351,7 +356,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
   // ================================================================ input → active character
 
   private onPointerDown(p: Phaser.Input.Pointer): void {
-    if (p.wasTouch) return; // touch goes through the touch layer
+    if (p.wasTouch || this.switching) return; // touch goes through the touch layer; switches can't be interrupted
     if (this.inputSource !== 'mouse') inputSourceChannel.emit('mouse');
     if (p.middleButtonDown()) {
       this.toggleLock();
@@ -369,6 +374,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
   }
 
   private onTouchCommand(c: TouchCommand): void {
+    if (this.switching) return;
     const a = this.active;
     switch (c.kind) {
       case 'zoom':
@@ -567,9 +573,14 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     return best;
   }
 
+  /**
+   * GTA-style switch: the person you leave carries on by themselves straight
+   * away; the camera pulls out, pans and drops in on the new person, who keeps
+   * doing their own thing until you land and take over. Can't be interrupted.
+   */
   private switchTo(id: string): void {
     const next = this.characters.find((c) => c.id === id);
-    if (!next || next === this.active) return;
+    if (!next || next === this.active || this.switching) return;
     this.closeMenu();
     const prev = this.active;
     prev.controlled = false;
@@ -579,7 +590,18 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     prev.lockTarget = null;
     prev.brain.reset(this.now);
     this.press = null;
+    this.markerFade = null;
+    const from = this.cameraFocus ?? { x: prev.x, y: prev.y };
+    this.switching = { plan: planSwitch(from, { x: next.x, y: next.y }, this.rig.targetSpan, M), t: 0, next };
+    switchChannel.emit({ phase: 'start', id: next.id, name: next.name, colour: cssColour(next), activity: this.activityOf(next) });
+  }
 
+  /** The camera has landed: hand control to the new character. */
+  private landSwitch(): void {
+    const next = this.switching!.next;
+    this.switching = null;
+    this.game.canvas.style.filter = '';
+    this.cameraFocus = { x: next.x, y: next.y };
     next.controlled = true;
     next.cancelOrder();
     next.social = null;
@@ -588,8 +610,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     next.lockTarget = null;
     next.brain.reset(this.now);
     this.active = next;
-    this.markerFade = null;
-    this.say(next.status === 'ko' ? `You are now ${next.name}, who is out cold.` : `You are now ${next.name}.`);
+    switchChannel.emit({ phase: 'arrive', id: next.id, name: next.name, colour: cssColour(next), activity: this.activityOf(next) });
   }
 
   // ================================================================ menus
@@ -890,6 +911,10 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
       return;
     }
 
+    if (this.switching) {
+      // Mid-switch nobody is under your control: consume the presses so they don't fire on landing.
+      for (const key of Object.values(k)) Phaser.Input.Keyboard.JustDown(key);
+    }
     if (Phaser.Input.Keyboard.JustDown(k.combat)) this.toggleCombat();
     if (Phaser.Input.Keyboard.JustDown(k.lock)) this.toggleLock();
     if (Phaser.Input.Keyboard.JustDown(k.talk)) this.talk();
@@ -906,6 +931,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     // ---- the active character's input
     let manual = { x: (k.right.isDown ? 1 : 0) - (k.left.isDown ? 1 : 0), y: (k.down.isDown ? 1 : 0) - (k.up.isDown ? 1 : 0) };
     if (manual.x === 0 && manual.y === 0) manual = { ...touchStick.move };
+    if (this.switching) manual = { x: 0, y: 0 };
     const hasManual = manual.x !== 0 || manual.y !== 0;
     if (hasManual && a.status !== 'ko') {
       a.cancelOrder();
@@ -1250,7 +1276,8 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
         temperament: TEMPERAMENTS[c.temperament].label,
         temperamentNote: TEMPERAMENTS[c.temperament].description,
         activity: this.activityOf(c),
-        busy: !!(c.order || c.social || c.mode === 'combat' || c.lockTarget),
+        // Only something you're controlling can be cancelled from the action chip.
+        busy: c.controlled && !!(c.order || c.social || c.mode === 'combat' || c.lockTarget),
       }));
       rosterChannel.emit({
         members,
@@ -1278,7 +1305,20 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
   private lateUpdate(time: number, deltaMs: number): void {
     const dt = Math.min(deltaMs / 1000, 0.05);
     const cam = this.cameras.main;
-    this.rig.update(dt);
+    const sw = this.switching;
+    let switchFocus: Point | null = null;
+    if (sw) {
+      if (!this.paused) sw.t += dt;
+      const s = sampleSwitch(sw.plan, Math.min(sw.t, switchDuration(sw.plan)), { x: sw.next.x, y: sw.next.y });
+      this.rig.span = s.span;
+      switchFocus = s.focus;
+      // Colour drains as you rise and comes back as you drop in (the game canvas only; the UI keeps its colour).
+      const grey = s.airborne * sw.plan.intensity;
+      this.game.canvas.style.filter = grey > 0.01 ? `grayscale(${(grey * 0.9).toFixed(3)}) brightness(${(1 - grey * 0.12).toFixed(3)})` : '';
+      if (s.done) this.landSwitch();
+    } else {
+      this.rig.update(dt);
+    }
     cam.setZoom(this.rig.rendererZoom(this.scale.width, this.scale.height, M));
     const screenScale = this.dpr() / cam.zoom;
 
@@ -1294,6 +1334,10 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     this.drawFireAndFlies(time, dt);
     this.drawSensesOverlay(time);
 
+    if (switchFocus) {
+      cam.centerOn(switchFocus.x, switchFocus.y);
+      return;
+    }
     if (!this.cameraFocus) this.cameraFocus = { x: a.x, y: a.y };
     const k = 1 - Math.exp(-CAMERA_FOLLOW * dt);
     this.cameraFocus.x += (a.x - this.cameraFocus.x) * k;
@@ -1462,4 +1506,8 @@ function crosses(a: Point, b: Point, c: Point, d: Point): boolean {
   const d3 = o(a, b, c);
   const d4 = o(a, b, d);
   return d1 * d2 < 0 && d3 * d4 < 0;
+}
+
+function cssColour(c: Character): string {
+  return `#${c.palette.tunic.toString(16).padStart(6, '0')}`;
 }

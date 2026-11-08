@@ -106,6 +106,16 @@ export type UiCommand =
   | { kind: 'setPaused'; paused: boolean }
   | { kind: 'cancelAction' };
 
+/** Game → UI: a character switch started / landed. */
+export interface SwitchEvent {
+  phase: 'start' | 'arrive';
+  id: string;
+  name: string;
+  colour: string;
+  activity: string;
+}
+export const switchChannel = new Channel<SwitchEvent>();
+
 /** Game → UI: is the simulation paused? */
 export const pausedChannel = new Channel<boolean>();
 export const uiCommands = new Channel<UiCommand>();
