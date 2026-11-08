@@ -83,6 +83,7 @@ When an item changes status, move it and add a dated note rather than silently r
 *2026-11-08 19:23 UTC*
 
 - **Movement:** a floating joystick appears wherever a drag starts on the left half of the screen. A light push walks slowly, a firm push walks at full pace, and pushing to the rim sprints.
+- **2026-11-08 19:38 UTC — the stick never breaks a sneak:** while sneaking, the stick tops out at full sneak speed, even at the rim. Only the sprint key (Ctrl) stands you up.
 - **Use things:** tap the object (out of combat).
 - **Zoom:** pinch.
 - **Buttons (bottom-right):** Sneak (toggle), Ready/Relax (combat toggle), and in combat Left hand, Right hand, and Lock.

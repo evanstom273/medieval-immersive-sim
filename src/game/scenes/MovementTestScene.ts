@@ -478,7 +478,8 @@ export class MovementTestScene extends Phaser.Scene {
 
     const input: MotorInput = {
       move,
-      sprint: k.sprint.isDown || touchStick.sprint,
+      // Pushing the touch stick to the rim never breaks a sneak; only the sprint key does.
+      sprint: k.sprint.isDown || (touchStick.sprint && !this.motor.crouched),
       aimAngle,
       lookAngle: this.look && time < this.look.until ? this.look.angle : null,
     };

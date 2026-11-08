@@ -40,7 +40,16 @@ export function TouchControls() {
   const stickOrigin = useRef({ x: 0, y: 0 });
   const pinchDist = useRef(0);
 
-  useEffect(() => hudChannel.on(setHud), []);
+  // Kept in a ref too so the stick handler sees it without re-rendering.
+  const crouched = useRef(false);
+  useEffect(
+    () =>
+      hudChannel.on((h) => {
+        crouched.current = h.crouched;
+        setHud(h);
+      }),
+    [],
+  );
 
   // Switch between touch and mouse based on what was actually used last.
   useEffect(() => {
@@ -151,7 +160,7 @@ export function TouchControls() {
       if (base.current) base.current.style.transform = `translate(${o.x - STICK_RADIUS}px, ${o.y - STICK_RADIUS}px)`;
       if (knob.current) {
         knob.current.style.transform = `translate(${o.x + kx - 26}px, ${o.y + ky - 26}px)`;
-        knob.current.style.background = sprint ? 'rgba(240, 200, 120, 0.85)' : 'rgba(255, 255, 255, 0.55)';
+        knob.current.style.background = sprint && !crouched.current ? 'rgba(240, 200, 120, 0.85)' : 'rgba(255, 255, 255, 0.55)';
       }
     }
   };
