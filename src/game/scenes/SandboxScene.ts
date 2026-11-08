@@ -880,8 +880,9 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
 
   /**
    * Ways through that aren't plain walking, for NPC routes (PLACEHOLDER rules):
-   * - windows: from inside, always (they'll open it up and climb out); from
-   *   outside, only if it's already open. Costs ~6 m, so doors win when open.
+   * - windows: from inside, always (they'll unlatch and open it up, then climb
+   *   out); from outside, if it isn't latched (they open it up and climb in).
+   *   Costs ~6 m, so doors win when open.
    * - locked doors: from inside, they'll unbar it (~2 m). From outside, no (no keys yet).
    * The character you control only uses these when there's no other way (see planOrder).
    */
@@ -892,7 +893,8 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
       const inside = { x: w.centre.x + n.x * 0.6 * M, y: w.centre.y + n.y * 0.6 * M };
       const outside = { x: w.centre.x - n.x * 0.65 * M, y: w.centre.y - n.y * 0.65 * M };
       links.push({ from: inside, to: outside, costMetres: 6, data: { kind: 'window', window: w } });
-      if (w.passable) links.push({ from: outside, to: inside, costMetres: 6, data: { kind: 'window', window: w } });
+      // From outside, only an unlatched window lets you in.
+      if (!w.isLatched) links.push({ from: outside, to: inside, costMetres: 6, data: { kind: 'window', window: w } });
     }
     for (const d of this.doors) {
       if (!d.isLocked || !d.inward) continue;
@@ -927,14 +929,13 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
       climb();
       return;
     }
-    if (!w.isInside(c.pos())) {
-      c.cancelOrder(); // shut from outside: can't get in this way
+    // Open it right up (fails from outside a latched window), then climb.
+    if (!w.openUp(c.pos())) {
+      c.cancelOrder();
       return;
     }
-    // Open it right up from inside, then climb.
     c.linkBusy = true;
     c.look = { angle: c.angleTo(w.centre), until: this.now + 800 };
-    w.openUpFromInside();
     this.noise('door', w.centre.x, w.centre.y, c, 3);
     this.navDirty = true;
     this.time.delayedCall(700, () => {
@@ -1017,12 +1018,24 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     const near = { x: w.centre.x + n.x * side * 0.6 * M, y: w.centre.y + n.y * side * 0.6 * M };
     const far = { x: w.centre.x - n.x * side * 0.65 * M, y: w.centre.y - n.y * side * 0.65 * M };
     const begin = () => {
-      if (!w.passable) {
-        if (c.controlled) this.say("You can't climb through a closed window.");
+      c.cancelOrder();
+      if (w.passable) {
+        this.beginClimb(c, w, far);
         return;
       }
-      c.cancelOrder();
-      this.beginClimb(c, w, far);
+      // Open it up first (unless it's latched and you're outside).
+      if (!w.openUp(c.pos())) {
+        if (c.controlled) this.say('The window is latched.');
+        return;
+      }
+      this.noise('door', w.centre.x, w.centre.y, c, 3);
+      this.navDirty = true;
+      c.linkBusy = true;
+      c.look = { angle: c.angleTo(w.centre), until: this.now + 800 };
+      this.time.delayedCall(700, () => {
+        c.linkBusy = false;
+        if (c.status === 'ok' && !c.climb && w.passable) this.beginClimb(c, w, far);
+      });
     };
     if (Math.hypot(c.x - near.x, c.y - near.y) < 0.25 * M) begin();
     else if (!this.orderToReach(c, () => near, 0.15 * M, begin) && c.controlled) this.say("You can't get to that window.");

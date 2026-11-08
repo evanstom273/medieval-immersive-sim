@@ -533,12 +533,8 @@ export class Window implements Interactable {
       );
     }
     opts.push(this.shuttersOpen ? { id: 'closeShutters', label: 'Close shutters', icon: '🚪' } : { id: 'openShutters', label: 'Open shutters', icon: '🚪' });
-    opts.push({
-      id: 'climb',
-      label: 'Climb through',
-      icon: '🧗',
-      disabled: this.passable ? undefined : !this.shuttersOpen ? 'Shutters closed' : 'Window closed',
-    });
+    // Climbing opens it up first if needed; only a latch (seen from outside) stops you.
+    opts.push({ id: 'climb', label: 'Climb through', icon: '🧗', disabled: !inside && this.latched ? 'Latched' : undefined });
     return opts;
   }
 
@@ -549,11 +545,25 @@ export class Window implements Interactable {
     return 'closeWindow';
   }
 
-  /** Open it right up to climb through (latch, glass, shutters), as someone inside the room would. */
-  openUpFromInside(): void {
+  get isLatched(): boolean {
+    return this.latched;
+  }
+
+  /**
+   * Could someone standing at `from` get through? From inside, always (they can
+   * unlatch it). From outside, only if it isn't latched.
+   */
+  canGetThrough(from: Pt): boolean {
+    return this.isInside(from) || !this.latched;
+  }
+
+  /** Open it right up to climb through. From outside a latched window this fails. */
+  openUp(from: Pt): boolean {
+    if (!this.canGetThrough(from)) return false;
     this.latched = false;
     this.glassOpen = true;
     this.shuttersOpen = true;
+    return true;
   }
 
   perform(optionId: string, ctx: InteractContext): void {

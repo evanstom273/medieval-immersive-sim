@@ -213,6 +213,7 @@ When an item changes status, move it and add a dated note rather than silently r
   - ~~Windows always block walking and pathfinding; NPCs don't climb through them yet.~~ *Updated 2026-11-08 22:03 UTC, below.*
 - **2026-11-08 22:03 UTC: NPCs use doors and windows** (PLACEHOLDER rules):
   - **Windows as a route:** NPCs can route through windows, at a cost of ~6 m of extra walking, so they only do it when it's genuinely shorter. From inside, they open it right up (unlatch, glass, shutters) and climb out; from outside, only if it's already open.
+  - *2026-11-08 22:09 UTC:* **from outside, an unlatched window can be opened** (glass and shutters) and climbed through, by NPCs and by you; **only the latch keeps people out.** The "Climb through" option opens the window up first if needed, and is only unavailable from outside a latched window.
   - **Locked doors:** from inside, an NPC wanting to leave unbars the door (cost ~2 m) and goes out, without relocking. From outside, a locked door is a wall (no keys yet).
   - ~~**Your character's click-to-walk never routes through windows.**~~ *Changed 2026-11-08 22:06 UTC:* your click-to-walk walks normally if it can, and **only if there's no other way** (e.g. the door's locked) does it climb through an open window, or unbar a locked door from inside, like the NPCs. You get a message when it's going to climb ("There's no other way: you'll have to go through a window."), and "You can't find a way there." when there's no route at all.
   - **Idle:** NPCs sometimes open or close windows and shutters.
