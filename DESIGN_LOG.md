@@ -36,6 +36,17 @@ When an item changes status, move it and add a dated note rather than silently r
 - **Direct-control layer:** drop into a character and control them directly in the full top-down 2D view.
 - The player can move between the two at any point.
 
+### Zoom is the transition between the two views
+*2026-11-08 19:23 UTC*
+
+- **One continuous world, not two screens.** Zooming in reaches the full top-down direct-control view. Zooming out moves seamlessly into the CK3-style strategic overview (map, menus, character information, world simulation, accelerated time). Zooming back in returns to the detailed 2D world. The rendering and simulation can change underneath, but it should feel continuous.
+- **Inputs:** scroll wheel on desktop, pinch on touch. Must work in portrait, landscape and on foldable inner displays (e.g. Pixel 10 Pro Fold).
+- **Adjustable zoom range within direct control.**
+- **Zooming into a different location must not teleport the player.**
+- **Direct control stays restricted** to eligible family members under the control rule above, wherever the camera goes.
+- **Evolution note:** the earlier entry describes the overview as text-based. This decision makes it a zoomed-out map view. Whether it stays text-heavy (chronicle, menus) on top of a map is still open.
+- **Status:** adjustable zoom within direct control is implemented. The camera is built around continuous zoom bands so the overview can be added as a further band. The overview itself is not built.
+
 ### Control rule — who the player can play
 *2026-11-08 18:52 UTC*
 
@@ -57,6 +68,16 @@ When an item changes status, move it and add a dated note rather than silently r
 - **Combat mode:** toggled with a key (currently R). Out of combat, clicking uses things; in combat, LMB = right hand, RMB = left hand.
 - **Third "other" action:** not yet; hands only for now.
 - **Interact:** click the object. If out of reach, the character walks there (pathfinding) and uses it.
+
+### Touch controls
+*2026-11-08 19:23 UTC*
+
+- **Movement:** a floating joystick appears wherever a drag starts on the left half of the screen. A light push walks slowly, a firm push walks at full pace, and pushing to the rim sprints.
+- **Use things:** tap the object (out of combat).
+- **Zoom:** pinch.
+- **Buttons (bottom-right):** Sneak (toggle), Ready/Relax (combat toggle), and in combat Left hand, Right hand, and Lock.
+- **Combat aiming on touch: lock-on.** Lock targets the nearest enemy within range, preferring what's in front. While locked you face the target; unlocked, facing follows movement. Lock breaks if the target gets too far away.
+- Touch and mouse switch automatically based on which was used last (for touchscreen laptops).
 
 ---
 
@@ -161,6 +182,17 @@ When an item changes status, move it and add a dated note rather than silently r
 - **Click-to-walk pathfinding:** 8 px grid A* with obstacle inflation and string-pulling, in pure TypeScript (`src/game/navigation`). Written so NPCs can use it later. Not yet decided whether it scales to whole towns or needs a navmesh / hierarchical approach.
 - **Reach checks** ignore line of sight for now (you could, in principle, use something through a thin wall).
 - **Character and objects** are placeholder geometry, not final art.
+
+### Camera and zoom specifics
+*2026-11-08 19:23 UTC*
+
+- **Zoom is measured as a view span:** metres visible across the screen's average side (√(width × height)). Phones, monitors and near-square foldables then show a similar area at the same zoom.
+- **Placeholder numbers:** default 8 m; direct-control range 4–22 m; overview would begin beyond 22 m. **The precise thresholds and transition mechanics are open for discussion.**
+- **Open questions for the transition:**
+  - what fades in and out across the boundary (art detail, labels, map, UI)
+  - what happens to time speed as you cross it
+  - how the camera's focus detaches from the controlled character in the overview, and what happens when you zoom back in somewhere else (snap back to your character? take control of an eligible family member there? just look?)
+- **Art-spec implication:** zoom means the renderer scales the world, which the native-scale rule ("place at scale 1") doesn't currently allow for. Today's placeholder art is vector geometry and stays sharp at any zoom. The canvas also renders at device pixel density, so high-DPI phones are crisp. Final SVG art will need rasterising at (zoom × device pixel ratio) or re-rasterising per zoom range. `ART_STYLE.md` may need an amendment covering zoom.
 
 ### Overview as a chronicle
 *2026-11-08 18:52 UTC*

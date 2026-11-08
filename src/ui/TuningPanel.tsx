@@ -28,7 +28,10 @@ export function TuningPanel() {
   };
 
   return (
-    <div className="absolute top-4 right-4 w-72 rounded bg-black/70 font-mono text-xs text-stone-200">
+    <div
+      className={`absolute rounded bg-black/70 font-mono text-xs text-stone-200 ${open ? 'w-72 max-w-[calc(100vw-2rem)]' : 'w-fit'}`}
+      style={{ top: 'max(1rem, env(safe-area-inset-top))', right: 'max(1rem, env(safe-area-inset-right))' }}
+    >
       <button
         className="w-full px-3 py-2 text-left hover:bg-white/5"
         onClick={(e) => {
@@ -36,7 +39,7 @@ export function TuningPanel() {
           e.currentTarget.blur();
         }}
       >
-        {open ? '▾' : '▸'} Movement tuning
+        {open ? '▾ Movement tuning' : '▸ Tuning'}
       </button>
       {open && (
         <div className="flex flex-col gap-2 px-3 pb-3">

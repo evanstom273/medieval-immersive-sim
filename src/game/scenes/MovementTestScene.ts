@@ -3,6 +3,8 @@ import { hudChannel, messageChannel, type ControlMode } from '../bridge';
 import { createMotorState, speedOf, stepMotor, toggleCrouch, type MotorInput, type MotorState } from '../movement/motor';
 import { PX_PER_METRE, tuning } from '../movement/tuning';
 import { NavGrid, type Obstacle, type Point } from '../navigation/NavGrid';
+import { CameraRig } from '../camera/CameraRig';
+import { inputSourceChannel, touchCommands, touchStick, type InputSource, type TouchCommand } from '../input/touchInput';
 import { CharacterView, handOffset, PUNCH_EXTEND, PUNCH_TOTAL, type CharacterPose, type Hand } from '../world/CharacterView';
 import { Chest, Door, Sign, type InteractContext, type Interactable } from '../world/interactables';
 
@@ -16,6 +18,9 @@ const WORLD_H = 1792;
 const BODY_RADIUS = 16; // ≈ 0.25 m
 /** How far from the body's centre the character can reach to use something. */
 const REACH = 0.95 * PX_PER_METRE;
+/** Lock-on acquires targets within this range and drops them beyond LOCK_BREAK. */
+const LOCK_RANGE = 6 * PX_PER_METRE;
+const LOCK_BREAK = 10 * PX_PER_METRE;
 
 const KEY = Phaser.Input.Keyboard.KeyCodes;
 
@@ -56,6 +61,13 @@ export class MovementTestScene extends Phaser.Scene {
   private hudTimer = 0;
   private removeKeyGuard?: () => void;
 
+  /** Continuous zoom; future home of the direct-control ↔ overview transition. */
+  readonly rig = new CameraRig();
+  private inputSource: InputSource = 'mouse';
+  /** Touch lock-on target (combat). */
+  private lockTarget: Dummy | null = null;
+  private lockRing!: Phaser.GameObjects.Graphics;
+
   constructor() {
     super('movement-test');
   }
@@ -82,8 +94,10 @@ export class MovementTestScene extends Phaser.Scene {
 
     this.cameras.main.startFollow(bodyObj, true, 0.14, 0.14);
 
+    this.lockRing = this.add.graphics().setDepth(16);
+
     this.setupInput();
-    this.say('Click things to use them. R readies for combat. F3 shows collision.');
+    this.say('Click or tap things to use them.');
   }
 
   // ---------------------------------------------------------------- world
@@ -212,9 +226,103 @@ export class MovementTestScene extends Phaser.Scene {
 
     this.input.mouse?.disableContextMenu();
     this.input.on(Phaser.Input.Events.POINTER_DOWN, (p: Phaser.Input.Pointer) => this.onPointerDown(p));
+
+    // Scroll wheel zoom. Lines/pages are normalised to roughly pixels.
+    const canvas = this.game.canvas;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const px = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaMode === 2 ? e.deltaY * 400 : e.deltaY;
+      this.rig.zoomBy(Math.exp(Phaser.Math.Clamp(px, -200, 200) * 0.0015));
+    };
+    canvas.addEventListener('wheel', onWheel, { passive: false });
+
+    const offTouch = touchCommands.on((c) => this.onTouchCommand(c));
+    this.inputSource = inputSourceChannel.last ?? 'mouse';
+    const offSource = inputSourceChannel.on((src) => {
+      this.inputSource = src;
+      if (src === 'touch') {
+        this.hovered?.setHighlight(false);
+        this.hovered = null;
+      }
+    });
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      canvas.removeEventListener('wheel', onWheel);
+      offTouch();
+      offSource();
+    });
+  }
+
+  private onTouchCommand(c: TouchCommand): void {
+    switch (c.kind) {
+      case 'zoom':
+        this.rig.zoomBy(c.factor);
+        break;
+      case 'toggleCrouch':
+        this.motor = toggleCrouch(this.motor);
+        break;
+      case 'toggleCombat':
+        this.toggleCombat();
+        break;
+      case 'toggleLock':
+        this.toggleLock();
+        break;
+      case 'punch':
+        if (this.mode === 'combat') this.punch(c.hand);
+        break;
+      case 'tap': {
+        if (this.mode === 'combat') return;
+        // Container CSS px → canvas device px → world.
+        const dpr = this.scale.width / Math.max(1, this.game.canvas.clientWidth);
+        const world = this.cameras.main.getWorldPoint(c.x * dpr, c.y * dpr);
+        this.useAt(world.x, world.y);
+        break;
+      }
+    }
+  }
+
+  private toggleCombat(): void {
+    this.mode = this.mode === 'explore' ? 'combat' : 'explore';
+    this.walkTarget = null;
+    this.pose.punch = { left: null, right: null };
+    if (this.mode === 'explore') this.lockTarget = null;
+  }
+
+  /** Lock onto the best target nearby, preferring what's in front. Again to release. */
+  private toggleLock(): void {
+    if (this.mode !== 'combat') return;
+    if (this.lockTarget) {
+      this.lockTarget = null;
+      return;
+    }
+    const cx = this.playerBody.center.x;
+    const cy = this.playerBody.center.y;
+    let best: Dummy | null = null;
+    let bestScore = Infinity;
+    for (const t of [this.dummy]) {
+      const d = Phaser.Math.Distance.Between(cx, cy, t.x, t.y);
+      if (d > LOCK_RANGE) continue;
+      const off = Math.abs(Phaser.Math.Angle.Wrap(Math.atan2(t.y - cy, t.x - cx) - this.motor.facing));
+      const score = d * (1 + off / Math.PI);
+      if (score < bestScore) {
+        bestScore = score;
+        best = t;
+      }
+    }
+    this.lockTarget = best;
+    if (!best) this.say('Nothing to lock on to.');
+  }
+
+  private useAt(x: number, y: number): void {
+    const target = this.interactableAt(x, y);
+    if (!target) return;
+    if (this.inReach(target)) this.use(target);
+    else this.planWalk(target);
   }
 
   private onPointerDown(p: Phaser.Input.Pointer): void {
+    // Touch is handled by the touch-controls layer; only the mouse comes through here.
+    if (p.wasTouch) return;
+    if (this.inputSource !== 'mouse') inputSourceChannel.emit('mouse');
     if (this.mode === 'combat') {
       if (p.leftButtonDown()) this.punch('right');
       else if (p.rightButtonDown()) this.punch('left');
@@ -222,10 +330,7 @@ export class MovementTestScene extends Phaser.Scene {
     }
     if (!p.leftButtonDown()) return;
     const world = p.positionToCamera(this.cameras.main) as Phaser.Math.Vector2;
-    const target = this.interactableAt(world.x, world.y);
-    if (!target) return;
-    if (this.inReach(target)) this.use(target);
-    else this.planWalk(target);
+    this.useAt(world.x, world.y);
   }
 
   /** Current solid obstacles, from the enabled static bodies (so open doors don't count). */
@@ -309,11 +414,7 @@ export class MovementTestScene extends Phaser.Scene {
     const dt = Math.min(deltaMs / 1000, 0.05);
     const k = this.keys;
 
-    if (Phaser.Input.Keyboard.JustDown(k.combat)) {
-      this.mode = this.mode === 'explore' ? 'combat' : 'explore';
-      this.walkTarget = null;
-      this.pose.punch = { left: null, right: null };
-    }
+    if (Phaser.Input.Keyboard.JustDown(k.combat)) this.toggleCombat();
     if (Phaser.Input.Keyboard.JustDown(k.crouch)) this.motor = toggleCrouch(this.motor);
     if (Phaser.Input.Keyboard.JustDown(k.debug)) this.toggleDebug();
 
@@ -321,15 +422,27 @@ export class MovementTestScene extends Phaser.Scene {
     const cx = this.playerBody.center.x;
     const cy = this.playerBody.center.y;
 
-    // Keyboard movement; any key press cancels click-to-walk.
+    // Keyboard, else the touch stick; either cancels click-to-walk.
     let move = { x: (k.right.isDown ? 1 : 0) - (k.left.isDown ? 1 : 0), y: (k.down.isDown ? 1 : 0) - (k.up.isDown ? 1 : 0) };
+    if (move.x === 0 && move.y === 0) move = { ...touchStick.move };
     if (move.x !== 0 || move.y !== 0) this.walkTarget = null;
     if (this.walkTarget) move = this.stepWalkTarget(dt);
 
+    // Drop a lock that's gone out of range.
+    if (this.lockTarget && Phaser.Math.Distance.Between(cx, cy, this.lockTarget.x, this.lockTarget.y) > LOCK_BREAK) {
+      this.lockTarget = null;
+    }
+    let aimAngle: number | null = null;
+    if (this.mode === 'combat') {
+      if (this.lockTarget) aimAngle = Math.atan2(this.lockTarget.y - cy, this.lockTarget.x - cx);
+      else if (this.inputSource === 'mouse') aimAngle = Math.atan2(pointer.y - cy, pointer.x - cx);
+      // Touch without a lock: facing follows movement.
+    }
+
     const input: MotorInput = {
       move,
-      sprint: k.sprint.isDown,
-      aimAngle: this.mode === 'combat' ? Math.atan2(pointer.y - cy, pointer.x - cx) : null,
+      sprint: k.sprint.isDown || touchStick.sprint,
+      aimAngle,
       lookAngle: this.look && time < this.look.until ? this.look.angle : null,
     };
 
@@ -340,6 +453,10 @@ export class MovementTestScene extends Phaser.Scene {
     this.updatePose(dt);
     this.updateHover(pointer.x, pointer.y);
     this.view.update(cx, cy, this.motor.facing, this.pose);
+    this.drawLockRing(time);
+
+    this.rig.update(dt);
+    this.cameras.main.setZoom(this.rig.rendererZoom(this.scale.width, this.scale.height, PX_PER_METRE));
 
     this.hudTimer -= dt;
     if (this.hudTimer <= 0) {
@@ -349,6 +466,8 @@ export class MovementTestScene extends Phaser.Scene {
         gait: this.motor.gait,
         crouched: this.motor.crouched,
         speed: speedOf(this.motor) / PX_PER_METRE,
+        span: this.rig.span,
+        locked: this.lockTarget !== null,
       });
     }
   }
@@ -427,8 +546,23 @@ export class MovementTestScene extends Phaser.Scene {
     }
   }
 
+  private drawLockRing(time: number): void {
+    const g = this.lockRing;
+    g.clear();
+    const t = this.lockTarget;
+    if (!t) return;
+    const r = t.radius + 14 + Math.sin(time / 160) * 2;
+    g.lineStyle(3, 0xe0574a, 0.9);
+    for (let i = 0; i < 4; i++) {
+      const a = (i * Math.PI) / 2 + time / 900;
+      g.beginPath();
+      g.arc(t.x, t.y, r, a - 0.45, a + 0.45);
+      g.strokePath();
+    }
+  }
+
   private updateHover(px: number, py: number): void {
-    const next = this.mode === 'explore' ? this.interactableAt(px, py) : null;
+    const next = this.mode === 'explore' && this.inputSource === 'mouse' ? this.interactableAt(px, py) : null;
     if (next !== this.hovered) {
       this.hovered?.setHighlight(false);
       next?.setHighlight(true);

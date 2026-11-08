@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { createGame } from './game/createGame';
 import { Hud } from './ui/Hud';
+import { TouchControls } from './ui/TouchControls';
 import { TuningPanel } from './ui/TuningPanel';
 
 export function App() {
@@ -17,6 +18,7 @@ export function App() {
     <div className="relative h-full w-full">
       <div ref={gameRef} className="absolute inset-0" />
       <Hud />
+      <TouchControls />
       <TuningPanel />
     </div>
   );
