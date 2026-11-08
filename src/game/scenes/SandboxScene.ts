@@ -29,6 +29,8 @@ import { MoveOrder } from '../navigation/MoveOrder';
 import { resistance, separate } from '../movement/shove';
 import { MOCK_PROFILES } from '../characters/mockProfiles';
 import { profiler } from '../perf/profiler';
+import { detailSettings } from '../sim/detail';
+import { SpatialHash } from '../perception/spatialHash';
 import { describeMemory, type MemoryKind } from '../perception/memory';
 import { SCENT, smellStrength, type SmellSource } from '../perception/scents';
 import { footstepLoudness, LOUDNESS, SIGHT, type NoiseKind } from '../perception/senseRules';
@@ -48,8 +50,16 @@ import { interruptsRest, MAX_REST_HOURS, REST_SPEED, type RestKind, type RestSti
  * simple) lives until you take control of one of them.
  */
 
-export const WORLD_W = 2560;
-export const WORLD_H = 1792;
+/** The sandbox's size (world px). Other scenes set their own via world(). */
+const WORLD_W = 2560;
+const WORLD_H = 1792;
+
+export interface WorldSize {
+  w: number;
+  h: number;
+  /** Navigation / line-of-sight grid cell size (world px). */
+  cell: number;
+}
 const M = PX_PER_METRE;
 /** How far from the body's centre a character can reach to use something. */
 const REACH = 0.95 * M;
@@ -100,7 +110,12 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     Phaser.Input.Keyboard.Key
   >;
   private solids!: Phaser.Physics.Arcade.StaticGroup;
-  private nav = new NavGrid(WORLD_W, WORLD_H, 8);
+  /** How big this scene's world is (overridden by e.g. the performance test). */
+  protected world(): WorldSize {
+    return { w: WORLD_W, h: WORLD_H, cell: 8 };
+  }
+  protected readonly size: WorldSize = this.world();
+  private nav = new NavGrid(this.size.w, this.size.h, this.size.cell);
   private navDirty = true;
   private doors: Door[] = [];
   private windows: Window[] = [];
@@ -124,7 +139,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
   senses!: Senses;
   /** Walls etc. that block sight and muffle sound (not inflated, unlike the nav grid). */
   private sightBlockers: Obstacle[] = [];
-  private sightGrid = new NavGrid(WORLD_W, WORLD_H, 8);
+  private sightGrid = new NavGrid(this.size.w, this.size.h, this.size.cell);
   private footstepTimer = new Map<string, number>();
   private sensesOverlay = false;
   private collisionView = false;
@@ -143,6 +158,12 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
   private peopleObjs: Phaser.GameObjects.Arc[] = [];
   private hudTimer = 0;
   private rosterTimer = 0;
+  /** Ground area around the camera (what's on screen, plus a margin). Drawing always stops at it. */
+  private screenBox: { x0: number; y0: number; x1: number; y1: number } | null = null;
+  /** Ground area simulated in full detail this frame: the screen box, or null = everywhere (LOD off). */
+  private detailBox: { x0: number; y0: number; x1: number; y1: number } | null = null;
+  private bumpGrid = new SpatialHash<Character>(BODY_RADIUS * 4);
+  private bumpNear: Character[] = [];
   /** Simulation time (ms). Runs with the simulation: stops when paused, speeds up while resting. */
   private simMs = 0;
   readonly clock = new GameClock();
@@ -170,10 +191,10 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
   // ================================================================ setup
 
   create(): void {
-    this.physics.world.setBounds(0, 0, WORLD_W, WORLD_H);
+    this.physics.world.setBounds(0, 0, this.size.w, this.size.h);
     this.cameras.main.setBackgroundColor('#1c1b19');
 
-    this.scenery = new Scenery(this, WORLD_W, WORLD_H);
+    this.scenery = new Scenery(this, this.size.w, this.size.h);
     this.solids = this.physics.add.staticGroup();
     this.buildWorld(this.solids);
     for (const obj of this.interactables) this.objectGfx.set(obj, { g: this.add.graphics(), bounds: emptyBounds() });
@@ -335,7 +356,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
   private setView(mode: ViewMode): void {
     this.proj = makeProjection(mode);
     this.scenery.build(this.proj);
-    const b = projectedBounds(this.proj, WORLD_W, WORLD_H, 3 * M);
+    const b = projectedBounds(this.proj, this.size.w, this.size.h, 3 * M);
     const pad = 4 * M;
     this.cameras.main.setBounds(b.x - pad, b.y - pad, b.width + pad * 2, b.height + pad * 2);
   }
@@ -1246,6 +1267,37 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     profiler.end('update');
   }
 
+  /** Is this person simulated in full detail right now? (See sim/detail.ts.) */
+  fullDetail(c: Character): boolean {
+    const b = this.detailBox;
+    if (!b || c === this.active) return true;
+    return c.x >= b.x0 && c.x <= b.x1 && c.y >= b.y0 && c.y <= b.y1;
+  }
+
+  /** How many people are in full detail right now. */
+  fullDetailCount(): number {
+    return this.characters.reduce((n, c) => n + (this.fullDetail(c) ? 1 : 0), 0);
+  }
+
+  /** Near enough to the camera to be drawn? (Independent of the simulation's level of detail.) */
+  private onScreen(c: Character): boolean {
+    const b = this.screenBox;
+    return !b || c === this.active || (c.x >= b.x0 && c.x <= b.x1 && c.y >= b.y0 && c.y <= b.y1);
+  }
+
+  /** Work out the screen area (for drawing) and the full-detail area (for the simulation). */
+  private updateDetailBox(): void {
+    const v = this.cameras.main.worldView;
+    const p = this.proj;
+    const m = detailSettings.marginM * M;
+    const a = p.toGround(v.x, v.y);
+    const b = p.toGround(v.right, v.bottom);
+    // People stand up from their feet, so someone just below the bottom edge can still show: allow their height.
+    const tall = p.upright ? (1.7 * M * p.up) / Math.max(0.1, Math.abs(p.toGround(0, 1).y)) : 0;
+    this.screenBox = { x0: Math.min(a.x, b.x) - m, x1: Math.max(a.x, b.x) + m, y0: Math.min(a.y, b.y) - m, y1: Math.max(a.y, b.y) + m + tall };
+    this.detailBox = detailSettings.offscreenLod ? this.screenBox : null;
+  }
+
   /** Add someone to the world (e.g. the performance test's spawner). */
   spawnPerson(def: CharacterDef): Character {
     const c = new Character(this, def);
@@ -1283,6 +1335,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
 
   private frameUpdate(_time: number, deltaMs: number): void {
     const dt = Math.min(deltaMs / 1000, 0.05);
+    this.updateDetailBox();
     const k = this.keys;
     const a = this.active;
 
@@ -1563,26 +1616,35 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
 
   /** Keep people from overlapping; whoever's easier to shift gives way more (see movement/shove.ts). */
   private separatePeople(): void {
-    const people = this.characters.filter((c) => !c.body.checkCollision.none);
-    const moves = separate(
-      people.map((c) => {
-        const prof = MOCK_PROFILES[c.id];
-        const r = resistance({
-          build: prof?.build ?? { heightM: 1.7, weightKg: 70 },
-          strength: prof?.skills.labour?.level ?? 3,
-          temperament: c.temperament,
-          traits: prof?.traits ?? [],
-          braced: c.mode === 'combat' || c.motor.crouched || speedOf(c.motor) < 0.3 * M,
-          limp: c.status === 'ko',
-        });
-        return { x: c.x, y: c.y, r: BODY_RADIUS, resistance: r };
-      }),
-    );
-    people.forEach((c, i) => {
-      const m = moves[i];
-      if (m.dx === 0 && m.dy === 0) return;
-      c.obj.x += m.dx;
-      c.obj.y += m.dy;
+    // Only people in full detail jostle; off-screen people walk their routes without bumping.
+    const people = this.characters.filter((c) => !c.body.checkCollision.none && this.fullDetail(c));
+    if (people.length < 2) return;
+    // Bump in small local groups (a grid), not every pair in the world.
+    this.bumpGrid.build(people);
+    const done = new Set<Character>();
+    for (const c of people) {
+      if (done.has(c)) continue;
+      const group = this.bumpGrid.query(c.x, c.y, BODY_RADIUS * 4, this.bumpNear).filter((o) => Math.hypot(o.x - c.x, o.y - c.y) < BODY_RADIUS * 2 + 2);
+      if (group.length < 2) continue;
+      const moves = separate(group.map((o) => ({ x: o.x, y: o.y, r: BODY_RADIUS, resistance: this.resistanceOf(o) })));
+      group.forEach((o, i) => {
+        const mv = moves[i];
+        o.obj.x += mv.dx;
+        o.obj.y += mv.dy;
+      });
+      done.add(c);
+    }
+  }
+
+  private resistanceOf(c: Character): number {
+    const prof = MOCK_PROFILES[c.id];
+    return resistance({
+      build: prof?.build ?? { heightM: 1.7, weightKg: 70 },
+      strength: prof?.skills.labour?.level ?? 3,
+      temperament: c.temperament,
+      traits: prof?.traits ?? [],
+      braced: c.mode === 'combat' || c.motor.crouched || speedOf(c.motor) < 0.3 * M,
+      limp: c.status === 'ko',
     });
   }
 
@@ -1914,6 +1976,14 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
 
     const p = this.proj;
     for (const c of this.characters) {
+      if (!this.onScreen(c)) {
+        // Off screen: not drawn (whatever the level of detail), and nothing to click.
+        c.view.hide();
+        c.overhead.setShown(false);
+        this.charScreen.delete(c);
+        continue;
+      }
+      c.overhead.setShown(true);
       const bed = c.asleep ? (this.interactables.find((o) => o instanceof Bed && o.occupant === c.id) as Bed | undefined) : undefined;
       if (bed) {
         const sp = bed.sortPoint(p);
@@ -1928,6 +1998,9 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
       c.overhead.update(at.x, at.y, screenScale, this.now, c.health, MAX_HEALTH, showBar);
     }
     const a = this.active;
+    const view = this.cameras.main.worldView;
+    const pad = 3 * M;
+    this.scenery.cull({ x0: view.x - pad, y0: view.y - pad, x1: view.right + pad, y1: view.bottom + pad });
     this.scenery.update(dt, { x: a.x, y: a.y }, this.charScreen.get(a)?.bounds ?? null);
     // Doors and windows cut down with their wall.
     for (const door of this.doors) {

@@ -54,7 +54,7 @@ describe('Profiler', () => {
     const csv = toCsv(p.stopRecording(), { people: 3 });
     const lines = csv.trim().split('\n');
     expect(lines[0]).toBe('# people: 3');
-    expect(lines[1].startsWith('frame,t_ms,frame_ms,fps,ticks,people,heap_mb,update_ms')).toBe(true);
-    expect(lines[2].split(',').slice(0, 7)).toEqual(['0', '16.0', '16.000', '62.5', '0', '3', '12.5']);
+    expect(lines[1].startsWith('frame,t_ms,frame_ms,fps,ticks,people,full_detail,heap_mb,update_ms')).toBe(true);
+    expect(lines[2].split(',').slice(0, 8)).toEqual(['0', '16.0', '16.000', '62.5', '0', '3', '3', '12.5']);
   });
 });

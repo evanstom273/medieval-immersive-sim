@@ -103,6 +103,21 @@ export function PerfHud() {
         </div>
       )}
 
+      {s && (
+        <div className="mt-2 flex items-center justify-between gap-2 font-sans">
+          <span className="text-white/60" title="People near the camera get the full simulation; everyone else a cheaper one (no looking around, no bumping, not drawn)">
+            Full detail: <span className="font-mono text-white/90">{s.fullDetail}</span> of {s.people}
+          </span>
+          <button
+            className={`rounded-full px-2.5 py-1 ${s.lod ? 'bg-emerald-400/20 text-emerald-200' : 'bg-white/10 text-white/70'} hover:bg-white/20`}
+            title="Off-screen level of detail. Off = everyone simulated in full (the worst case)."
+            onClick={() => perfCommands.emit({ kind: 'setLod', on: !s.lod })}
+          >
+            Off-screen LOD: {s.lod ? 'on' : 'off'}
+          </button>
+        </div>
+      )}
+
       {open && s && (
         <>
           <Graph frames={s.recentFrameMs} />
@@ -187,7 +202,7 @@ export function PerfHud() {
         {result && !testing && (
           <div className="mt-2 rounded-lg bg-white/5 p-2 font-mono">
             <div>
-              {result.summary.people} people · {result.summary.frames} frames
+              {result.summary.people} people · {result.summary.frames} frames · LOD {result.filename.includes('lodon') ? 'on' : 'off'}
             </div>
             <div>
               avg {result.summary.avgFps.toFixed(1)} fps · 1% low {result.summary.low1Fps.toFixed(1)}

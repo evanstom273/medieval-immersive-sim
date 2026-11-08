@@ -50,6 +50,16 @@ export class NavGrid {
   readonly rows: number;
   private blocked: Uint8Array;
   private links = new Map<number, NavLink[]>();
+  /**
+   * Search buffers, allocated once and reused: a cell's g / came / closed values only count
+   * if its stamp matches the current search (so nothing needs clearing between searches,
+   * which matters on big maps).
+   */
+  private gBuf: Float32Array | null = null;
+  private cameBuf: Int32Array | null = null;
+  private stampBuf: Int32Array | null = null;
+  private closedBuf: Int32Array | null = null;
+  private searchId = 0;
 
   constructor(
     readonly width: number,
@@ -195,11 +205,26 @@ export class NavGrid {
     }
 
     const n = this.cols * this.rows;
-    const g = new Float32Array(n).fill(Infinity);
-    const came = new Int32Array(n).fill(-1);
+    if (!this.gBuf) {
+      this.gBuf = new Float32Array(n);
+      this.cameBuf = new Int32Array(n);
+      this.stampBuf = new Int32Array(n);
+      this.closedBuf = new Int32Array(n);
+    }
+    const id = ++this.searchId;
+    const gB = this.gBuf;
+    const cameB = this.cameBuf!;
+    const stamp = this.stampBuf!;
+    const closedB = this.closedBuf!;
+    const gOf = (i: number) => (stamp[i] === id ? gB[i] : Infinity);
+    const setG = (i: number, v: number, from: number) => {
+      stamp[i] = id;
+      gB[i] = v;
+      cameB[i] = from;
+    };
+    const isClosed = (i: number) => closedB[i] === id;
     /** The link used to arrive at a cell, if any. */
     const cameBy = new Map<number, NavLink>();
-    const closed = new Uint8Array(n);
     const open = new MinHeap();
     const startI = sr * this.cols + sc;
     const h = (i: number) => {
@@ -208,15 +233,15 @@ export class NavGrid {
       const dy = Math.abs(p.y - heuristicTarget.y) / cs;
       return Math.max(dx, dy) + (SQRT2 - 1) * Math.min(dx, dy);
     };
-    g[startI] = 0;
+    setG(startI, 0, -1);
     open.push(startI, h(startI));
 
     let expanded = 0;
     let goalI = -1;
     while (open.size > 0) {
       const i = open.pop();
-      if (closed[i]) continue;
-      closed[i] = 1;
+      if (isClosed(i)) continue;
+      closedB[i] = id;
       if (isGoal(this.centre(i))) {
         goalI = i;
         break;
@@ -231,11 +256,10 @@ export class NavGrid {
         // No cutting corners past obstacles.
         if (dc !== 0 && dr !== 0 && (this.isBlockedCell(c + dc, r) || this.isBlockedCell(c, r + dr))) continue;
         const ni = nr * this.cols + nc;
-        if (closed[ni]) continue;
-        const ng = g[i] + cost;
-        if (ng < g[ni]) {
-          g[ni] = ng;
-          came[ni] = i;
+        if (isClosed(ni)) continue;
+        const ng = gOf(i) + cost;
+        if (ng < gOf(ni)) {
+          setG(ni, ng, i);
           cameBy.delete(ni);
           open.push(ni, ng + h(ni));
         }
@@ -243,11 +267,10 @@ export class NavGrid {
       if (useLinks) {
         for (const link of this.links.get(i) ?? []) {
           const ni = this.cellIndex(link.to);
-          if (closed[ni]) continue;
-          const ng = g[i] + Math.hypot(link.to.x - link.from.x, link.to.y - link.from.y) / cs + (link.costMetres * 64) / cs;
-          if (ng < g[ni]) {
-            g[ni] = ng;
-            came[ni] = i;
+          if (isClosed(ni)) continue;
+          const ng = gOf(i) + Math.hypot(link.to.x - link.from.x, link.to.y - link.from.y) / cs + (link.costMetres * 64) / cs;
+          if (ng < gOf(ni)) {
+            setG(ni, ng, i);
             cameBy.set(ni, link);
             open.push(ni, ng + h(ni));
           }
@@ -258,7 +281,7 @@ export class NavGrid {
 
     // Walk back to the start, splitting the route into walkable stretches at each link.
     const stretches: { cells: Point[]; via: NavLink | null }[] = [{ cells: [], via: null }];
-    for (let i = goalI; i !== -1; i = came[i]) {
+    for (let i = goalI; i !== -1; i = cameB[i]) {
       stretches[stretches.length - 1].cells.push(this.centre(i));
       const via = cameBy.get(i);
       if (via) {

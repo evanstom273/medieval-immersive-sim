@@ -18,6 +18,8 @@ export interface Sample {
   /** World steps run this frame (more than 1 while waiting / sleeping). */
   ticks: number;
   people: number;
+  /** How many of them were simulated in full detail. */
+  fullDetail: number;
   /** MB of JS heap in use, where the browser reports it (Chrome); else null. */
   heapMb: number | null;
   ms: Record<Section, number>;
@@ -62,12 +64,12 @@ export class Profiler {
   }
 
   /** Close the frame: turn this frame's totals into a sample. */
-  endFrame(people: number, heapMb: number | null): Sample | null {
+  endFrame(people: number, heapMb: number | null, fullDetail = people): Sample | null {
     if (!this.enabled) return null;
     const now = this.now();
     const frameMs = this.lastFrameAt === null ? 0 : now - this.lastFrameAt;
     this.lastFrameAt = now;
-    const s: Sample = { t: now - (this.recording ? this.recordStart : this.started), frameMs, ticks: this.ticks, people, heapMb, ms: this.cur };
+    const s: Sample = { t: now - (this.recording ? this.recordStart : this.started), frameMs, ticks: this.ticks, people, fullDetail, heapMb, ms: this.cur };
     this.cur = zero();
     this.ticks = 0;
     if (frameMs > 0) {
@@ -129,10 +131,10 @@ export function summarise(samples: readonly Sample[]): Summary | null {
 
 /** One row per frame. Times in ms, to 3 decimal places. */
 export function toCsv(samples: readonly Sample[], meta: Record<string, string | number> = {}): string {
-  const head = ['frame', 't_ms', 'frame_ms', 'fps', 'ticks', 'people', 'heap_mb', ...SECTIONS.map((s) => `${s}_ms`)];
+  const head = ['frame', 't_ms', 'frame_ms', 'fps', 'ticks', 'people', 'full_detail', 'heap_mb', ...SECTIONS.map((s) => `${s}_ms`)];
   const rows = samples
     .filter((s) => s.frameMs > 0)
-    .map((s, i) => [i, s.t.toFixed(1), s.frameMs.toFixed(3), (1000 / s.frameMs).toFixed(1), s.ticks, s.people, s.heapMb === null ? '' : s.heapMb.toFixed(1), ...SECTIONS.map((k) => s.ms[k].toFixed(3))].join(','));
+    .map((s, i) => [i, s.t.toFixed(1), s.frameMs.toFixed(3), (1000 / s.frameMs).toFixed(1), s.ticks, s.people, s.fullDetail, s.heapMb === null ? '' : s.heapMb.toFixed(1), ...SECTIONS.map((k) => s.ms[k].toFixed(3))].join(','));
   // Metadata as leading comment lines (spreadsheets show them as text rows; most CSV readers can skip '#').
   const metaLines = Object.entries(meta).map(([k, v]) => `# ${k}: ${String(v).replace(/[\r\n]/g, ' ')}`);
   return [...metaLines, head.join(','), ...rows].join('\n') + '\n';

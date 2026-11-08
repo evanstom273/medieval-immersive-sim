@@ -28,6 +28,11 @@ export interface SensesHost {
   wallsBetween(a: Point, b: Point): number;
   /** Deliver a perception (the host passes it to the character's brain if it has one in charge). */
   perceive(c: Character, p: Perception): void;
+  /**
+   * Is this person simulated in full detail? If not (off screen, reduced detail), they skip the
+   * regular look-around (sight, smell) but still get events: noises, attacks they witness.
+   */
+  fullDetail?(c: Character): boolean;
 }
 
 export interface NoiseEvent {
@@ -163,8 +168,9 @@ export class Senses {
       const o = all[this.cursor++ % all.length];
       this.cursor %= all.length;
       const step = Math.min(1, (now - (this.lastTick.get(o.id) ?? now - TICK * 1000)) / 1000);
-      this.lastTick.set(o.id, now);
       if (o.status === 'ko') continue;
+      if (this.host.fullDetail && !this.host.fullDetail(o)) continue; // reduced detail: no look-around this tick
+      this.lastTick.set(o.id, now);
 
       // Only people within sight range can be seen or sensed; everyone else known just fades.
       const near = this.grid.query(o.x, o.y, SIGHT.range, this.nearby);

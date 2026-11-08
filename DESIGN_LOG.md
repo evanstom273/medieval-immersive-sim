@@ -457,3 +457,15 @@ When an item changes status, move it and add a dated note rather than silently r
   - **Senses:** each person's senses still tick about 10× a second, but people are updated a few at a time across frames (no spike). They only compare people within sight range (a spatial grid). The line-of-sight check, the expensive part, only runs if the target is in range and in their field of view. Noise skips counting walls for anyone out of earshot. Scent marks are indexed by kind, so looking for blood no longer scans everyone's trails.
   - **Render:** people are no longer redrawn as vector shapes every frame. Each body part is baked once per facing into shared texture sheets (five facings plus mirroring), in white, and each person is a set of tinted sprites. Lying down is the same sprites rotated.
   - Test browser (no GPU, so frame rates there aren't meaningful), ms per frame at 501 people: senses 725 → 72, render 159 → 12. At 51 people: senses 4.1 → 0.8, render 17.8 → 1.2.
+
+### Off-screen level of detail (middle tier)
+*2026-11-08 23:44 UTC*
+
+**Agreed:** the middle tier, with a toggle.
+- People near the camera (on screen plus a 3 m margin, and always the person you control) get the full simulation.
+- Everyone else gets a cheaper one. They still think, walk their routes (walls and doors still apply), hear noises and witness attacks, because those are events. They don't do the regular look-around (sight and smell sweeps), and they don't bump into each other.
+- Off-screen people and scenery aren't drawn. That's separate from the toggle: drawing what nobody can see is never useful.
+- Toggle: perf HUD "Off-screen LOD: on/off" (on by default; the setting is shared, so the sandbox uses it too). Off = everyone in full detail, the worst case. The HUD shows "Full detail: N of M", and the CSV records whether LOD was on plus a `full_detail` column.
+- PLACEHOLDER/known: "near" is camera-based. When the overview zoom exists, zoomed out shows everything, so it'll need a rule like "near the camera's focus" and/or "household always full detail". Smelling blood off screen doesn't happen (it's part of the look-around), but blood is still there to be smelt when someone comes near.
+
+**Perf test field:** now 240 × 160 m (village-sized) with about one crate per 150 m², and people spawn across the whole field. Supporting fixes: route-finding reuses its working memory (it was allocating whole-map arrays per route), bumping uses a local grid instead of every pair, and scenery off camera isn't drawn.

@@ -152,7 +152,7 @@ export const restDialogChannel = new Channel<RestDialogState | null>();
 // ------------------------------------------------------------------ performance test scene
 
 /** UI → perf scene. */
-export type PerfCommand = { kind: 'spawn'; count: number } | { kind: 'setPeople'; total: number } | { kind: 'startTest' } | { kind: 'cancelTest' };
+export type PerfCommand = { kind: 'spawn'; count: number } | { kind: 'setPeople'; total: number } | { kind: 'setLod'; on: boolean } | { kind: 'startTest' } | { kind: 'cancelTest' };
 export const perfCommands = new Channel<PerfCommand>();
 
 /** Perf scene → UI, a few times a second: live numbers over the last second. */
@@ -163,6 +163,10 @@ export interface PerfStats {
   maxFrameMs: number;
   ticksPerSec: number;
   people: number;
+  /** How many of them are simulated in full detail (near the camera). */
+  fullDetail: number;
+  /** Off-screen level of detail switched on? */
+  lod: boolean;
   heapMb: number | null;
   /** Average ms per frame in each section over the last second. */
   sections: Record<string, number>;

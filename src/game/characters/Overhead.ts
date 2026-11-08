@@ -94,6 +94,10 @@ export class Overhead {
     }
   }
 
+  setShown(shown: boolean): void {
+    this.container.setVisible(shown);
+  }
+
   destroy(): void {
     this.container.destroy();
   }

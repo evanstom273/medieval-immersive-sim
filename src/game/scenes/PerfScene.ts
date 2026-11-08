@@ -4,11 +4,15 @@ import type { CharacterDef } from '../characters/Character';
 import type { Temperament } from '../combat/combat';
 import { PX_PER_METRE } from '../movement/tuning';
 import { profiler, SECTIONS, summarise, toCsv } from '../perf/profiler';
-import { SandboxScene, WORLD_H, WORLD_W } from './SandboxScene';
+import { detailSettings } from '../sim/detail';
+import { SandboxScene, type WorldSize } from './SandboxScene';
 
 const M = PX_PER_METRE;
 const TEST_SECONDS = 30;
 const TEMPERAMENTS: Temperament[] = ['bold', 'wary', 'meek'];
+/** The test field: village-sized, so most people can be off screen. */
+const FIELD_W = 240 * M;
+const FIELD_H = 160 * M;
 const HAIR = [0x3b2416, 0x8a5a2b, 0x1f1a17, 0xb5a07a, 0x6b3b1f, 0x2a2a2a, 0xa8742f];
 
 /**
@@ -26,19 +30,26 @@ export class PerfScene extends SandboxScene {
     super('perf');
   }
 
-  protected cast(): CharacterDef[] {
-    return [{ id: 'player', name: 'You', temperament: 'bold', palette: { tunic: 0x8a3b2e, hair: 0x3b2416 }, x: WORLD_W / 2, y: WORLD_H / 2 }];
+  protected world(): WorldSize {
+    // A coarser grid than the sandbox's: the field is 34× bigger, and it's open ground.
+    return { w: FIELD_W, h: FIELD_H, cell: 16 };
   }
 
-  /** An open field with a few scattered crates (so routes have something to go round). */
+  protected cast(): CharacterDef[] {
+    return [{ id: 'player', name: 'You', temperament: 'bold', palette: { tunic: 0x8a3b2e, hair: 0x3b2416 }, x: FIELD_W / 2, y: FIELD_H / 2 }];
+  }
+
+  /** A big open field (240 × 160 m) with scattered crates (so routes have something to go round). */
   protected buildWorld(solids: Phaser.Physics.Arcade.StaticGroup): void {
     const rng = this.rng;
-    for (let i = 0; i < 18; i++) {
+    // About one crate per 150 m².
+    const crates = Math.round((FIELD_W / M) * (FIELD_H / M) / 150);
+    for (let i = 0; i < crates; i++) {
       const w = (1 + Math.floor(rng() * 2)) * M;
       const h = (1 + Math.floor(rng() * 2)) * M;
-      const x = Math.floor((1 + rng() * (WORLD_W / M - 4)) ) * M;
-      const y = Math.floor((1 + rng() * (WORLD_H / M - 4)) ) * M;
-      if (Math.hypot(x - WORLD_W / 2, y - WORLD_H / 2) < 3 * M) continue;
+      const x = Math.floor(1 + rng() * (FIELD_W / M - 4)) * M;
+      const y = Math.floor(1 + rng() * (FIELD_H / M - 4)) * M;
+      if (Math.hypot(x - FIELD_W / 2, y - FIELD_H / 2) < 3 * M) continue;
       this.wall(solids, x, y, w, h, 0x7a6248, 0.9 * M, false);
     }
   }
@@ -89,6 +100,9 @@ export class PerfScene extends SandboxScene {
         else while (this.characters.length > total) this.removePerson(this.characters[this.characters.length - 1]);
         break;
       }
+      case 'setLod':
+        detailSettings.offscreenLod = c.on;
+        break;
       case 'startTest':
         profiler.startRecording();
         this.testEndsAt = performance.now() + TEST_SECONDS * 1000;
@@ -107,7 +121,7 @@ export class PerfScene extends SandboxScene {
     for (let i = 0; i < count; i++) {
       const n = ++this.spawned;
       let at = null;
-      for (let tries = 0; tries < 10 && !at; tries++) at = nav.nearestFree({ x: (0.05 + rng() * 0.9) * WORLD_W, y: (0.05 + rng() * 0.9) * WORLD_H }, 2 * M);
+      for (let tries = 0; tries < 10 && !at; tries++) at = nav.nearestFree({ x: (0.02 + rng() * 0.96) * FIELD_W, y: (0.02 + rng() * 0.96) * FIELD_H }, 2 * M);
       if (!at) continue;
       const tunic = Phaser.Display.Color.HSLToColor(rng(), 0.35 + rng() * 0.3, 0.3 + rng() * 0.2).color;
       this.spawnPerson({
@@ -128,7 +142,7 @@ export class PerfScene extends SandboxScene {
   }
 
   private afterFrame(): void {
-    const sample = profiler.endFrame(this.characters.length, this.heapMb());
+    const sample = profiler.endFrame(this.characters.length, this.heapMb(), this.fullDetailCount());
     if (!sample) return;
 
     if (this.testEndsAt !== null && performance.now() >= this.testEndsAt) {
@@ -142,6 +156,8 @@ export class PerfScene extends SandboxScene {
           date: new Date().toISOString(),
           people: this.characters.length,
           renderer: this.rendererName(),
+          offscreen_lod: detailSettings.offscreenLod ? 'on' : 'off',
+          field: `${FIELD_W / M} x ${FIELD_H / M} m`,
           canvas: `${this.scale.width}x${this.scale.height} (device px)`,
           devicePixelRatio: window.devicePixelRatio,
           userAgent: navigator.userAgent,
@@ -150,7 +166,7 @@ export class PerfScene extends SandboxScene {
           p95_frame_ms: sum.p95FrameMs.toFixed(2),
           ticks_per_sec: sum.ticksPerSec.toFixed(1),
         });
-        perfResultChannel.emit({ filename: `perf-${this.characters.length}people-${stamp}.csv`, csv, summary: sum });
+        perfResultChannel.emit({ filename: `perf-${this.characters.length}people-lod${detailSettings.offscreenLod ? 'on' : 'off'}-${stamp}.csv`, csv, summary: sum });
       }
     }
 
@@ -172,6 +188,8 @@ export class PerfScene extends SandboxScene {
       maxFrameMs: sum.maxFrameMs,
       ticksPerSec: sum.ticksPerSec,
       people: this.characters.length,
+      fullDetail: sample.fullDetail,
+      lod: detailSettings.offscreenLod,
       heapMb: sample.heapMb,
       sections: Object.fromEntries(SECTIONS.map((s) => [s, sum.avgMs[s]])),
       recentFrameMs: recent.slice(-120).map((s) => s.frameMs),

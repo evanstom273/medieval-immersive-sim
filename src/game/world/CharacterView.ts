@@ -446,6 +446,7 @@ export class CharacterView {
       this.ringShown = pose.controlled;
     }
     const bank = this.setup(p);
+    this.root.setVisible(true);
     this.root.setDepth(this.depthOverride ?? 10 + p.depth(x, y) / 1000 + 0.0005);
 
     const flash = pose.hitFlash > 0;
@@ -547,6 +548,15 @@ export class CharacterView {
       bounds: { x0: Math.min(fs.x, hs.x) - pad, y0: Math.min(fs.y, hs.y) - pad, x1: Math.max(fs.x, hs.x) + pad, y1: Math.max(fs.y, hs.y) + pad },
       headTop: { x: hs.x, y: Math.min(fs.y, hs.y) - 0.3 * M },
     };
+  }
+
+  /** Not drawn at all (e.g. off screen, in the reduced level of detail). */
+  hide(): void {
+    this.root.setVisible(false);
+    if (this.ringShown) {
+      this.ring.clear();
+      this.ringShown = false;
+    }
   }
 
   destroy(): void {

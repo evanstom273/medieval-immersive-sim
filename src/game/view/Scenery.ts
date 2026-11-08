@@ -70,12 +70,12 @@ export class Scenery {
         }
       } else if (prop.kind === 'paving') {
         const g = this.scene.add.graphics().setDepth(1.5);
-        flat(g, p, rectPts(prop.x, prop.y, prop.w, prop.h), 0, prop.colour, 1, 0x2c2822, 1);
-        this.pieces.push({ g, bounds: null, depthKey: 0, shown: 0, front: false });
+        const bounds = flat(g, p, rectPts(prop.x, prop.y, prop.w, prop.h), 0, prop.colour, 1, 0x2c2822, 1);
+        this.pieces.push({ g, bounds, depthKey: 0, shown: 0, front: false });
       } else if (prop.kind === 'floor') {
         const g = this.scene.add.graphics().setDepth(1);
-        flat(g, p, rectPts(prop.x, prop.y, prop.w, prop.h), 0, prop.colour);
-        this.pieces.push({ g, bounds: null, depthKey: 0, shown: 0, front: false });
+        const bounds = flat(g, p, rectPts(prop.x, prop.y, prop.w, prop.h), 0, prop.colour);
+        this.pieces.push({ g, bounds, depthKey: 0, shown: 0, front: false });
       } else {
         const g = this.scene.add.graphics();
         const h = p.upright ? prop.height : 0;
@@ -113,6 +113,19 @@ export class Scenery {
       // Walls up: rather than cutting, fade what's in the way.
       const alpha = this.mode === 'up' && hides ? 0.28 : 1;
       piece.g.setAlpha(piece.g.alpha + (alpha - piece.g.alpha) * 0.25);
+    }
+  }
+
+  /**
+   * Hide everything outside the camera's view (screen-space bounds, with a margin).
+   * Phaser redraws every Graphics object every frame whether it's on screen or not,
+   * so on a big map this is most of the scenery cost.
+   */
+  cull(view: Bounds): void {
+    for (const piece of this.pieces) {
+      const b = piece.bounds;
+      if (!b) continue;
+      piece.g.setVisible(b.x1 >= view.x0 && b.x0 <= view.x1 && b.y1 >= view.y0 && b.y0 <= view.y1);
     }
   }
 
