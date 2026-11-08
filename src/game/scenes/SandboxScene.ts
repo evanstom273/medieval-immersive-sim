@@ -1342,9 +1342,14 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
         aimAngle,
         lookAngle: c.look && this.now < c.look.until ? c.look.angle : null,
       };
-      // The body's velocity includes last frame's knockback; take that out before the motor uses it.
-      const vx = c.body.velocity.x - c.appliedKnock.x;
-      const vy = c.body.velocity.y - c.appliedKnock.y;
+      // The motor keeps its own velocity. (Reading it back from the physics body made every
+      // touch, even a glancing one, wipe out your speed: Arcade zeroes the whole velocity on
+      // contact, so you crept along at one frame's acceleration.) Only the part pushing straight
+      // into something solid is dropped, so you don't walk on the spot against a wall.
+      let { vx, vy } = c.motor;
+      const bl = c.body.blocked;
+      if ((bl.left && vx < 0) || (bl.right && vx > 0)) vx = 0;
+      if ((bl.up && vy < 0) || (bl.down && vy > 0)) vy = 0;
       c.motor = stepMotor({ ...c.motor, vx, vy }, input, tuning, dt);
       c.body.setVelocity(c.motor.vx + c.knock.x, c.motor.vy + c.knock.y);
       c.appliedKnock = { x: c.knock.x, y: c.knock.y };
