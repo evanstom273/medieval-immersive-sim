@@ -23,6 +23,7 @@ export type TouchCommand =
   | { kind: 'toggleCrouch' }
   | { kind: 'toggleCombat' }
   | { kind: 'toggleLock' }
+  | { kind: 'talk' }
   | { kind: 'punch'; hand: Hand };
 
 export const touchCommands = new Channel<TouchCommand>();

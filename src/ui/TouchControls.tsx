@@ -10,7 +10,7 @@ import { inputSourceChannel, touchCommands, touchStick, type TouchCommand } from
  * - Tap: walk to the spot, or use the thing under your finger (out of combat).
  * - Press and hold (or drag on the right half): walk there and keep following your finger.
  * - Two fingers: pinch to zoom.
- * - Buttons bottom-right: sneak, combat, and in combat left hand / right hand / lock-on.
+ * - Buttons bottom-right: talk, ready (combat), lock-on, sneak, and in combat left / right hand.
  */
 
 const STICK_RADIUS = 56; // CSS px
@@ -246,8 +246,14 @@ export function TouchControls() {
         <Btn size={52} right={164} bottom={8} on={hud?.crouched} onPress={() => send({ kind: 'toggleCrouch' })}>
           Sneak
         </Btn>
+        <Btn size={52} right={164} bottom={92} onPress={() => send({ kind: 'talk' })}>
+          Talk
+        </Btn>
         <Btn size={52} right={96} bottom={92} on={combat} onPress={() => send({ kind: 'toggleCombat' })}>
           {combat ? 'Relax' : 'Ready'}
+        </Btn>
+        <Btn size={52} right={12} bottom={92} on={hud?.locked} onPress={() => send({ kind: 'toggleLock' })}>
+          Lock
         </Btn>
         {combat && (
           <>
@@ -256,9 +262,6 @@ export function TouchControls() {
             </Btn>
             <Btn size={64} right={88} bottom={6} onPress={() => send({ kind: 'punch', hand: 'left' })}>
               Left
-            </Btn>
-            <Btn size={52} right={12} bottom={92} on={hud?.locked} onPress={() => send({ kind: 'toggleLock' })}>
-              Lock
             </Btn>
           </>
         )}

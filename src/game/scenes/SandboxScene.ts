@@ -72,7 +72,7 @@ export class SandboxScene extends Phaser.Scene implements World {
   private active!: Character;
 
   private keys!: Record<
-    'up' | 'down' | 'left' | 'right' | 'sprint' | 'crouch' | 'combat' | 'lock' | 'debug' | 'esc' | 'one' | 'two' | 'three' | 'four',
+    'up' | 'down' | 'left' | 'right' | 'sprint' | 'crouch' | 'combat' | 'lock' | 'talk' | 'debug' | 'esc' | 'one' | 'two' | 'three' | 'four',
     Phaser.Input.Keyboard.Key
   >;
   private solids!: Phaser.Physics.Arcade.StaticGroup;
@@ -234,6 +234,7 @@ export class SandboxScene extends Phaser.Scene implements World {
         crouch: KEY.SHIFT,
         combat: KEY.R,
         lock: KEY.F,
+        talk: KEY.E,
         debug: KEY.F3,
         esc: KEY.ESC,
         one: KEY.ONE,
@@ -246,7 +247,7 @@ export class SandboxScene extends Phaser.Scene implements World {
 
     // Registered after Phaser's own listener (Phaser ignores already-prevented events).
     const guard = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && ['w', 'a', 's', 'd', 'r', 'f', '1', '2', '3', '4'].includes(e.key.toLowerCase())) e.preventDefault();
+      if ((e.ctrlKey || e.metaKey) && ['w', 'a', 's', 'd', 'r', 'f', 'e', '1', '2', '3', '4'].includes(e.key.toLowerCase())) e.preventDefault();
       if (e.key === 'F3') e.preventDefault();
     };
     window.addEventListener('keydown', guard);
@@ -312,6 +313,9 @@ export class SandboxScene extends Phaser.Scene implements World {
         break;
       case 'toggleLock':
         this.toggleLock();
+        break;
+      case 'talk':
+        this.talk();
         break;
       case 'punch':
         this.punch(a, c.hand);
@@ -410,19 +414,42 @@ export class SandboxScene extends Phaser.Scene implements World {
     a.social = null;
     this.press = null;
     a.pose.punch = { left: null, right: null };
-    if (a.mode === 'explore') a.lockTarget = null;
+    // Locks on people carry across; the dummy is only a combat target.
+    if (a.mode === 'explore' && a.lockTarget === this.dummy) a.lockTarget = null;
     this.closeMenu();
   }
 
-  /** Lock onto the best target nearby, preferring what's in front. Again to release. */
+  /**
+   * Lock onto the best target nearby, preferring what's in front. Again to release.
+   * Works in and out of combat: out of combat it's people only, and you keep facing them.
+   */
   private toggleLock(): void {
     const a = this.active;
-    if (a.mode !== 'combat') return;
+    if (a.status !== 'ok') return;
     if (a.lockTarget) {
       a.lockTarget = null;
       return;
     }
-    const candidates: Targetable[] = [this.dummy, ...this.characters.filter((c) => c !== a && c.isTargetable())];
+    const people = this.characters.filter((c) => c !== a && c.isTargetable());
+    a.lockTarget = this.bestTarget(a, a.mode === 'combat' ? [this.dummy, ...people] : people);
+    if (!a.lockTarget) this.say(a.mode === 'combat' ? 'Nothing to lock on to.' : 'No one nearby to lock on to.');
+  }
+
+  /** Talk: open the menu for whoever you're locked on to, or the nearest person in front of you. */
+  private talk(): void {
+    const a = this.active;
+    if (a.status === 'ko') return;
+    const locked = a.lockTarget instanceof Character ? a.lockTarget : null;
+    const target = locked ?? (this.bestTarget(a, this.characters.filter((c) => c !== a)) as Character | null);
+    if (!target) {
+      this.say('No one nearby to talk to.');
+      return;
+    }
+    this.openCharacterMenu(target);
+  }
+
+  /** Closest target within range, weighted toward what's in front. */
+  private bestTarget(a: Character, candidates: Targetable[]): Targetable | null {
     let best: Targetable | null = null;
     let bestScore = Infinity;
     for (const t of candidates) {
@@ -435,8 +462,7 @@ export class SandboxScene extends Phaser.Scene implements World {
         best = t;
       }
     }
-    a.lockTarget = best;
-    if (!best) this.say('Nothing to lock on to.');
+    return best;
   }
 
   private switchTo(id: string): void {
@@ -703,6 +729,7 @@ export class SandboxScene extends Phaser.Scene implements World {
 
     if (Phaser.Input.Keyboard.JustDown(k.combat)) this.toggleCombat();
     if (Phaser.Input.Keyboard.JustDown(k.lock)) this.toggleLock();
+    if (Phaser.Input.Keyboard.JustDown(k.talk)) this.talk();
     if (Phaser.Input.Keyboard.JustDown(k.crouch) && a.status === 'ok') a.motor = toggleCrouch(a.motor);
     if (Phaser.Input.Keyboard.JustDown(k.debug)) this.toggleDebug();
     if (Phaser.Input.Keyboard.JustDown(k.esc)) this.closeMenu();
@@ -766,10 +793,9 @@ export class SandboxScene extends Phaser.Scene implements World {
         c.lockTarget = null;
       }
       let aimAngle: number | null = null;
-      if (c.mode === 'combat') {
-        if (c.lockTarget) aimAngle = c.angleTo(c.lockTarget);
-        else if (c.controlled && this.inputSource === 'mouse') aimAngle = c.angleTo(pointer);
-      }
+      // Locked on (in or out of combat): keep facing them. Combat without a lock: face the mouse.
+      if (c.lockTarget) aimAngle = c.angleTo(c.lockTarget);
+      else if (c.mode === 'combat' && c.controlled && this.inputSource === 'mouse') aimAngle = c.angleTo(pointer);
       const sprintKey = c.controlled && (k.sprint.isDown || (touchStick.sprint && !c.motor.crouched));
       const input: MotorInput = {
         move,
@@ -1065,7 +1091,9 @@ export class SandboxScene extends Phaser.Scene implements World {
     const t = this.active.lockTarget;
     if (!t) return;
     const r = t.radius + 14 + Math.sin(time / 160) * 2;
-    g.lineStyle(3, 0xe0574a, 0.9);
+    // Red in combat, soft cream otherwise.
+    if (this.active.mode === 'combat') g.lineStyle(3, 0xe0574a, 0.9);
+    else g.lineStyle(2.5, 0xf3e3b5, 0.8);
     for (let i = 0; i < 4; i++) {
       const a = (i * Math.PI) / 2 + time / 900;
       g.beginPath();

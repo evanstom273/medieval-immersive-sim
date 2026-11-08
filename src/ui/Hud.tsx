@@ -55,7 +55,8 @@ export function Hud() {
               <div>Click ground to walk · hold to follow</div>
               <div>Click people & things for options</div>
               <div>1–4 switch person · Scroll zoom</div>
-              <div>R fight stance · LMB/RMB punch · F lock-on</div>
+              <div>E talk · F lock-on (any time)</div>
+              <div>R fight stance · LMB/RMB punch</div>
             </div>
           )}
         </div>

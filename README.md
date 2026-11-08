@@ -23,7 +23,8 @@ npm run build    # typecheck + production build
 | Interact with a person or thing | Click it for a radial menu (talk, fight, take control; lock doors, open chests…) |
 | Switch character | 1–4, or click a portrait |
 | Right hand / left hand (combat) | Left click / right click |
-| Lock on to a target (combat) | F or middle click |
+| Lock on to someone (any time; you keep facing them) | F or middle click |
+| Talk to whoever you're locked on to / facing | E |
 | Zoom | Scroll wheel |
 | Show collision | F3 |
 
