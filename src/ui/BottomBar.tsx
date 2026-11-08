@@ -42,7 +42,7 @@ export function BottomBar() {
   const panel = tab && (
     <div
       className={`pointer-events-auto flex flex-col overflow-hidden bg-neutral-900/85 text-white shadow-2xl ring-1 ring-white/10 backdrop-blur-md ${
-        touch ? 'fixed inset-x-2 bottom-[76px] max-h-[55vh] rounded-2xl' : 'mb-2 h-[340px] w-[380px] rounded-2xl'
+        touch ? 'mx-2 mb-2 max-h-[55vh] rounded-2xl' : 'mb-2 h-[340px] w-[380px] rounded-2xl'
       }`}
       onPointerDown={(e) => e.stopPropagation()}
     >
@@ -68,15 +68,19 @@ export function BottomBar() {
     <>
       <CurrentAction member={active} touch={touch} />
 
-      <div
-        className="pointer-events-none fixed inset-x-0 bottom-0 z-20"
-        style={{ paddingBottom: 'env(safe-area-inset-bottom)', paddingLeft: 'env(safe-area-inset-left)', paddingRight: 'env(safe-area-inset-right)' }}
-      >
+      <div className="pointer-events-none fixed inset-x-0 bottom-0 z-20 flex flex-col">
         {touch && panel}
         <div
-          className={`pointer-events-auto flex items-end justify-between gap-3 border-t border-white/10 bg-gradient-to-t from-neutral-950/80 to-neutral-950/45 backdrop-blur-sm ${
-            touch ? 'h-[68px] px-2 py-2' : 'h-[112px] px-4 py-3'
+          className={`pointer-events-auto flex items-end justify-between gap-3 border-t border-white/10 bg-gradient-to-t from-neutral-950/85 to-neutral-950/55 backdrop-blur-sm ${
+            touch ? 'px-2 pt-2' : 'px-4 pt-3'
           }`}
+          // Content height plus the phone's gesture/safe area, so the bar sits flush with the bottom edge.
+          style={{
+            height: `calc(${touch ? 60 : 100}px + env(safe-area-inset-bottom))`,
+            paddingBottom: `calc(${touch ? 8 : 12}px + env(safe-area-inset-bottom))`,
+            paddingLeft: `max(${touch ? 8 : 16}px, env(safe-area-inset-left))`,
+            paddingRight: `max(${touch ? 8 : 16}px, env(safe-area-inset-right))`,
+          }}
           onPointerDown={(e) => e.stopPropagation()}
         >
           {/* ---- left: who you are, and everyone else */}

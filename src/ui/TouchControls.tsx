@@ -239,7 +239,7 @@ export function TouchControls() {
         style={{
           right: 'max(16px, env(safe-area-inset-right))',
           // Above the bottom bar.
-          bottom: 'calc(84px + env(safe-area-inset-bottom))',
+          bottom: 'calc(76px + env(safe-area-inset-bottom))',
           width: 216,
           height: 150,
         }}
