@@ -90,7 +90,7 @@ export class Character implements Targetable {
     this.body = this.obj.body as Phaser.Physics.Arcade.Body;
     this.body.setCircle(BODY_RADIUS);
     this.body.setCollideWorldBounds(true);
-    this.view = new CharacterView(scene, def.x, def.y, def.palette).setDepth(20);
+    this.view = new CharacterView(scene, def.x, def.y, def.palette);
     this.overhead = new Overhead(scene);
   }
 

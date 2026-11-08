@@ -104,6 +104,8 @@ export type UiCommand =
   | { kind: 'menuClose' }
   | { kind: 'toggleSenses' }
   | { kind: 'setPaused'; paused: boolean }
+  | { kind: 'setView'; mode: 'topdown' | 'threequarter' | 'isometric' }
+  | { kind: 'cycleView' }
   | { kind: 'cancelAction' };
 
 /** Game → UI: a character switch started / landed. */
@@ -115,6 +117,9 @@ export interface SwitchEvent {
   activity: string;
 }
 export const switchChannel = new Channel<SwitchEvent>();
+
+/** Game → UI: which view projection is active. */
+export const viewChannel = new Channel<'topdown' | 'threequarter' | 'isometric'>();
 
 /** Game → UI: is the simulation paused? */
 export const pausedChannel = new Channel<boolean>();

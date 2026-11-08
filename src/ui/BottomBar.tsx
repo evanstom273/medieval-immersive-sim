@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
-import { hudChannel, pausedChannel, rosterChannel, uiCommands, type HudState, type RosterMember, type RosterState } from '../game/bridge';
+import { hudChannel, pausedChannel, rosterChannel, uiCommands, viewChannel, type HudState, type RosterMember, type RosterState } from '../game/bridge';
 import { MOCK_PROFILES, NEEDS } from '../game/characters/mockProfiles';
 import { inputSourceChannel, type InputSource } from '../game/input/touchInput';
+import { VIEW_LABEL, type ViewMode } from '../game/view/projection';
 import { Avatar, CharacterTab, NeedsTab, PeopleTab, SkillsTab, TABS, type Tab } from './characterPanel';
 
 /**
@@ -71,7 +72,7 @@ export function BottomBar() {
       <div className="pointer-events-none fixed inset-x-0 bottom-0 z-20 flex flex-col">
         {touch && panel}
         <div
-          className={`pointer-events-auto flex items-end justify-between gap-3 border-t border-white/10 bg-gradient-to-t from-neutral-950/85 to-neutral-950/55 backdrop-blur-sm ${
+          className={`pointer-events-auto flex items-end justify-between border-t ${touch ? 'gap-1' : 'gap-3'} border-white/10 bg-gradient-to-t from-neutral-950/85 to-neutral-950/55 backdrop-blur-sm ${
             touch ? 'px-2 pt-2' : 'px-4 pt-3'
           }`}
           // Content height plus the phone's gesture/safe area, so the bar sits flush with the bottom edge.
@@ -84,18 +85,21 @@ export function BottomBar() {
           onPointerDown={(e) => e.stopPropagation()}
         >
           {/* ---- left: who you are, and everyone else */}
-          <div className={`flex shrink-0 items-end ${touch ? 'gap-1.5' : 'gap-3'}`}>
-            <div className={`flex ${touch ? 'flex-row items-end gap-1.5' : 'flex-col gap-1.5'} order-1`}>
+          <div className={`flex shrink-0 items-end ${touch ? 'gap-1' : 'gap-3'}`}>
+            <div className={`flex ${touch ? 'flex-row items-end gap-1' : 'flex-col gap-1.5'} order-1`}>
               {others.map((m) => (
-                <MiniPortrait key={m.id} member={m} size={touch ? 26 : 28} keyHint={touch ? null : indexOf(m.id) + 1} />
+                <MiniPortrait key={m.id} member={m} size={touch ? 24 : 28} keyHint={touch ? null : indexOf(m.id) + 1} />
               ))}
             </div>
-            <BigPortrait member={active} size={touch ? 46 : 84} onPress={() => pickTab('character')} />
+            <BigPortrait member={active} size={touch ? 44 : 84} onPress={() => pickTab('character')} />
             {!touch && <Identity member={active} />}
           </div>
 
-          {/* ---- centre: time */}
-          <TimeControls paused={paused} touch={touch} help={help} setHelp={setHelp} />
+          {/* ---- centre: time, and the view switcher */}
+          <div className={`flex items-center self-center ${touch ? 'gap-1' : 'gap-2'}`}>
+            <TimeControls paused={paused} touch={touch} help={help} setHelp={setHelp} />
+            <ViewSwitcher touch={touch} />
+          </div>
 
           {/* ---- right: panel tabs (panel pops up above on desktop) */}
           <div className="relative flex flex-col items-end">
@@ -304,5 +308,29 @@ function CurrentAction({ member: m, touch }: { member: RosterMember; touch: bool
         ×
       </button>
     </div>
+  );
+}
+
+const VIEW_ICON: Record<ViewMode, string> = { topdown: '⬛', threequarter: '▱', isometric: '◇' };
+
+/** Cycles top-down → ¾ → isometric (for comparing perspectives). */
+function ViewSwitcher({ touch }: { touch: boolean }) {
+  const [mode, setMode] = useState<ViewMode>(() => viewChannel.last ?? 'topdown');
+  useEffect(() => {
+    setMode(viewChannel.last ?? 'topdown');
+    return viewChannel.on(setMode);
+  }, []);
+  return (
+    <button
+      className={`flex items-center justify-center gap-1.5 rounded-full bg-white/5 text-white ring-1 ring-white/10 hover:bg-white/10 ${touch ? 'h-9 w-9 text-xs' : 'h-11 px-3 text-sm'}`}
+      title="Change view: top-down → ¾ → isometric"
+      onClick={(e) => {
+        uiCommands.emit({ kind: 'cycleView' });
+        e.currentTarget.blur();
+      }}
+    >
+      <span className="text-white/70">{VIEW_ICON[mode]}</span>
+      {!touch && <span>{VIEW_LABEL[mode]}</span>}
+    </button>
   );
 }

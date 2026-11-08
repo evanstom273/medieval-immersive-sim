@@ -4,6 +4,7 @@ import {
   menuChannel,
   pausedChannel,
   switchChannel,
+  viewChannel,
   messageChannel,
   rosterChannel,
   uiCommands,
@@ -13,6 +14,9 @@ import {
 } from '../bridge';
 import { CameraRig } from '../camera/CameraRig';
 import { planSwitch, sampleSwitch, switchDuration, type SwitchPlan } from '../camera/switchTransition';
+import { circlePts, discOnGround, emptyBounds, flat, prism, rectPts, ringOnGround, type Bounds } from '../view/draw';
+import { makeProjection, projectedBounds, VIEW_MODES, type Projection, type ViewMode } from '../view/projection';
+import { Scenery } from '../view/Scenery';
 import type { World } from '../characters/Brain';
 import { BODY_RADIUS, Character, type CharacterDef, type Targetable } from '../characters/Character';
 import { HIT_OPINION, MAX_HEALTH, PUNCH_DAMAGE, TEMPERAMENTS } from '../combat/combat';
@@ -28,7 +32,7 @@ import { NavGrid, type Obstacle, type Point } from '../navigation/NavGrid';
 import { Relationships, opinionWord } from '../social/relationships';
 import { REACTION_ICON, SOCIAL_ACTIONS, describeSocial, resolveSocial, socialAction, type SocialActionId } from '../social/socialActions';
 import { between, createRng, type Rng } from '../util/rng';
-import { handOffset, PUNCH_EXTEND, PUNCH_TOTAL, type Hand } from '../world/CharacterView';
+import { handOffset, PUNCH_EXTEND, PUNCH_TOTAL, type Hand, type ViewResult } from '../world/CharacterView';
 import { Chest, Door, Sign, type InteractContext, type Interactable, type MenuOption } from '../world/interactables';
 
 /**
@@ -64,9 +68,13 @@ const CAST: CharacterDef[] = [
 ];
 
 interface Dummy extends Targetable {
-  view: Phaser.GameObjects.Graphics;
+  g: Phaser.GameObjects.Graphics;
   hits: number;
+  flashUntil: number;
+  wobble: { x: number; y: number };
 }
+
+const VIEW_STORAGE_KEY = 'mis.viewMode';
 
 type OpenMenu = { kind: 'character'; target: Character } | { kind: 'object'; target: Interactable } | { kind: 'self' };
 
@@ -111,8 +119,13 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
   private sensesOverlay = false;
   private overlayGfx!: Phaser.GameObjects.Graphics;
   private pendingSmells: SmellSource[] = [];
-  private fire!: { x: number; y: number; flames: Phaser.GameObjects.Graphics; smokeTimer: number };
-  private midden!: { x: number; y: number; flies: Phaser.GameObjects.Graphics };
+  private fire!: { x: number; y: number; g: Phaser.GameObjects.Graphics; smokeTimer: number };
+  private midden!: { x: number; y: number; g: Phaser.GameObjects.Graphics };
+  /** The active view projection (top-down / ¾ / isometric). The simulation itself is always on the ground plane. */
+  proj: Projection = makeProjection('topdown');
+  private scenery!: Scenery;
+  private objectGfx = new Map<Interactable, { g: Phaser.GameObjects.Graphics; bounds: Bounds }>();
+  private charScreen = new Map<Character, ViewResult>();
   private hitNoticeAt = -Infinity;
   private hudTimer = 0;
   private rosterTimer = 0;
@@ -129,12 +142,12 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
 
   create(): void {
     this.physics.world.setBounds(0, 0, WORLD_W, WORLD_H);
-    this.cameras.main.setBounds(0, 0, WORLD_W, WORLD_H);
-    this.cameras.main.setBackgroundColor('#5d6b45');
+    this.cameras.main.setBackgroundColor('#1c1b19');
 
-    this.drawGround();
+    this.scenery = new Scenery(this, WORLD_W, WORLD_H);
     this.solids = this.physics.add.staticGroup();
     this.buildWorld(this.solids);
+    for (const obj of this.interactables) this.objectGfx.set(obj, { g: this.add.graphics(), bounds: emptyBounds() });
 
     for (const def of CAST) this.characters.push(new Character(this, def));
     const objs = this.characters.map((c) => c.obj);
@@ -160,27 +173,26 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     this.lockRing = this.add.graphics().setDepth(16);
     this.routeGfx = this.add.graphics().setDepth(5);
 
+    let saved: ViewMode = 'topdown';
+    try {
+      const v = localStorage.getItem(VIEW_STORAGE_KEY) as ViewMode | null;
+      if (v && VIEW_MODES.includes(v)) saved = v;
+    } catch {
+      /* storage unavailable: default view */
+    }
+    this.setView(saved);
+
     // Draw everyone and move the camera AFTER physics has moved bodies this frame.
     this.events.on(Phaser.Scenes.Events.POST_UPDATE, this.lateUpdate, this);
     this.setupInput();
     this.say(this.inputSource === 'touch' ? 'Tap someone to interact. Tap a portrait to switch.' : 'Click someone to interact. 1–4 switches who you control.');
   }
 
-  private drawGround(): void {
-    const g = this.add.graphics().setDepth(0);
-    for (let x = 0; x <= WORLD_W; x += M) {
-      g.lineStyle(1, 0x000000, (x / M) % 5 === 0 ? 0.16 : 0.06);
-      g.lineBetween(x, 0, x, WORLD_H);
-    }
-    for (let y = 0; y <= WORLD_H; y += M) {
-      g.lineStyle(1, 0x000000, (y / M) % 5 === 0 ? 0.16 : 0.06);
-      g.lineBetween(0, y, WORLD_W, y);
-    }
-  }
-
-  private wall(solids: Phaser.Physics.Arcade.StaticGroup, x: number, y: number, w: number, h: number, colour = 0x8c8475): void {
+  /** A solid block: physics body, sight blocker, and scenery to draw (with height for the angled views). */
+  private wall(solids: Phaser.Physics.Arcade.StaticGroup, x: number, y: number, w: number, h: number, colour = 0x8c8475, height = 2.4 * M, fade = true): void {
     this.sightBlockers.push({ kind: 'rect', x, y, w, h });
-    const r = this.add.rectangle(x + w / 2, y + h / 2, w, h, colour).setStrokeStyle(2, 0x2c2822).setDepth(10);
+    this.scenery.add({ kind: 'box', x, y, w, h, height, colour, fade });
+    const r = this.add.rectangle(x + w / 2, y + h / 2, w, h).setVisible(false);
     this.physics.add.existing(r, true);
     solids.add(r);
   }
@@ -194,14 +206,14 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     const t = 20;
     const doorX = hx + 224;
     const doorW = 64;
-    this.add.rectangle(hx + hw / 2, hy + hh / 2, hw, hh, 0x8a7356).setDepth(1);
+    this.scenery.add({ kind: 'floor', x: hx, y: hy, w: hw, h: hh, colour: 0x8a7356 });
     this.wall(solids, hx, hy, hw, t);
     this.wall(solids, hx, hy, t, hh);
     this.wall(solids, hx + hw - t, hy, t, hh);
     this.wall(solids, hx, hy + hh - t, doorX - hx, t);
     this.wall(solids, doorX + doorW, hy + hh - t, hx + hw - (doorX + doorW), t);
 
-    const door = new Door(this, doorX, hy + hh - t / 2, doorW, 10);
+    const door = new Door(doorX, hy + hh - t / 2, doorW, 10);
     this.doors.push(door);
     const chest = new Chest(this, solids, hx + hw - 90, hy + 70, 56, 36);
     const sign = new Sign(this, solids, 920, 760, 'Movement test. Mind the dummy.');
@@ -212,14 +224,14 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
       [688, 512],
       [640, 560],
     ]) {
-      this.wall(solids, cx, cy, 46, 46, 0x9b7a4c);
+      this.wall(solids, cx, cy, 46, 46, 0x9b7a4c, 0.8 * M, false);
     }
 
-    const well = this.add.circle(512, 1280, 44, 0x7f7a70).setStrokeStyle(3, 0x2c2822).setDepth(10);
+    const well = this.add.circle(512, 1280, 44).setVisible(false);
     this.physics.add.existing(well, true);
     (well.body as Phaser.Physics.Arcade.StaticBody).setCircle(44);
     solids.add(well);
-    this.add.circle(512, 1280, 28, 0x1f2a33).setDepth(11);
+    this.scenery.add({ kind: 'well', x: 512, y: 1280, r: 44, height: 0.8 * M });
 
     // Cooking fire: people catch the smell of smoke and drift over to warm themselves.
     const fx = 760;
@@ -228,46 +240,17 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     this.physics.add.existing(fireBody, true);
     (fireBody.body as Phaser.Physics.Arcade.StaticBody).setCircle(24);
     solids.add(fireBody);
-    const ring = this.add.graphics({ x: fx, y: fy }).setDepth(10);
-    ring.fillStyle(0x000000, 0.2);
-    ring.fillCircle(2, 2, 28);
-    ring.fillStyle(0x2a2420, 1);
-    ring.fillCircle(0, 0, 20);
-    for (let i = 0; i < 9; i++) {
-      const a = (i / 9) * Math.PI * 2;
-      ring.fillStyle(i % 2 ? 0x8a857c : 0x77726a, 1);
-      ring.lineStyle(1.5, 0x2c2822, 1);
-      ring.fillCircle(Math.cos(a) * 22, Math.sin(a) * 22, 6);
-      ring.strokeCircle(Math.cos(a) * 22, Math.sin(a) * 22, 6);
-    }
-    ring.fillStyle(0x5a3a22, 1);
-    ring.fillRect(-14, -3, 28, 6);
-    ring.fillRect(-3, -14, 6, 28);
-    this.fire = { x: fx, y: fy, flames: this.add.graphics({ x: fx, y: fy }).setDepth(12), smokeTimer: 0 };
+    this.fire = { x: fx, y: fy, g: this.add.graphics(), smokeTimer: 0 };
     this.pendingSmells.push({ id: 'fire', kind: 'smoke', x: fx, y: fy, radius: 10 * M, pleasant: true });
 
     // Midden: a dung heap. People wrinkle their noses and don't hang about.
     const mx = 1980;
     const my = 1180;
-    const heap = this.add.graphics({ x: mx, y: my }).setDepth(2);
-    heap.fillStyle(0x000000, 0.15);
-    heap.fillEllipse(3, 4, 120, 80);
-    heap.fillStyle(0x4a3a24, 1);
-    heap.fillEllipse(0, 0, 112, 72);
-    heap.fillStyle(0x5c4a2c, 1);
-    heap.fillEllipse(-14, -8, 64, 40);
-    heap.fillStyle(0x3a2c1a, 1);
-    heap.fillEllipse(18, 10, 44, 26);
-    heap.lineStyle(1.5, 0xb59a5a, 0.8);
-    for (let i = 0; i < 10; i++) {
-      const a = i * 2.4;
-      heap.lineBetween(Math.cos(a) * 30, Math.sin(a) * 18, Math.cos(a) * 30 + 8, Math.sin(a) * 18 - 3);
-    }
-    this.midden = { x: mx, y: my, flies: this.add.graphics({ x: mx, y: my }).setDepth(30) };
+    this.midden = { x: mx, y: my, g: this.add.graphics() };
     this.pendingSmells.push({ id: 'midden', kind: 'dung', x: mx, y: my, radius: 5 * M, pleasant: false });
 
-    this.wall(solids, 1408, 1344, 320, 24, 0x6f6a5f);
-    this.wall(solids, 1408 + 320 + 48, 1344, 320, 24, 0x6f6a5f);
+    this.wall(solids, 1408, 1344, 320, 24, 0x6f6a5f, 1.0 * M);
+    this.wall(solids, 1408 + 320 + 48, 1344, 320, 24, 0x6f6a5f, 1.0 * M);
 
     const dx = 1024;
     const dy = 1216;
@@ -275,24 +258,32 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     this.physics.add.existing(dummyBody, true);
     (dummyBody.body as Phaser.Physics.Arcade.StaticBody).setCircle(14);
     solids.add(dummyBody);
-    const view = this.add.graphics({ x: dx, y: dy }).setDepth(15);
-    this.dummy = { name: 'the training dummy', x: dx, y: dy, radius: 14, view, hits: 0, isTargetable: () => true };
-    this.drawDummy(false);
+    this.dummy = { name: 'the training dummy', x: dx, y: dy, radius: 14, g: this.add.graphics(), hits: 0, flashUntil: 0, wobble: { x: 0, y: 0 }, isTargetable: () => true };
   }
 
-  private drawDummy(flash: boolean): void {
-    const g = this.dummy.view;
-    g.clear();
-    g.fillStyle(0x000000, 0.2);
-    g.fillEllipse(2, 2, 26, 50);
-    g.lineStyle(2, 0x231a12, 1);
-    g.fillStyle(flash ? 0xf0dca0 : 0xc9a65f, 1);
-    g.fillRect(-4, -24, 8, 48);
-    g.strokeRect(-4, -24, 8, 48);
-    g.fillCircle(0, 0, 14);
-    g.strokeCircle(0, 0, 14);
-    g.fillStyle(0x6b4a2b, 1);
-    g.fillCircle(0, 0, 4);
+  // ================================================================ view
+
+  /** Switch view projection. The simulation is untouched; only drawing and input mapping change. */
+  setView(mode: ViewMode): void {
+    this.proj = makeProjection(mode);
+    this.scenery.build(this.proj);
+    const b = projectedBounds(this.proj, WORLD_W, WORLD_H, 3 * M);
+    const pad = 4 * M;
+    this.cameras.main.setBounds(b.x - pad, b.y - pad, b.width + pad * 2, b.height + pad * 2);
+    // The physics debug view only makes sense seen from above.
+    const world = this.physics.world;
+    if (mode !== 'topdown' && world.drawDebug) this.toggleDebug();
+    try {
+      localStorage.setItem(VIEW_STORAGE_KEY, mode);
+    } catch {
+      /* ignore */
+    }
+    viewChannel.emit(mode);
+  }
+
+  private cycleView(): void {
+    const i = VIEW_MODES.indexOf(this.proj.mode);
+    this.setView(VIEW_MODES[(i + 1) % VIEW_MODES.length]);
   }
 
   private setupInput(): void {
@@ -405,7 +396,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
         break;
       }
       case 'hold':
-        if (this.press?.touch) this.press.point = this.cssToWorld(c.x, c.y);
+        if (this.press?.touch) this.press.point = this.ground(this.cssToWorld(c.x, c.y));
         break;
       case 'release':
         if (this.press?.touch) this.press = null;
@@ -427,6 +418,12 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
       case 'cancelAction':
         this.cancelAction();
         break;
+      case 'setView':
+        this.setView(c.mode);
+        break;
+      case 'cycleView':
+        this.cycleView();
+        break;
       case 'toggleSenses':
         this.sensesOverlay = !this.sensesOverlay;
         break;
@@ -440,27 +437,39 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     return this.scale.width / Math.max(1, this.game.canvas.clientWidth);
   }
 
+  /** Container CSS px → camera space (projected screen-space, not ground). */
   private cssToWorld(x: number, y: number): Point {
     const w = this.cameras.main.getWorldPoint(x * this.dpr(), y * this.dpr());
     return { x: w.x, y: w.y };
   }
 
-  private worldToCss(p: Point): Point {
+  /** Ground point (optionally at a height) → container CSS px. */
+  private worldToCss(p: Point, z = 0): Point {
     const cam = this.cameras.main;
     const d = this.dpr();
-    return { x: ((p.x - cam.worldView.x) * cam.zoom) / d, y: ((p.y - cam.worldView.y) * cam.zoom) / d };
+    const s = this.proj.toScreen(p.x, p.y, this.proj.upright ? z : 0);
+    return { x: ((s.x - cam.worldView.x) * cam.zoom) / d, y: ((s.y - cam.worldView.y) * cam.zoom) / d };
   }
 
-  /** Click/tap at a world point: a person or object opens its menu; the ground walks there. */
-  private pressAt(x: number, y: number, hold: boolean, touch: boolean): void {
+  /** Camera-space point → the ground point under it. */
+  private ground(s: Point): Point {
+    return this.proj.toGround(s.x, s.y);
+  }
+
+  /**
+   * Click/tap at a camera-space point: a person or object opens its menu; the
+   * ground walks there.
+   */
+  private pressAt(sx: number, sy: number, hold: boolean, touch: boolean): void {
     const a = this.active;
-    const who = this.characterAt(x, y);
+    const { x, y } = this.ground({ x: sx, y: sy });
+    const who = this.characterAt(sx, sy);
     if (who) {
       if (who === a) this.openSelfMenu();
       else this.openCharacterMenu(who);
       return;
     }
-    const obj = this.interactableAt(x, y);
+    const obj = this.interactableAt(sx, sy);
     if (obj) {
       this.openMenu({ kind: 'object', target: obj }, obj.closestPoint(x, y), obj.name[0].toUpperCase() + obj.name.slice(1), undefined, obj.options());
       return;
@@ -471,7 +480,23 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     if (hold) this.press = { since: this.now, lastPlan: this.now, point: { x, y }, touch };
   }
 
-  private characterAt(x: number, y: number): Character | null {
+  /** Who's under a camera-space point? Seen from above: their footprint; upright: their drawn figure (nearest first). */
+  private characterAt(sx: number, sy: number): Character | null {
+    if (this.proj.upright) {
+      let best: Character | null = null;
+      let bestDepth = -Infinity;
+      for (const c of this.characters) {
+        const b = this.charScreen.get(c)?.bounds;
+        if (!b || sx < b.x0 || sx > b.x1 || sy < b.y0 || sy > b.y1) continue;
+        const d = this.proj.depth(c.x, c.y);
+        if (d > bestDepth) {
+          best = c;
+          bestDepth = d;
+        }
+      }
+      return best;
+    }
+    const { x, y } = this.ground({ x: sx, y: sy });
     let best: Character | null = null;
     let bestD = Infinity;
     for (const c of this.characters) {
@@ -485,7 +510,23 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     return best;
   }
 
-  private interactableAt(x: number, y: number): Interactable | null {
+  private interactableAt(sx: number, sy: number): Interactable | null {
+    if (this.proj.upright) {
+      let best: Interactable | null = null;
+      let bestDepth = -Infinity;
+      for (const obj of this.interactables) {
+        const b = this.objectGfx.get(obj)!.bounds;
+        if (sx < b.x0 - 4 || sx > b.x1 + 4 || sy < b.y0 - 4 || sy > b.y1 + 4) continue;
+        const sp = obj.sortPoint(this.proj);
+        const d = this.proj.depth(sp.x, sp.y);
+        if (d > bestDepth) {
+          best = obj;
+          bestDepth = d;
+        }
+      }
+      return best;
+    }
+    const { x, y } = this.ground({ x: sx, y: sy });
     for (let i = this.interactables.length - 1; i >= 0; i--) {
       if (this.interactables[i].hitTest(x, y)) return this.interactables[i];
     }
@@ -636,7 +677,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
       menu.target.cancelOrder();
       menu.target.look = { angle: menu.target.angleTo(this.active), until: Infinity };
     }
-    const css = this.worldToCss(at);
+    const css = this.worldToCss(at, menu.kind === 'object' ? 0.6 * M : 0.9 * M);
     const state: MenuState = { x: css.x, y: css.y, title, subtitle, options };
     menuChannel.emit(state);
   }
@@ -938,7 +979,8 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
       if (Phaser.Input.Keyboard.JustDown(k[key]) && this.characters[i]) this.switchTo(this.characters[i].id);
     });
 
-    const pointer = this.input.activePointer.positionToCamera(this.cameras.main) as Phaser.Math.Vector2;
+    const pointerScreen = this.input.activePointer.positionToCamera(this.cameras.main) as Phaser.Math.Vector2;
+    const pointer = this.ground(pointerScreen);
 
     // ---- the active character's input
     let manual = { x: (k.right.isDown ? 1 : 0) - (k.left.isDown ? 1 : 0), y: (k.down.isDown ? 1 : 0) - (k.up.isDown ? 1 : 0) };
@@ -1025,7 +1067,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
 
     this.updateFootsteps(dt);
     this.senses.update(dt);
-    this.updateHover(pointer.x, pointer.y);
+    this.updateHover(pointerScreen.x, pointerScreen.y);
     this.emitUi(dt);
   }
 
@@ -1166,10 +1208,10 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
       this.noise('thud', d.x, d.y, c, 4);
       d.hits++;
       if (c.controlled) this.say(`Your ${hand} hand hits the dummy. (${d.hits})`);
-      this.drawDummy(true);
-      this.time.delayedCall(90, () => this.drawDummy(false));
+      d.flashUntil = this.now + 90;
       const away = Math.atan2(d.y - c.y, d.x - c.x);
-      this.tweens.add({ targets: d.view, x: d.x + Math.cos(away) * 4, y: d.y + Math.sin(away) * 4, duration: 60, yoyo: true });
+      d.wobble = { x: 0, y: 0 };
+      this.tweens.add({ targets: d.wobble, x: Math.cos(away) * 4, y: Math.sin(away) * 4, duration: 60, yoyo: true });
     }
   }
 
@@ -1335,53 +1377,135 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     cam.setZoom(this.rig.rendererZoom(this.scale.width, this.scale.height, M));
     const screenScale = this.dpr() / cam.zoom;
 
+    const p = this.proj;
     for (const c of this.characters) {
-      c.view.update(c.x, c.y, c.motor.facing, c.pose);
+      const r = c.view.update(c.x, c.y, c.motor.facing, c.pose, p);
+      this.charScreen.set(c, r);
       const showBar = c.health < MAX_HEALTH - 0.5 || c.mode === 'combat';
       c.overhead.setIndicator(this.awarenessIndicator(c));
-      c.overhead.update(c.x, c.y, screenScale, time, c.health, MAX_HEALTH, showBar);
+      // Overhead.update lifts by 18 px itself; seen from above that's from their centre, upright from the top of their head.
+      const at = p.upright ? { x: r.headTop.x, y: r.headTop.y + 14 } : { x: c.x, y: c.y };
+      c.overhead.update(at.x, at.y, screenScale, time, c.health, MAX_HEALTH, showBar);
+    }
+    for (const obj of this.interactables) {
+      const o = this.objectGfx.get(obj)!;
+      o.g.clear();
+      o.bounds = obj.render(o.g, p);
+      const sp = obj.sortPoint(p);
+      o.g.setDepth(p.upright ? 10 + p.depth(sp.x, sp.y) / 1000 : obj.name === 'door' ? 12 : 11);
     }
     const a = this.active;
+    this.drawFire(time, dt);
+    this.drawMidden(time);
+    this.drawDummy(time);
+    this.scenery.updateFade(p, { x: a.x, y: a.y }, this.charScreen.get(a)?.bounds ?? null);
     this.drawLockRing(time);
     this.drawRoute(a, time, dt);
-    this.drawFireAndFlies(time, dt);
     this.drawSensesOverlay(time);
 
-    if (switchFocus) {
-      cam.centerOn(switchFocus.x, switchFocus.y);
-      return;
-    }
+    const focus = switchFocus ?? this.followFocus(a, dt);
+    const s = p.toScreen(focus.x, focus.y, p.upright ? 0.8 * M : 0);
+    cam.centerOn(s.x, s.y);
+  }
+
+  /** Ground point the camera follows (smoothed, frame-rate independent). */
+  private followFocus(a: Character, dt: number): Point {
     if (!this.cameraFocus) this.cameraFocus = { x: a.x, y: a.y };
     const k = 1 - Math.exp(-CAMERA_FOLLOW * dt);
     this.cameraFocus.x += (a.x - this.cameraFocus.x) * k;
     this.cameraFocus.y += (a.y - this.cameraFocus.y) * k;
-    cam.centerOn(this.cameraFocus.x, this.cameraFocus.y);
+    return this.cameraFocus;
   }
 
-  private drawFireAndFlies(time: number, dt: number): void {
-    const g = this.fire.flames;
+  private depthAt(x: number, y: number, topdownDepth: number): number {
+    return this.proj.upright ? 10 + this.proj.depth(x, y) / 1000 : topdownDepth;
+  }
+
+  private drawDummy(time: number): void {
+    const d = this.dummy;
+    const p = this.proj;
+    const g = d.g;
     g.clear();
+    const x = d.x + d.wobble.x;
+    const y = d.y + d.wobble.y;
+    const sack = time < d.flashUntil ? 0xf0dca0 : 0xc9a65f;
+    if (p.upright) {
+      flat(g, p, circlePts(d.x, d.y, 18, 16), 0, 0x000000, 0.2);
+      prism(g, p, circlePts(x, y, 3, 8), 0, 1.6 * M, { colour: 0x6b4a2b, outline: null });
+      prism(g, p, circlePts(x, y, 14, 16), 0.75 * M, 0.7 * M, { colour: sack, outline: 0x231a12 });
+      prism(g, p, rectPts(x - 3, y - 24, 6, 48), 1.25 * M, 0.08 * M, { colour: sack, outline: 0x231a12 });
+      prism(g, p, circlePts(x, y, 9, 14), 1.45 * M, 0.25 * M, { colour: sack, outline: 0x231a12 });
+    } else {
+      g.fillStyle(0x000000, 0.2);
+      g.fillEllipse(x + 2, y + 2, 26, 50);
+      g.lineStyle(2, 0x231a12, 1);
+      g.fillStyle(sack, 1);
+      g.fillRect(x - 4, y - 24, 8, 48);
+      g.strokeRect(x - 4, y - 24, 8, 48);
+      g.fillCircle(x, y, 14);
+      g.strokeCircle(x, y, 14);
+      g.fillStyle(0x6b4a2b, 1);
+      g.fillCircle(x, y, 4);
+    }
+    g.setDepth(this.depthAt(d.x, d.y + 14, 15));
+  }
+
+  private drawFire(time: number, dt: number): void {
+    const f = this.fire;
+    const p = this.proj;
+    const g = f.g;
+    g.clear();
+    discOnGround(g, p, f.x + 2, f.y + 2, 28, 0x000000, 0.2);
+    discOnGround(g, p, f.x, f.y, 20, 0x2a2420, 1);
+    // Ring of stones.
+    for (let i = 0; i < 9; i++) {
+      const a = (i / 9) * Math.PI * 2;
+      prism(g, p, circlePts(f.x + Math.cos(a) * 22, f.y + Math.sin(a) * 22, 6, 10), 0, p.upright ? 0.18 * M : 0, { colour: i % 2 ? 0x8a857c : 0x77726a, outline: 0x2c2822 });
+    }
+    // Logs.
+    prism(g, p, rectPts(f.x - 14, f.y - 3, 28, 6), 0, p.upright ? 0.1 * M : 0, { colour: 0x5a3a22, outline: null });
+    prism(g, p, rectPts(f.x - 3, f.y - 14, 6, 28), p.upright ? 0.1 * M : 0, p.upright ? 0.1 * M : 0, { colour: 0x6a4428, outline: null });
+    // Flames: seen from above they're blobs; upright they stand up.
+    const base = p.toScreen(f.x, f.y, p.upright ? 0.15 * M : 0);
     for (let i = 0; i < 5; i++) {
-      const f = Math.sin(time / (90 + i * 23) + i) * 0.5 + 0.5;
+      const fl = Math.sin(time / (90 + i * 23) + i) * 0.5 + 0.5;
       const a = i * 1.3 + time / 700;
       g.fillStyle(i % 2 ? 0xf2a33a : 0xe0612c, 0.85);
-      g.fillEllipse(Math.cos(a) * 5, Math.sin(a) * 5, 9 + f * 6, 9 + f * 6);
+      if (p.upright) g.fillEllipse(base.x + Math.cos(a) * 6, base.y - 10 - fl * 8, 9 + fl * 4, 18 + fl * 12);
+      else g.fillEllipse(base.x + Math.cos(a) * 5, base.y + Math.sin(a) * 5, 9 + fl * 6, 9 + fl * 6);
     }
     g.fillStyle(0xffe08a, 0.9);
-    g.fillCircle(0, 0, 4 + Math.sin(time / 70) * 1.5);
-    this.fire.smokeTimer += dt;
-    if (this.fire.smokeTimer > 0.35) {
-      this.fire.smokeTimer = 0;
-      const puff = this.add.circle(this.fire.x + (this.rng() - 0.5) * 10, this.fire.y, 6, 0xbfb8ad, 0.35).setDepth(35);
-      this.tweens.add({ targets: puff, x: puff.x + 30 + this.rng() * 20, y: puff.y - 40 - this.rng() * 20, scale: 3, alpha: 0, duration: 2200, onComplete: () => puff.destroy() });
+    g.fillCircle(base.x, base.y - (p.upright ? 8 : 0), 4 + Math.sin(time / 70) * 1.5);
+    g.setDepth(this.depthAt(f.x, f.y + 24, 10));
+
+    f.smokeTimer += dt;
+    if (f.smokeTimer > 0.35) {
+      f.smokeTimer = 0;
+      const s = p.toScreen(f.x + (this.rng() - 0.5) * 10, f.y, p.upright ? 0.5 * M : 0);
+      const puff = this.add.circle(s.x, s.y, 6, 0xbfb8ad, 0.35).setDepth(35);
+      this.tweens.add({ targets: puff, x: s.x + 30 + this.rng() * 20, y: s.y - (p.upright ? 70 : 40) - this.rng() * 20, scale: 3, alpha: 0, duration: 2200, onComplete: () => puff.destroy() });
     }
-    const flies = this.midden.flies;
-    flies.clear();
-    flies.fillStyle(0x111111, 0.9);
+  }
+
+  private drawMidden(time: number): void {
+    const m = this.midden;
+    const p = this.proj;
+    const g = m.g;
+    g.clear();
+    const z = (k: number) => (p.upright ? k * M : 0);
+    flat(g, p, ellipse(m.x + 3, m.y + 4, 60, 40), 0, 0x000000, 0.15);
+    flat(g, p, ellipse(m.x, m.y, 56, 36), z(0.05), 0x4a3a24);
+    flat(g, p, ellipse(m.x - 10, m.y - 6, 40, 26), z(0.22), 0x5c4a2c);
+    flat(g, p, ellipse(m.x - 14, m.y - 8, 24, 15), z(0.36), 0x6a5634);
+    flat(g, p, ellipse(m.x + 18, m.y + 10, 22, 13), z(0.12), 0x3a2c1a);
+    // Flies.
+    g.fillStyle(0x111111, 0.9);
     for (let i = 0; i < 6; i++) {
       const t = time / (300 + i * 37) + i * 2;
-      flies.fillCircle(Math.cos(t) * (20 + i * 4), Math.sin(t * 1.3) * (12 + i * 3) - 10, 1.6);
+      const s = p.toScreen(m.x + Math.cos(t) * (20 + i * 4), m.y + Math.sin(t * 1.3) * (12 + i * 3) - 10, z(0.6 + 0.15 * Math.sin(t * 2)));
+      g.fillCircle(s.x, s.y, 1.6);
     }
+    g.setDepth(p.upright ? 2.5 : 2);
   }
 
   /** Debug overlay (F4 or the Tuning panel): vision cones, noises, scents, smells. */
@@ -1391,21 +1515,22 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     if (!this.sensesOverlay) return;
     const a = this.active;
     // Smell sources.
+    const p = this.proj;
+    const pt = (x: number, y: number) => p.toScreen(x, y);
     for (const s of this.senses.smells) {
       g.lineStyle(2, s.pleasant ? 0xf2a33a : 0x7a8a3a, 0.5);
-      g.strokeCircle(s.x, s.y, s.radius);
-      g.fillStyle(s.pleasant ? 0xf2a33a : 0x7a8a3a, 0.06);
-      g.fillCircle(s.x, s.y, s.radius);
+      ringOnGround(g, p, s.x, s.y, s.radius);
+      discOnGround(g, p, s.x, s.y, s.radius, s.pleasant ? 0xf2a33a : 0x7a8a3a, 0.06);
     }
     // Scents: trails in the owner's colour, blood in red.
     for (const m of this.senses.scents.marks) {
       if (m.kind === 'blood') {
         g.fillStyle(0xb3121e, Math.min(0.9, m.strength));
-        g.fillCircle(m.x, m.y, 4);
+        g.fillCircle(pt(m.x, m.y).x, pt(m.x, m.y).y, 4);
       } else {
         const owner = this.characters.find((c) => c.id === m.owner);
         g.fillStyle(owner?.palette.tunic ?? 0xffffff, m.strength * 0.6);
-        g.fillCircle(m.x, m.y, 2.5);
+        g.fillCircle(pt(m.x, m.y).x, pt(m.x, m.y).y, 2.5);
       }
     }
     // Vision cones, clipped by walls, tinted by how aware they are of you.
@@ -1414,26 +1539,27 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
       if (c.status === 'ko') continue;
       const aw = c === a ? 0 : this.senses.awarenessOf(c, a);
       const colour = c === a ? 0xffffff : aw >= 1 ? 0xe0574a : aw > 0.15 ? 0xe8c25a : 0x7fd47f;
-      const pts: Phaser.Math.Vector2[] = [new Phaser.Math.Vector2(c.x, c.y)];
+      const pts: Phaser.Math.Vector2[] = [new Phaser.Math.Vector2(pt(c.x, c.y).x, pt(c.x, c.y).y)];
       for (let i = 0; i <= rays; i++) {
         const ang = c.motor.facing - SIGHT.halfAngle + (i / rays) * SIGHT.halfAngle * 2;
         let r = 0;
         while (r < SIGHT.range && !this.sightGrid.isBlockedAt(c.x + Math.cos(ang) * r, c.y + Math.sin(ang) * r)) r += 8;
-        pts.push(new Phaser.Math.Vector2(c.x + Math.cos(ang) * r, c.y + Math.sin(ang) * r));
+        const q = pt(c.x + Math.cos(ang) * r, c.y + Math.sin(ang) * r);
+        pts.push(new Phaser.Math.Vector2(q.x, q.y));
       }
       g.fillStyle(colour, c === a ? 0.05 : 0.1);
       g.fillPoints(pts, true);
       g.lineStyle(1, colour, 0.35);
       g.strokePoints(pts, true);
       g.lineStyle(1, 0xffffff, 0.25);
-      g.strokeCircle(c.x, c.y, SCENT.presenceRange * M);
+      ringOnGround(g, p, c.x, c.y, SCENT.presenceRange * M);
     }
     // Noises: expanding rings out to how far they carry.
     for (const n of this.senses.recentNoises) {
       const t = (this.now - n.at) / 700;
       const colour = n.kind === 'punch' || n.kind === 'shout' ? 0xe0574a : n.kind === 'footsteps' ? 0xffffff : 0x8ab4f8;
       g.lineStyle(2, colour, 0.6 * (1 - t));
-      g.strokeCircle(n.x, n.y, n.loudness * M * Math.min(1, 0.25 + t));
+      ringOnGround(g, p, n.x, n.y, n.loudness * M * Math.min(1, 0.25 + t));
     }
     void time;
   }
@@ -1449,9 +1575,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     else g.lineStyle(2.5, 0xf3e3b5, 0.8);
     for (let i = 0; i < 4; i++) {
       const a = (i * Math.PI) / 2 + time / 900;
-      g.beginPath();
-      g.arc(t.x, t.y, r, a - 0.45, a + 0.45);
-      g.strokePath();
+      ringOnGround(g, this.proj, t.x, t.y, r, 0, a - 0.45, a + 0.45, 8);
     }
   }
 
@@ -1459,18 +1583,22 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
   private drawRoute(a: Character, time: number, dt: number): void {
     const g = this.routeGfx;
     g.clear();
+    const p = this.proj;
     const marker = (mx: number, my: number, alpha: number) => {
       const r = 9 + Math.sin(time / 180) * 1.5;
       g.lineStyle(2.5, 0xf3e3b5, 0.85 * alpha);
-      g.strokeCircle(mx, my, r);
-      g.fillStyle(0xf3e3b5, 0.6 * alpha);
-      g.fillCircle(mx, my, 2.5);
+      ringOnGround(g, p, mx, my, r);
+      discOnGround(g, p, mx, my, 2.5, 0xf3e3b5, 0.6 * alpha);
     };
     if (a.order && !a.social) {
       g.lineStyle(2, 0xf3e3b5, 0.35);
       g.beginPath();
-      g.moveTo(a.x, a.y);
-      for (const p of a.order.path) g.lineTo(p.x, p.y);
+      const s0 = p.toScreen(a.x, a.y);
+      g.moveTo(s0.x, s0.y);
+      for (const q of a.order.path) {
+        const s1 = p.toScreen(q.x, q.y);
+        g.lineTo(s1.x, s1.y);
+      }
       g.strokePath();
       if (a.order.goal.kind === 'point') marker(a.order.destination.x, a.order.destination.y, 1);
     } else if (this.markerFade) {
@@ -1483,11 +1611,12 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
 
   /** A door hit its frame: a puff of dust at the latch (placeholder for sound/noise). */
   private doorThud(door: Door, speed: number): void {
-    const p = door.latchPoint();
+    const latch = door.latchPoint();
+    const p = this.proj.toScreen(latch.x, latch.y, this.proj.upright ? 1.0 * M : 0);
     const strength = Phaser.Math.Clamp(speed / 4, 0.25, 1);
     for (let i = 0; i < 5; i++) {
       const a = Math.random() * Math.PI * 2;
-      const puff = this.add.circle(p.x, p.y, 3 + Math.random() * 3 * strength, 0xd8cbb0, 0.55 * strength).setDepth(13);
+      const puff = this.add.circle(p.x, p.y, 3 + Math.random() * 3 * strength, 0xd8cbb0, 0.55 * strength).setDepth(35);
       this.tweens.add({
         targets: puff,
         x: p.x + Math.cos(a) * 14 * strength,
@@ -1503,6 +1632,10 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
 
   private toggleDebug(): void {
     const world = this.physics.world;
+    if (!world.drawDebug && this.proj.mode !== 'topdown') {
+      this.say('The collision view only works in top-down.');
+      return;
+    }
     if (!world.debugGraphic) world.createDebugGraphic();
     world.drawDebug = !world.drawDebug;
     world.debugGraphic.setVisible(world.drawDebug);
@@ -1523,4 +1656,13 @@ function crosses(a: Point, b: Point, c: Point, d: Point): boolean {
 
 function cssColour(c: Character): string {
   return `#${c.palette.tunic.toString(16).padStart(6, '0')}`;
+}
+
+function ellipse(cx: number, cy: number, rx: number, ry: number): Point[] {
+  const out: Point[] = [];
+  for (let i = 0; i < 20; i++) {
+    const a = (i / 20) * Math.PI * 2;
+    out.push({ x: cx + Math.cos(a) * rx, y: cy + Math.sin(a) * ry });
+  }
+  return out;
 }

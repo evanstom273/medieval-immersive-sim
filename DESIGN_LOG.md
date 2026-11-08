@@ -169,6 +169,14 @@ When an item changes status, move it and add a dated note rather than silently r
 - **Overview tie-in:** the switch is a zoom out / pan / zoom in, the same camera movement planned for moving between direct control and the overview. When the overview exists, long switches could pass through it.
 - **Placeholders:** pull-out height (1.35 × distance + 6 m), wide shot for switches over 15 m (0.7 s), phase timings.
 
+### Character art direction
+*2026-11-08 21:29 UTC*
+
+- **Characters: simple, readable, RimWorld / Prison Architect-style figures.** Simple body shapes, a head, and **floating hands** not connected to the body; no limbs, no animation. Detailed enough to read clearly, simple in form.
+- Built so **equipment is easy later:** held items attach to a hand, worn items to the head or body (layered).
+- **Environments keep the art doc's direction** (detailed, layered, cel-shaded SVG). The character simplification applies to characters only.
+- In top-down, characters are seen from above; in the angled views they're upright figures facing one of **8 directions**, with hands placed exactly where they're aiming so combat stays precise.
+
 ---
 
 ## Undecided
@@ -192,6 +200,18 @@ When an item changes status, move it and add a dated note rather than silently r
 
 - When the player drives a character to act against their nature, does the character remember choosing it? Does it change them (memories, personality, guilt)?
 - How (or whether) to handle the player knowing things the controlled character doesn't.
+
+### View perspective (being compared in-game)
+*2026-11-08 21:29 UTC*
+
+- **All three views are in the game for side-by-side testing**, switched with the view button on the bottom bar (remembered between sessions):
+  - **Top-down:** straight overhead, as before.
+  - **¾ view:** an oblique view from the south; you see tops and south faces, and heights rise up the screen.
+  - **True 2:1 isometric:** from the south-east, ground axes along the diagonals.
+- The simulation is unchanged: it all happens on the ground plane, and the view is just a projection (`src/game/view/projection.ts`). Clicks, taps and mouse aim map back to the ground.
+- **For the comparison only:** the environment is placeholder blocks with height (walls 2.4 m, crates 0.8 m, door 2 m…). In the angled views, walls split into 1 m chunks for correct draw order, and chunks hiding the character you control fade out.
+- **To decide:** which view to keep (or whether to keep more than one). Then the environment art gets drawn properly for that view per the art doc, and `ART_STYLE.md`'s perspective section gets rewritten to match.
+- *Supersedes, if a non-top-down view is chosen:* "the view is full top-down" in Visual direction above.
 
 ### Historical setting and legal structure
 *2026-11-08 18:52 UTC*
