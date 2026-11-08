@@ -73,7 +73,10 @@ When an item changes status, move it and add a dated note rather than silently r
 ### Doors are physical
 *2026-11-08 19:32 UTC*
 
-- Walk into a door to push it open. No clicking needed. It swings away from whichever side you push from, carries a little momentum, and stays where it's left.
+- Walk into a door to push it open. No clicking needed. It swings away from whichever side you push from and carries momentum.
+- **2026-11-08 19:42 UTC — doors swing back shut by themselves** (weighted, like a sprung door). They pick up speed and thud into the frame with a small bounce. *(Replaces "stays where it's left".)*
+- **If you're in the doorway** as it swings back, it comes to rest against you rather than bouncing off, and closes once you're clear.
+- **Sneaking eases doors:** a gentler push, and the door settles shut softly with no thud. This sets up door noise mattering for stealth once there's a noise system. The thud currently shows a small dust puff, a placeholder for sound/noise.
 - **Clicking a door locks/unlocks it** for now. Eventually clicking opens a menu of other interactions.
 - A locked door won't move ("The door is locked."). You have to shut a door before you can lock it.
 - Pathfinding treats unlocked doors as passable (you'll push through) and locked doors as walls.
@@ -193,7 +196,7 @@ When an item changes status, move it and add a dated note rather than silently r
 - **Click-to-walk pathfinding:** 8 px grid A* with obstacle inflation and string-pulling, in pure TypeScript (`src/game/navigation`). Written so NPCs can use it later. Not yet decided whether it scales to whole towns or needs a navmesh / hierarchical approach.
 - **Reach checks** ignore line of sight for now (you could, in principle, use something through a thin wall).
 - **Character and objects** are placeholder geometry, not final art.
-- **Door placeholders (2026-11-08 19:32 UTC):** ~~doors swing both ways up to 90° (real medieval doors usually swing one way).~~ *Moved to Agreed 2026-11-08 19:33 UTC.* Anyone can lock any door: no keys, ownership or lockpicking yet. Doors don't collide with furniture while swinging. No door weight or resistance yet; a first attempt at faking weight shoved the player into the door frame. *(2026-11-08 19:37 UTC: doors made lighter: they keep swinging after a push (momentum 1.4×) and slow gently (friction 2.2/s). Both are live-tunable in the debug panel; values are placeholders.)*
+- **Door placeholders (2026-11-08 19:32 UTC):** ~~doors swing both ways up to 90° (real medieval doors usually swing one way).~~ *Moved to Agreed 2026-11-08 19:33 UTC.* Anyone can lock any door: no keys, ownership or lockpicking yet. Doors don't collide with furniture while swinging. No door weight or resistance yet; a first attempt at faking weight shoved the player into the door frame. *(2026-11-08 19:37 UTC: doors made lighter: they keep swinging after a push (momentum 1.4×) and slow gently (friction 2.2/s). Both are live-tunable in the debug panel; values are placeholders.)* *(2026-11-08 19:42 UTC: added closing weight 7, bounce 30%, thud threshold 0.8 rad/s. Closing weight is tunable; all placeholders.)*
 - **Rendering smoothness (2026-11-08 19:32 UTC):** physics steps every rendered frame (not fixed 60 Hz), and the character and camera update after physics with frame-rate-independent camera smoothing. This fixed a blur/judder while moving, most visible on high-refresh screens.
 
 ### Camera and zoom specifics
