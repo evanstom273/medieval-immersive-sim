@@ -494,6 +494,9 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
       case 'rest':
         this.answerRest(c.hours);
         break;
+      case 'wait':
+        this.askRest('wait', null, true);
+        break;
     }
   }
 
@@ -1122,6 +1125,8 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
       if (c.controlled) this.say(`${target.name} is asleep.`);
       return false;
     }
+    // Nobody comes up and talks to you while you're waiting or sleeping.
+    if (target === this.active && this.rest) return false;
     if (target.status !== 'ok' || target.brain.state.kind === 'fight' || target.brain.state.kind === 'flee') {
       if (c.controlled) this.say(`${target.name} is in no state to talk.`);
       return false;
@@ -1382,9 +1387,13 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
   }
 
   /** Open the TES-style "how long?" dialog (pauses the game behind it). */
-  private askRest(kind: RestKind, bed: Bed | null): void {
+  private askRest(kind: RestKind, bed: Bed | null, explain = false): void {
     const a = this.active;
-    if (this.rest || this.restAsk || a.status !== 'ok' || a.mode === 'combat') return;
+    if (this.rest || this.restAsk) return;
+    if (a.status !== 'ok' || a.mode === 'combat' || this.switching) {
+      if (explain) this.say(a.mode === 'combat' ? "You can't wait in the middle of a fight." : "You can't wait right now.");
+      return;
+    }
     this.closeMenu();
     this.restAsk = { kind, bed, wasPaused: this.paused };
     this.setPaused(true);
@@ -1411,6 +1420,8 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     a.lockTarget = null;
     this.press = null;
     this.rest = { kind, untilS: this.clock.seconds + hours * 3600, bed };
+    // Anyone on their way over for a chat thinks better of it.
+    for (const o of this.characters) if (o !== a && o.social?.target === a) o.social = null;
     const span = `${hours} hour${hours === 1 ? '' : 's'}`;
     if (kind === 'sleep') {
       a.asleep = true;

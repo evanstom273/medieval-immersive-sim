@@ -21,7 +21,6 @@ export function BottomBar() {
   const [source, setSource] = useState<InputSource>(() => inputSourceChannel.last ?? 'mouse');
   const [tab, setTab] = useState<Tab | null>('needs');
   const [paused, setPaused] = useState(false);
-  const [help, setHelp] = useState(false);
 
   useEffect(() => rosterChannel.on(setRoster), []);
   useEffect(() => hudChannel.on(setHud), []);
@@ -86,7 +85,7 @@ export function BottomBar() {
         >
           {/* ---- left: who you are, and everyone else */}
           <div className={`flex shrink-0 items-end ${touch ? 'gap-1' : 'gap-3'}`}>
-            <div className={`flex ${touch ? 'flex-row items-end gap-1' : 'flex-col gap-1.5'} order-1`}>
+            <div className={`flex ${touch ? 'flex-row items-end -space-x-2' : 'flex-col gap-1.5'} order-1`}>
               {others.map((m) => (
                 <MiniPortrait key={m.id} member={m} size={touch ? 24 : 28} keyHint={touch ? null : indexOf(m.id) + 1} />
               ))}
@@ -97,14 +96,14 @@ export function BottomBar() {
 
           {/* ---- centre: time, and walls up / cutaway / down */}
           <div className={`flex items-center self-center ${touch ? 'gap-1' : 'gap-2'}`}>
-            <TimeControls paused={paused} touch={touch} help={help} setHelp={setHelp} />
+            <TimeControls paused={paused} touch={touch} resting={/^(Waiting|Sleeping)/.test(active.activity)} />
             <WallsButton touch={touch} />
           </div>
 
           {/* ---- right: panel tabs (panel pops up above on desktop) */}
           <div className="relative flex flex-col items-end">
             {!touch && <div className="absolute right-0 bottom-full">{panel}</div>}
-            <div className={`flex rounded-full bg-white/5 p-1 ring-1 ring-white/10 ${touch ? 'gap-0.5' : 'gap-1'}`}>
+            <div className={`flex rounded-full bg-white/5 ring-1 ring-white/10 ${touch ? 'gap-0.5 p-0.5' : 'gap-1 p-1'}`}>
               {TABS.map((t) => (
                 <button
                   key={t.id}
@@ -113,7 +112,7 @@ export function BottomBar() {
                     pickTab(t.id);
                     e.currentTarget.blur();
                   }}
-                  className={`flex items-center justify-center rounded-full transition ${touch ? 'h-8 w-8 text-sm' : 'h-10 w-10 text-lg'} ${
+                  className={`flex items-center justify-center rounded-full transition ${touch ? 'h-8 w-7 text-sm' : 'h-10 w-10 text-lg'} ${
                     tab === t.id ? 'bg-white text-neutral-900 shadow' : 'text-white/80 hover:bg-white/10'
                   }`}
                 >
@@ -215,13 +214,13 @@ function Identity({ member: m }: { member: RosterMember }) {
   );
 }
 
-function TimeControls({ paused, touch, help, setHelp }: { paused: boolean; touch: boolean; help: boolean; setHelp: (v: boolean) => void }) {
+function TimeControls({ paused, touch, resting }: { paused: boolean; touch: boolean; resting: boolean }) {
   const [clock, setClock] = useState<ClockState | null>(clockChannel.last ?? null);
   useEffect(() => clockChannel.on(setClock), []);
   const btn = `flex items-center justify-center rounded-full transition ${touch ? 'h-8 w-8 text-xs' : 'h-9 w-9 text-sm'}`;
   return (
     <div className="relative flex shrink-0 flex-col items-center gap-1 self-center">
-      <div className="flex items-center gap-1 rounded-full bg-white/5 p-1 text-white ring-1 ring-white/10">
+      <div className={`flex items-center gap-1 rounded-full bg-white/5 text-white ring-1 ring-white/10 ${touch ? 'p-0.5' : 'p-1'}`}>
         <button
           className={`${btn} ${paused ? 'bg-amber-300 text-neutral-900' : 'hover:bg-white/10'}`}
           title={paused ? 'Resume (Space)' : 'Pause (Space)'}
@@ -233,14 +232,14 @@ function TimeControls({ paused, touch, help, setHelp }: { paused: boolean; touch
           {paused ? '▶' : '❚❚'}
         </button>
         <button
-          className={`${btn} text-xs ${help ? 'bg-white/15' : 'hover:bg-white/10'}`}
-          title="Controls"
+          className={`${btn} ${resting ? 'bg-white/15' : 'hover:bg-white/10'}`}
+          title={resting ? 'Stop waiting / get up' : 'Wait… (choose how many hours)'}
           onClick={(e) => {
-            setHelp(!help);
+            uiCommands.emit(resting ? { kind: 'cancelAction' } : { kind: 'wait' });
             e.currentTarget.blur();
           }}
         >
-          ?
+          ⏳
         </button>
       </div>
       {clock && (
@@ -253,27 +252,6 @@ function TimeControls({ paused, touch, help, setHelp }: { paused: boolean; touch
             {paused && !touch ? ' · Paused' : clock.speed > 1 ? ` ×${clock.speed}` : ''}
           </span>
           {!touch && <span className="text-[11px] text-white/45">{clock.date}</span>}
-        </div>
-      )}
-      {help && (
-        <div className="absolute bottom-full mb-3 w-72 rounded-2xl bg-neutral-900/90 p-3 text-xs leading-5 text-white/75 shadow-xl ring-1 ring-white/10 backdrop-blur-md">
-          {touch ? (
-            <>
-              <div>Drag left half to move · rim to run</div>
-              <div>Tap ground to walk · hold to follow</div>
-              <div>Tap people & things for options</div>
-              <div>Pinch to zoom · tap portraits to switch</div>
-            </>
-          ) : (
-            <>
-              <div>WASD move · Ctrl run · Shift sneak</div>
-              <div>Click ground to walk · hold to follow</div>
-              <div>Click people & things for options</div>
-              <div>E talk · F lock-on · R fight stance · LMB/RMB punch</div>
-              <div>1–4 switch person · Scroll zoom · Space pause · V walls</div>
-              <div>F3 collision · F4 senses overlay</div>
-            </>
-          )}
         </div>
       )}
     </div>

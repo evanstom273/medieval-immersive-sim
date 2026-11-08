@@ -107,6 +107,8 @@ export type UiCommand =
   | { kind: 'setWalls'; mode: 'up' | 'cutaway' | 'down' }
   | { kind: 'cycleWalls' }
   | { kind: 'cancelAction' }
+  /** Open the wait dialog for the character you control. */
+  | { kind: 'wait' }
   /** Answer to the rest dialog: rest this many hours, or null to cancel. */
   | { kind: 'rest'; hours: number | null };
 

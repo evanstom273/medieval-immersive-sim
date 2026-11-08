@@ -250,7 +250,9 @@ When an item changes status, move it and add a dated note rather than silently r
 - Wait: **Wait…** on your own menu (click yourself). Sleep: click the **bed** (a placeholder bed in the house's north-west corner). Both open a "how long?" dialog (1–24 h) that pauses the game behind it. Sleep defaults to "until dawn" if that's within 12 hours, else 8 hours.
 - Speed while resting: **60×** (an 8-hour sleep ≈ 10 real seconds at the placeholder day length). Slower machines get less, because it's capped at a 10 ms budget per frame; the bar shows the actual speed (e.g. "×60").
 - What interrupts it: being hit (always); a shout, raised voices, a thud or a door bang if heard clearly enough (higher bar when asleep, and footsteps and chatter never do); hearing fighting; and while waiting only, seeing an attack or smelling blood. Moving, clicking, fighting, talking, sneaking or switching person also ends it. Cancel via the action chip ✕.
-- Nobody talks to a sleeping character. People chatting to you while you *wait* don't interrupt it (undecided whether they should).
+- ~~Nobody talks to a sleeping character. People chatting to you while you *wait* don't interrupt it (undecided whether they should).~~
+- *2026-11-08 22:39 UTC, agreed:* **nobody comes up to talk to you while you're waiting or sleeping.** Anyone already on their way over gives up. Your senses can still wake you (noises, being hit, etc.).
+- *2026-11-08 22:39 UTC, agreed:* a **⏳ Wait button** on the bar, in place of the "?" help button. Pressing it while resting stops the rest. (The controls cheat-sheet that lived behind "?" is gone for now.)
 
 ### Game clock
 *2026-11-08 22:31 UTC*
