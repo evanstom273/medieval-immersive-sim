@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { DEFAULT_TUNING, tuning, type MovementTuning } from '../game/movement/tuning';
 import { DEFAULT_DOOR_TUNING, doorTuning, type DoorTuning } from '../game/world/doorPhysics';
+import { uiCommands } from '../game/bridge';
 
 /** Debug panel for live-tuning movement feel. Writes straight into the shared tuning object. */
 
@@ -97,6 +98,15 @@ export function TuningPanel() {
               />
             </label>
           ))}
+          <button
+            className="mt-1 rounded bg-white/10 px-2 py-1 hover:bg-white/20"
+            onClick={(e) => {
+              uiCommands.emit({ kind: 'toggleSenses' });
+              e.currentTarget.blur();
+            }}
+          >
+            Toggle senses overlay (F4)
+          </button>
           <button className="mt-1 rounded bg-white/10 px-2 py-1 hover:bg-white/20" onClick={reset}>
             Reset to defaults
           </button>

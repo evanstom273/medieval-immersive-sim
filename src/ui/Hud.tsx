@@ -57,6 +57,7 @@ export function Hud() {
               <div>1–4 switch person · Scroll zoom</div>
               <div>E talk · F lock-on (any time)</div>
               <div>R fight stance · LMB/RMB punch</div>
+              <div>F3 collision · F4 senses overlay</div>
             </div>
           )}
         </div>

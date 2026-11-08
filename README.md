@@ -27,6 +27,7 @@ npm run build    # typecheck + production build
 | Talk to whoever you're locked on to / facing | E |
 | Zoom | Scroll wheel |
 | Show collision | F3 |
+| Senses debug overlay (vision cones, noise, scents) | F4, or the Tuning panel |
 
 On touch screens: drag on the left half for a floating stick (push to the rim to sprint), tap the ground to walk there (press and hold to follow your finger), tap people and things for their menu, tap a portrait to switch (tap your own for your card), pinch to zoom. The buttons bottom-right are Sneak, Ready/Relax, and in combat Left, Right and Lock.
 
@@ -43,5 +44,6 @@ Everything on screen is placeholder geometry for tuning feel — not final art.
 - `src/game/world/` — placeholder character and interactable objects (Phaser), plus door swing physics (pure TypeScript).
 - `src/game/characters/` — characters (shared by player and NPCs) and the NPC brain.
 - `src/game/social/`, `src/game/combat/` — relationships, social actions, combat rules. Pure TypeScript.
+- `src/game/perception/` — sight, hearing, smell, awareness and memories (rules are pure TypeScript).
 - `src/game/scenes/` — the sandbox scene (Phaser).
 - `src/ui/` — React HUD, portraits & character card, radial menu, touch controls, tuning panel.

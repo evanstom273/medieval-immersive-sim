@@ -17,6 +17,10 @@ import { inputSourceChannel, touchCommands, touchStick, type InputSource, type T
 import { speedOf, stepMotor, toggleCrouch, type MotorInput } from '../movement/motor';
 import { PX_PER_METRE, tuning } from '../movement/tuning';
 import { MoveOrder } from '../navigation/MoveOrder';
+import { describeMemory, type MemoryKind } from '../perception/memory';
+import { SCENT, smellStrength, type SmellSource } from '../perception/scents';
+import { footstepLoudness, LOUDNESS, SIGHT, type NoiseKind } from '../perception/senseRules';
+import { Senses, type Perception, type SensesHost } from '../perception/Senses';
 import { NavGrid, type Obstacle, type Point } from '../navigation/NavGrid';
 import { Relationships, opinionWord } from '../social/relationships';
 import { REACTION_ICON, SOCIAL_ACTIONS, describeSocial, resolveSocial, socialAction, type SocialActionId } from '../social/socialActions';
@@ -63,7 +67,7 @@ interface Dummy extends Targetable {
 
 type OpenMenu = { kind: 'character'; target: Character } | { kind: 'object'; target: Interactable } | { kind: 'self' };
 
-export class SandboxScene extends Phaser.Scene implements World {
+export class SandboxScene extends Phaser.Scene implements World, SensesHost {
   readonly characters: Character[] = [];
   readonly interactables: Interactable[] = [];
   readonly relationships = new Relationships();
@@ -72,7 +76,7 @@ export class SandboxScene extends Phaser.Scene implements World {
   private active!: Character;
 
   private keys!: Record<
-    'up' | 'down' | 'left' | 'right' | 'sprint' | 'crouch' | 'combat' | 'lock' | 'talk' | 'debug' | 'esc' | 'one' | 'two' | 'three' | 'four',
+    'up' | 'down' | 'left' | 'right' | 'sprint' | 'crouch' | 'combat' | 'lock' | 'talk' | 'debug' | 'senses' | 'esc' | 'one' | 'two' | 'three' | 'four',
     Phaser.Input.Keyboard.Key
   >;
   private solids!: Phaser.Physics.Arcade.StaticGroup;
@@ -91,6 +95,16 @@ export class SandboxScene extends Phaser.Scene implements World {
   private markerFade: { x: number; y: number; t: number } | null = null;
   private cameraFocus: { x: number; y: number } | null = null;
   private lockedNoticeAt = -Infinity;
+  senses!: Senses;
+  /** Walls etc. that block sight and muffle sound (not inflated, unlike the nav grid). */
+  private sightBlockers: Obstacle[] = [];
+  private sightGrid = new NavGrid(WORLD_W, WORLD_H, 8);
+  private footstepTimer = new Map<string, number>();
+  private sensesOverlay = false;
+  private overlayGfx!: Phaser.GameObjects.Graphics;
+  private pendingSmells: SmellSource[] = [];
+  private fire!: { x: number; y: number; flames: Phaser.GameObjects.Graphics; smokeTimer: number };
+  private midden!: { x: number; y: number; flies: Phaser.GameObjects.Graphics };
   private hitNoticeAt = -Infinity;
   private hudTimer = 0;
   private rosterTimer = 0;
@@ -130,6 +144,11 @@ export class SandboxScene extends Phaser.Scene implements World {
     this.active.controlled = true;
     for (const c of this.characters) c.brain.reset(this.now + this.rng() * 1500);
 
+    this.sightGrid.build(this.sightBlockers, 0);
+    this.senses = new Senses(this);
+    this.senses.smells.push(...this.pendingSmells);
+    this.overlayGfx = this.add.graphics().setDepth(90);
+
     this.lockRing = this.add.graphics().setDepth(16);
     this.routeGfx = this.add.graphics().setDepth(5);
 
@@ -152,6 +171,7 @@ export class SandboxScene extends Phaser.Scene implements World {
   }
 
   private wall(solids: Phaser.Physics.Arcade.StaticGroup, x: number, y: number, w: number, h: number, colour = 0x8c8475): void {
+    this.sightBlockers.push({ kind: 'rect', x, y, w, h });
     const r = this.add.rectangle(x + w / 2, y + h / 2, w, h, colour).setStrokeStyle(2, 0x2c2822).setDepth(10);
     this.physics.add.existing(r, true);
     solids.add(r);
@@ -192,6 +212,51 @@ export class SandboxScene extends Phaser.Scene implements World {
     (well.body as Phaser.Physics.Arcade.StaticBody).setCircle(44);
     solids.add(well);
     this.add.circle(512, 1280, 28, 0x1f2a33).setDepth(11);
+
+    // Cooking fire: people catch the smell of smoke and drift over to warm themselves.
+    const fx = 760;
+    const fy = 1400;
+    const fireBody = this.add.circle(fx, fy, 24).setVisible(false);
+    this.physics.add.existing(fireBody, true);
+    (fireBody.body as Phaser.Physics.Arcade.StaticBody).setCircle(24);
+    solids.add(fireBody);
+    const ring = this.add.graphics({ x: fx, y: fy }).setDepth(10);
+    ring.fillStyle(0x000000, 0.2);
+    ring.fillCircle(2, 2, 28);
+    ring.fillStyle(0x2a2420, 1);
+    ring.fillCircle(0, 0, 20);
+    for (let i = 0; i < 9; i++) {
+      const a = (i / 9) * Math.PI * 2;
+      ring.fillStyle(i % 2 ? 0x8a857c : 0x77726a, 1);
+      ring.lineStyle(1.5, 0x2c2822, 1);
+      ring.fillCircle(Math.cos(a) * 22, Math.sin(a) * 22, 6);
+      ring.strokeCircle(Math.cos(a) * 22, Math.sin(a) * 22, 6);
+    }
+    ring.fillStyle(0x5a3a22, 1);
+    ring.fillRect(-14, -3, 28, 6);
+    ring.fillRect(-3, -14, 6, 28);
+    this.fire = { x: fx, y: fy, flames: this.add.graphics({ x: fx, y: fy }).setDepth(12), smokeTimer: 0 };
+    this.pendingSmells.push({ id: 'fire', kind: 'smoke', x: fx, y: fy, radius: 10 * M, pleasant: true });
+
+    // Midden: a dung heap. People wrinkle their noses and don't hang about.
+    const mx = 1980;
+    const my = 1180;
+    const heap = this.add.graphics({ x: mx, y: my }).setDepth(2);
+    heap.fillStyle(0x000000, 0.15);
+    heap.fillEllipse(3, 4, 120, 80);
+    heap.fillStyle(0x4a3a24, 1);
+    heap.fillEllipse(0, 0, 112, 72);
+    heap.fillStyle(0x5c4a2c, 1);
+    heap.fillEllipse(-14, -8, 64, 40);
+    heap.fillStyle(0x3a2c1a, 1);
+    heap.fillEllipse(18, 10, 44, 26);
+    heap.lineStyle(1.5, 0xb59a5a, 0.8);
+    for (let i = 0; i < 10; i++) {
+      const a = i * 2.4;
+      heap.lineBetween(Math.cos(a) * 30, Math.sin(a) * 18, Math.cos(a) * 30 + 8, Math.sin(a) * 18 - 3);
+    }
+    this.midden = { x: mx, y: my, flies: this.add.graphics({ x: mx, y: my }).setDepth(30) };
+    this.pendingSmells.push({ id: 'midden', kind: 'dung', x: mx, y: my, radius: 5 * M, pleasant: false });
 
     this.wall(solids, 1408, 1344, 320, 24, 0x6f6a5f);
     this.wall(solids, 1408 + 320 + 48, 1344, 320, 24, 0x6f6a5f);
@@ -236,6 +301,7 @@ export class SandboxScene extends Phaser.Scene implements World {
         lock: KEY.F,
         talk: KEY.E,
         debug: KEY.F3,
+        senses: KEY.F4,
         esc: KEY.ESC,
         one: KEY.ONE,
         two: KEY.TWO,
@@ -248,7 +314,7 @@ export class SandboxScene extends Phaser.Scene implements World {
     // Registered after Phaser's own listener (Phaser ignores already-prevented events).
     const guard = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && ['w', 'a', 's', 'd', 'r', 'f', 'e', '1', '2', '3', '4'].includes(e.key.toLowerCase())) e.preventDefault();
-      if (e.key === 'F3') e.preventDefault();
+      if (e.key === 'F3' || e.key === 'F4') e.preventDefault();
     };
     window.addEventListener('keydown', guard);
     this.game.events.on(Phaser.Core.Events.BLUR, () => kb.resetKeys());
@@ -343,6 +409,9 @@ export class SandboxScene extends Phaser.Scene implements World {
         break;
       case 'menuClose':
         this.closeMenu();
+        break;
+      case 'toggleSenses':
+        this.sensesOverlay = !this.sensesOverlay;
         break;
       case 'menuChoice':
         this.chooseMenu(c.optionId);
@@ -599,6 +668,56 @@ export class SandboxScene extends Phaser.Scene implements World {
     return this.nav;
   }
 
+  // ---------------------------------------------------------------- senses (SensesHost)
+
+  get smells(): readonly SmellSource[] {
+    return this.senses.smells;
+  }
+
+  sightClear(a: Point, b: Point): boolean {
+    return this.sightGrid.lineClear(a, b) && !this.doors.some((d) => crosses(a, b, d.hingePoint(), d.latchPoint()));
+  }
+
+  wallsBetween(a: Point, b: Point): number {
+    const len = Math.hypot(b.x - a.x, b.y - a.y);
+    const steps = Math.max(1, Math.ceil(len / 4));
+    let walls = 0;
+    let inside = false;
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps;
+      const blocked = this.sightGrid.isBlockedAt(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t);
+      if (blocked && !inside) walls++;
+      inside = blocked;
+    }
+    return walls + this.doors.filter((d) => crosses(a, b, d.hingePoint(), d.latchPoint())).length;
+  }
+
+  perceive(c: Character, p: Perception): void {
+    if (!c.controlled) {
+      c.brain.onPerceive(c, p, this);
+      return;
+    }
+    // The character you control perceives (and remembers) too; they just don't act on their own.
+    if (p.kind === 'stench') c.overhead.emote('🤢', this.now, 1400);
+    if (p.kind === 'smelledBlood') c.overhead.emote('🩸', this.now, 1200);
+  }
+
+  noise(kind: NoiseKind, x: number, y: number, source?: Character, loudness?: number): void {
+    this.senses.noise(kind, x, y, source, loudness);
+  }
+
+  witness(kind: MemoryKind, x: number, y: number, actor?: Character, target?: Character): void {
+    this.senses.witness(kind, x, y, actor, target);
+  }
+
+  private bleed(c: Character, amount: number): void {
+    for (let i = 0; i < amount; i++) {
+      const a = this.rng() * Math.PI * 2;
+      const r = this.rng() * 10;
+      this.senses.scents.add({ kind: 'blood', x: c.x + Math.cos(a) * r, y: c.y + Math.sin(a) * r, strength: 1, fade: SCENT.bloodFade, owner: c.id });
+    }
+  }
+
   orderToPoint(c: Character, p: Point): boolean {
     const order = MoveOrder.plan(this.ensureNav(), c.pos(), { kind: 'point', x: p.x, y: p.y });
     if (!order) return false;
@@ -625,7 +744,8 @@ export class SandboxScene extends Phaser.Scene implements World {
       const a = this.rng() * Math.PI * 2;
       const d = between(this.rng, 2 * M, radius);
       const p = nav.nearestFree({ x: c.x + Math.cos(a) * d, y: c.y + Math.sin(a) * d }, M);
-      if (p) return p;
+      // Nobody chooses to stroll over to the dung heap.
+      if (p && !this.senses.smells.some((s) => !s.pleasant && smellStrength(s, p.x, p.y) > 0)) return p;
     }
     return null;
   }
@@ -681,6 +801,7 @@ export class SandboxScene extends Phaser.Scene implements World {
     c.social = null;
     c.overhead.setPersistent('🏳️');
     this.announce(`${c.name} yields${attacker ? ` to ${attacker.name}` : ''}.`, [c], true);
+    this.witness('saw_yield', c.x, c.y, c, attacker ?? undefined);
   }
 
   private standUp(c: Character): void {
@@ -709,6 +830,9 @@ export class SandboxScene extends Phaser.Scene implements World {
     if (by) c.motor = { ...c.motor, facing: by.angleTo(c) };
     c.overhead.setPersistent('💫');
     this.announce(`${c.name} is knocked out${by ? ` by ${by.name}` : ''}.`, [c], true);
+    this.witness('saw_ko', c.x, c.y, by ?? undefined, c);
+    this.noise('thud', c.x, c.y, c);
+    this.bleed(c, 3);
     if (c.controlled) this.say('You are out cold. Switch to someone else with 1–4 or the portraits.');
   }
 
@@ -732,6 +856,7 @@ export class SandboxScene extends Phaser.Scene implements World {
     if (Phaser.Input.Keyboard.JustDown(k.talk)) this.talk();
     if (Phaser.Input.Keyboard.JustDown(k.crouch) && a.status === 'ok') a.motor = toggleCrouch(a.motor);
     if (Phaser.Input.Keyboard.JustDown(k.debug)) this.toggleDebug();
+    if (Phaser.Input.Keyboard.JustDown(k.senses)) this.sensesOverlay = !this.sensesOverlay;
     if (Phaser.Input.Keyboard.JustDown(k.esc)) this.closeMenu();
     (['one', 'two', 'three', 'four'] as const).forEach((key, i) => {
       if (Phaser.Input.Keyboard.JustDown(k[key]) && this.characters[i]) this.switchTo(this.characters[i].id);
@@ -761,7 +886,11 @@ export class SandboxScene extends Phaser.Scene implements World {
     // ---- doors swing under their own weight, once per frame
     for (const door of this.doors) {
       const thud = door.update(dt);
-      if (thud > 0) this.doorThud(door, thud);
+      if (thud > 0) {
+        this.doorThud(door, thud);
+        const p = door.latchPoint();
+        this.noise('door', p.x, p.y, undefined, LOUDNESS.door * Math.min(1, 0.4 + thud / 4));
+      }
     }
 
     // ---- everyone
@@ -817,6 +946,8 @@ export class SandboxScene extends Phaser.Scene implements World {
       this.updatePose(c, dt);
     }
 
+    this.updateFootsteps(dt);
+    this.senses.update(dt);
     this.updateHover(pointer.x, pointer.y);
     this.emitUi(dt);
   }
@@ -916,6 +1047,7 @@ export class SandboxScene extends Phaser.Scene implements World {
       this.relationships.adjust(t.id, c.id, outcome.targetDelta);
       this.relationships.adjust(c.id, t.id, outcome.actorDelta);
       t.overhead.emote(REACTION_ICON[outcome.reaction], now, 1500);
+      this.noise(socialAction(s.action).hostile ? 'quarrel' : 'talk', c.x, c.y, c);
       this.announce(describeSocial(s.action, c.name, t.name, outcome), [c, t]);
     }
     if (now - s.phaseAt >= SOCIAL_END_MS) c.social = null;
@@ -954,6 +1086,7 @@ export class SandboxScene extends Phaser.Scene implements World {
     }
     const d = this.dummy;
     if (Math.hypot(wx - d.x, wy - d.y) <= d.radius + 6) {
+      this.noise('thud', d.x, d.y, c, 4);
       d.hits++;
       if (c.controlled) this.say(`Your ${hand} hand hits the dummy. (${d.hits})`);
       this.drawDummy(true);
@@ -972,6 +1105,10 @@ export class SandboxScene extends Phaser.Scene implements World {
     victim.social = null;
     if (victim.heldUntil !== Infinity) victim.heldUntil = 0;
     this.relationships.adjust(victim.id, attacker.id, HIT_OPINION);
+    // Seen by anyone looking; heard by anyone else in earshot; a little blood is left behind.
+    this.senses.attack(attacker, victim);
+    this.noise('punch', victim.x, victim.y, attacker);
+    if (this.rng() < 0.5) this.bleed(victim, 1);
     if (victim.health <= 0) {
       this.knockOut(victim, attacker);
       return;
@@ -1020,6 +1157,31 @@ export class SandboxScene extends Phaser.Scene implements World {
     return c.controlled ? 'Standing' : 'Idling';
   }
 
+  /** Moving makes noise: louder running, none when sneaking. */
+  private updateFootsteps(dt: number): void {
+    for (const c of this.characters) {
+      const loud = c.status === 'ok' ? footstepLoudness(c.motor.gait) : 0;
+      if (loud <= 0) continue;
+      const t = (this.footstepTimer.get(c.id) ?? 0) + dt;
+      if (t >= 0.45) {
+        this.footstepTimer.set(c.id, 0);
+        this.noise('footsteps', c.x, c.y, c, loud);
+      } else this.footstepTimer.set(c.id, t);
+    }
+  }
+
+  /**
+   * ? / ! over people who are noticing / have just noticed the character you
+   * control. Only shown when being noticed matters: while sneaking or in a fight stance.
+   */
+  private awarenessIndicator(c: Character): '?' | '!' | null {
+    const a = this.active;
+    if (c === a || c.status === 'ko' || !(a.motor.crouched || a.mode === 'combat')) return null;
+    if (this.senses.justNoticed(c, a)) return '!';
+    const level = this.senses.awarenessOf(c, a);
+    return level > 0.15 && level < 1 ? '?' : null;
+  }
+
   private emitUi(dt: number): void {
     const a = this.active;
     this.hudTimer -= dt;
@@ -1053,6 +1215,15 @@ export class SandboxScene extends Phaser.Scene implements World {
       rosterChannel.emit({
         members,
         activeId: a.id,
+        memories: this.senses
+          .memoriesOf(a)
+          .recent(this.now, 5)
+          .map(({ memory, confidence }) => ({
+            text: describeMemory(memory, (id) => (id === a.id ? 'me' : (this.characters.find((c) => c.id === id)?.name ?? 'someone'))),
+            sense: memory.sense,
+            confidence,
+            agoS: Math.round((this.now - memory.lastAt) / 1000),
+          })),
         relationships: this.characters
           .filter((c) => c !== a)
           .map((c) => ({ id: c.id, name: c.name, mine: this.relationships.opinion(a.id, c.id), theirs: this.relationships.opinion(c.id, a.id) })),
@@ -1072,17 +1243,100 @@ export class SandboxScene extends Phaser.Scene implements World {
     for (const c of this.characters) {
       c.view.update(c.x, c.y, c.motor.facing, c.pose);
       const showBar = c.health < MAX_HEALTH - 0.5 || c.mode === 'combat';
+      c.overhead.setIndicator(this.awarenessIndicator(c));
       c.overhead.update(c.x, c.y, screenScale, time, c.health, MAX_HEALTH, showBar);
     }
     const a = this.active;
     this.drawLockRing(time);
     this.drawRoute(a, time, dt);
+    this.drawFireAndFlies(time, dt);
+    this.drawSensesOverlay(time);
 
     if (!this.cameraFocus) this.cameraFocus = { x: a.x, y: a.y };
     const k = 1 - Math.exp(-CAMERA_FOLLOW * dt);
     this.cameraFocus.x += (a.x - this.cameraFocus.x) * k;
     this.cameraFocus.y += (a.y - this.cameraFocus.y) * k;
     cam.centerOn(this.cameraFocus.x, this.cameraFocus.y);
+  }
+
+  private drawFireAndFlies(time: number, dt: number): void {
+    const g = this.fire.flames;
+    g.clear();
+    for (let i = 0; i < 5; i++) {
+      const f = Math.sin(time / (90 + i * 23) + i) * 0.5 + 0.5;
+      const a = i * 1.3 + time / 700;
+      g.fillStyle(i % 2 ? 0xf2a33a : 0xe0612c, 0.85);
+      g.fillEllipse(Math.cos(a) * 5, Math.sin(a) * 5, 9 + f * 6, 9 + f * 6);
+    }
+    g.fillStyle(0xffe08a, 0.9);
+    g.fillCircle(0, 0, 4 + Math.sin(time / 70) * 1.5);
+    this.fire.smokeTimer += dt;
+    if (this.fire.smokeTimer > 0.35) {
+      this.fire.smokeTimer = 0;
+      const puff = this.add.circle(this.fire.x + (this.rng() - 0.5) * 10, this.fire.y, 6, 0xbfb8ad, 0.35).setDepth(35);
+      this.tweens.add({ targets: puff, x: puff.x + 30 + this.rng() * 20, y: puff.y - 40 - this.rng() * 20, scale: 3, alpha: 0, duration: 2200, onComplete: () => puff.destroy() });
+    }
+    const flies = this.midden.flies;
+    flies.clear();
+    flies.fillStyle(0x111111, 0.9);
+    for (let i = 0; i < 6; i++) {
+      const t = time / (300 + i * 37) + i * 2;
+      flies.fillCircle(Math.cos(t) * (20 + i * 4), Math.sin(t * 1.3) * (12 + i * 3) - 10, 1.6);
+    }
+  }
+
+  /** Debug overlay (F4 or the Tuning panel): vision cones, noises, scents, smells. */
+  private drawSensesOverlay(time: number): void {
+    const g = this.overlayGfx;
+    g.clear();
+    if (!this.sensesOverlay) return;
+    const a = this.active;
+    // Smell sources.
+    for (const s of this.senses.smells) {
+      g.lineStyle(2, s.pleasant ? 0xf2a33a : 0x7a8a3a, 0.5);
+      g.strokeCircle(s.x, s.y, s.radius);
+      g.fillStyle(s.pleasant ? 0xf2a33a : 0x7a8a3a, 0.06);
+      g.fillCircle(s.x, s.y, s.radius);
+    }
+    // Scents: trails in the owner's colour, blood in red.
+    for (const m of this.senses.scents.marks) {
+      if (m.kind === 'blood') {
+        g.fillStyle(0xb3121e, Math.min(0.9, m.strength));
+        g.fillCircle(m.x, m.y, 4);
+      } else {
+        const owner = this.characters.find((c) => c.id === m.owner);
+        g.fillStyle(owner?.palette.tunic ?? 0xffffff, m.strength * 0.6);
+        g.fillCircle(m.x, m.y, 2.5);
+      }
+    }
+    // Vision cones, clipped by walls, tinted by how aware they are of you.
+    const rays = 28;
+    for (const c of this.characters) {
+      if (c.status === 'ko') continue;
+      const aw = c === a ? 0 : this.senses.awarenessOf(c, a);
+      const colour = c === a ? 0xffffff : aw >= 1 ? 0xe0574a : aw > 0.15 ? 0xe8c25a : 0x7fd47f;
+      const pts: Phaser.Math.Vector2[] = [new Phaser.Math.Vector2(c.x, c.y)];
+      for (let i = 0; i <= rays; i++) {
+        const ang = c.motor.facing - SIGHT.halfAngle + (i / rays) * SIGHT.halfAngle * 2;
+        let r = 0;
+        while (r < SIGHT.range && !this.sightGrid.isBlockedAt(c.x + Math.cos(ang) * r, c.y + Math.sin(ang) * r)) r += 8;
+        pts.push(new Phaser.Math.Vector2(c.x + Math.cos(ang) * r, c.y + Math.sin(ang) * r));
+      }
+      g.fillStyle(colour, c === a ? 0.05 : 0.1);
+      g.fillPoints(pts, true);
+      g.lineStyle(1, colour, 0.35);
+      g.strokePoints(pts, true);
+      g.lineStyle(1, 0xffffff, 0.25);
+      g.strokeCircle(c.x, c.y, SCENT.presenceRange * M);
+    }
+    // Noises: expanding rings out to how far they carry.
+    for (const n of this.senses.recentNoises) {
+      const t = (this.now - n.at) / 700;
+      const colour = n.kind === 'punch' || n.kind === 'shout' ? 0xe0574a : n.kind === 'footsteps' ? 0xffffff : 0x8ab4f8;
+      g.lineStyle(2, colour, 0.6 * (1 - t));
+      g.strokeCircle(n.x, n.y, n.loudness * M * Math.min(1, 0.25 + t));
+    }
+    void time;
   }
 
   private drawLockRing(time: number): void {
@@ -1156,4 +1410,14 @@ export class SandboxScene extends Phaser.Scene implements World {
     if (!world.drawDebug) world.debugGraphic.clear();
     world.debugGraphic.setDepth(100);
   }
+}
+
+/** Do segments a–b and c–d cross? */
+function crosses(a: Point, b: Point, c: Point, d: Point): boolean {
+  const o = (p: Point, q: Point, r: Point) => (q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x);
+  const d1 = o(c, d, a);
+  const d2 = o(c, d, b);
+  const d3 = o(a, b, c);
+  const d4 = o(a, b, d);
+  return d1 * d2 < 0 && d3 * d4 < 0;
 }

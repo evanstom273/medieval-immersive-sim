@@ -63,10 +63,20 @@ export interface RelationshipRow {
   theirs: number;
 }
 
+export interface MemoryRow {
+  text: string;
+  sense: 'sight' | 'sound' | 'smell' | 'touch';
+  /** 0..1, fading over time. */
+  confidence: number;
+  agoS: number;
+}
+
 export interface RosterState {
   members: RosterMember[];
   activeId: string;
   relationships: RelationshipRow[];
+  /** What the active character remembers perceiving, most recent first. */
+  memories: MemoryRow[];
 }
 
 export const rosterChannel = new Channel<RosterState>();
@@ -83,5 +93,9 @@ export interface MenuState {
 export const menuChannel = new Channel<MenuState | null>();
 
 /** UI → game. */
-export type UiCommand = { kind: 'switchTo'; id: string } | { kind: 'menuChoice'; optionId: string } | { kind: 'menuClose' };
+export type UiCommand =
+  | { kind: 'switchTo'; id: string }
+  | { kind: 'menuChoice'; optionId: string }
+  | { kind: 'menuClose' }
+  | { kind: 'toggleSenses' };
 export const uiCommands = new Channel<UiCommand>();

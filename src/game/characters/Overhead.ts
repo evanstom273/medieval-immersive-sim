@@ -10,6 +10,11 @@ export class Overhead {
   private readonly bubble: Phaser.GameObjects.Container;
   private readonly bubbleText: Phaser.GameObjects.Text;
   private readonly bar: Phaser.GameObjects.Graphics;
+  /** ? / ! badge: noticing / has just noticed the player's character. */
+  private readonly indicator: Phaser.GameObjects.Container;
+  private readonly indicatorBg: Phaser.GameObjects.Graphics;
+  private readonly indicatorText: Phaser.GameObjects.Text;
+  private indicatorValue: '?' | '!' | null = null;
   private bubbleUntil = 0;
   private persistentIcon: string | null = null;
 
@@ -25,7 +30,12 @@ export class Overhead {
       .setOrigin(0.5);
     this.bubble = scene.add.container(0, 0, [bg, this.bubbleText]).setVisible(false);
     this.bar = scene.add.graphics();
-    this.container = scene.add.container(0, 0, [this.bar, this.bubble]).setDepth(40);
+    this.indicatorBg = scene.add.graphics();
+    this.indicatorText = scene.add
+      .text(0, 0, '', { fontFamily: 'system-ui, sans-serif', fontSize: '15px', fontStyle: 'bold', color: '#ffffff' })
+      .setOrigin(0.5);
+    this.indicator = scene.add.container(24, -16, [this.indicatorBg, this.indicatorText]).setVisible(false);
+    this.container = scene.add.container(0, 0, [this.bar, this.bubble, this.indicator]).setDepth(40);
   }
 
   /** Show an emote for a while. */
@@ -33,6 +43,20 @@ export class Overhead {
     this.bubbleText.setText(icon);
     this.bubble.setVisible(true);
     this.bubbleUntil = now + durationMs;
+  }
+
+  setIndicator(value: '?' | '!' | null): void {
+    if (value === this.indicatorValue) return;
+    this.indicatorValue = value;
+    this.indicator.setVisible(value !== null);
+    if (!value) return;
+    const g = this.indicatorBg;
+    g.clear();
+    g.fillStyle(value === '!' ? 0xd9443a : 0xe8b23a, 1);
+    g.fillCircle(0, 0, 10);
+    g.lineStyle(1.5, 0x000000, 0.25);
+    g.strokeCircle(0, 0, 10);
+    this.indicatorText.setText(value).setColor(value === '!' ? '#ffffff' : '#2a1d05');
   }
 
   /** An emote that stays until cleared (e.g. a white flag while yielded). */

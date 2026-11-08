@@ -78,6 +78,10 @@ export class Door implements Interactable {
     return res.thud;
   }
 
+  hingePoint(): { x: number; y: number } {
+    return { x: this.geom.hingeX, y: this.geom.hingeY };
+  }
+
   /** World position of the latch (free) end of the leaf. */
   latchPoint(): { x: number; y: number } {
     const a = this.geom.baseAngle + this.swing.angle;

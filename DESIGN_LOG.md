@@ -115,6 +115,26 @@ When an item changes status, move it and add a dated note rather than silently r
 - **Shared mechanics:** NPCs walk, talk, punch and use things through exactly the same code as the player; the brain only decides what to do.
 - **UI style: clean & modern.** Neutral translucent panels and crisp type; the art carries the medieval feel. Portrait bar with health rings and status badges; a card for the active character (activity, health, temperament, relationships both ways).
 
+### Senses, awareness and memory
+*2026-11-08 20:36 UTC*
+
+- **Everyone perceives, including the character you control.** Your character sees, hears, smells and remembers by the same rules; only NPCs react automatically. You still see the whole area yourself for now.
+- **Sight:** a forward vision cone with a range; walls and door leaves block it. Being in view isn't the same as being noticed. Awareness builds over a moment: faster up close and in the centre of vision, slower at the edges, much slower when sneaking. Up close you're noticed at once, unless sneaking.
+- **Sound:** noise events with a loudness (how far they carry); each wall in between muffles them. Footsteps (louder running, silent sneaking), punches, talk, quarrels, shouts, door thuds, someone hitting the floor. Hearing makes people glance over and can make them *suspect* someone's there, never be sure.
+- **Smell (all three, on one framework):**
+  - **presence:** sensing someone unseen right next to you; they turn round
+  - **lingering scents:** everyone leaves a faint trail (fainter when sneaking), and fights leave blood; both fade
+  - **event smells:** a cooking fire draws people over to warm themselves; a midden makes them wrinkle their nose and move off
+- **Perceptions are beliefs, not facts:** seeing a fight gives "Edric hit Agnes"; hearing one gives "a fight, over there". The victim knows who hit them.
+- **Memories:** stored per character with sense, confidence and time; repeats strengthen them; they fade. Shown on the character card. This is the groundwork for witnesses, crime and gossip.
+- **Witnessing a fight (temperament + relationships):**
+  - Bold step in on the side of whoever they like more, or shout at the attacker to stop and watch if they don't care either way.
+  - Wary keep their distance and watch, and cry out if it's a friend being hit.
+  - Meek back away.
+  - Seeing an attack lowers your opinion of the attacker, more so if you like the victim.
+  - Bold people who only *hear* a fight go and investigate; meek ones move away.
+- **Awareness indicators:** a ? (noticing you) / ! (has just noticed you) over people, shown only while you're sneaking or in a fight stance, when being noticed matters. Plus a **senses debug overlay** (F4, or the Tuning panel): cones, noise rings, scents, smell radii.
+
 ---
 
 ## Undecided
@@ -228,8 +248,18 @@ When an item changes status, move it and add a dated note rather than silently r
   - idle choice weights: wander 5, idle 2.5, use object 1, chat 2
 
   The whole cast is a test cast.
-- **Not yet (2026-11-08 20:18 UTC):** bystanders don't react to violence they see (no witnesses/crime yet); no grudges or revenge after a knockout; insults never escalate to fights on their own; no action queue (one thing at a time); NPCs don't open doors deliberately, they just push through.
+- **Not yet (2026-11-08 20:18 UTC):** ~~bystanders don't react to violence they see~~ *(done 2026-11-08 20:36 UTC: see Senses)*; no grudges or revenge after a knockout; insults never escalate to fights on their own; no action queue (one thing at a time); NPCs don't open doors deliberately, they just push through.
 - **Seeded randomness (2026-11-08 20:18 UTC):** NPC choices and social outcomes use a seeded RNG (`src/game/util/rng.ts`), a first step toward reproducible simulation.
+- **Senses placeholders (2026-11-08 20:36 UTC):**
+  - sight 14 m with a 120° cone; awareness gain 2.2/s at full visibility, decays 0.2/s; noticed at once within 1.2 m
+  - sneaking ×0.35 visibility; standing still ×0.75; running ×1.3
+  - loudness in metres: footsteps 3 (running 7, sneaking 0), punch 10, shout 18, talk 5, quarrel 9, door up to 6, thud 8; each wall keeps 35%
+  - presence 1.6 m; blood smelled within 2.5 m; trails fade over 40 s, blood over 3 min
+  - fire smell radius 10 m, midden 5 m
+  - memory half-life 3 min (real time, not game time)
+  - intervene if you like one side 15+ more than the other
+  - walls and crates block sight; the well, fire, dummy, chest and sign don't
+- **Not yet (2026-11-08 20:36 UTC):** witnesses don't tell anyone what they saw (no gossip/reporting); memories don't change behaviour later (no grudges); NPCs don't follow trails; no lighting or night; NPCs don't check behind themselves; walls and closed doors muffle sound but sound doesn't route round through doorways.
 - **Reach checks** ignore line of sight for now (you could, in principle, use something through a thin wall).
 - **Character and objects** are placeholder geometry, not final art.
 - **Door placeholders (2026-11-08 19:32 UTC):** ~~doors swing both ways up to 90° (real medieval doors usually swing one way).~~ *Moved to Agreed 2026-11-08 19:33 UTC.* Anyone can lock any door: no keys, ownership or lockpicking yet. Doors don't collide with furniture while swinging. No door weight or resistance yet; a first attempt at faking weight shoved the player into the door frame. *(2026-11-08 19:37 UTC: doors made lighter: they keep swinging after a push (momentum 1.4×) and slow gently (friction 2.2/s). Both are live-tunable in the debug panel; values are placeholders.)* *(2026-11-08 19:42 UTC: added closing weight 7, bounce 30%, thud threshold 0.8 rad/s. Closing weight is tunable; all placeholders.)*

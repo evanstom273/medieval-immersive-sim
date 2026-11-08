@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { hudChannel, rosterChannel, uiCommands, type HudState, type RelationshipRow, type RosterMember, type RosterState } from '../game/bridge';
+import { hudChannel, rosterChannel, uiCommands, type HudState, type MemoryRow, type RelationshipRow, type RosterMember, type RosterState } from '../game/bridge';
 import { inputSourceChannel, type InputSource } from '../game/input/touchInput';
 import { opinionWord } from '../game/social/relationships';
 
@@ -41,7 +41,7 @@ export function PortraitBar() {
     </div>
   );
 
-  const card = cardOpen && <Card member={active} hud={hud} rows={roster.relationships} />;
+  const card = cardOpen && <Card member={active} hud={hud} rows={roster.relationships} memories={roster.memories} />;
 
   return (
     <div
@@ -114,7 +114,7 @@ function Portrait(props: { member: RosterMember; index: number; size: number; sh
 
 const GAIT: Record<string, string> = { still: 'Standing', crouch: 'Sneaking', walk: 'Walking', sprint: 'Running' };
 
-function Card(props: { member: RosterMember; hud: HudState | null; rows: RelationshipRow[] }) {
+function Card(props: { member: RosterMember; hud: HudState | null; rows: RelationshipRow[]; memories: MemoryRow[] }) {
   const { member: m, hud } = props;
   const f = Math.max(0, m.health / m.maxHealth);
   return (
@@ -153,8 +153,31 @@ function Card(props: { member: RosterMember; hud: HudState | null; rows: Relatio
           </div>
         ))}
       </div>
+
+      <div className="mt-3 text-[11px] font-medium tracking-wide text-white/50 uppercase">Memories</div>
+      {props.memories.length === 0 ? (
+        <div className="mt-1 text-xs text-white/40">Nothing of note.</div>
+      ) : (
+        <div className="mt-1 flex flex-col gap-0.5">
+          {props.memories.map((m, i) => (
+            <div key={i} className="flex items-baseline gap-1.5 text-xs" style={{ opacity: 0.35 + 0.65 * m.confidence }} title={`${Math.round(m.confidence * 100)}% sure`}>
+              <span className="w-4 shrink-0 text-center">{SENSE_ICON[m.sense]}</span>
+              <span className="flex-1 truncate">{m.text}</span>
+              <span className="shrink-0 text-[10px] text-white/40 tabular-nums">{ago(m.agoS)}</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
+}
+
+const SENSE_ICON: Record<MemoryRow['sense'], string> = { sight: '👁', sound: '👂', smell: '👃', touch: '✋' };
+
+function ago(s: number): string {
+  if (s < 5) return 'just now';
+  if (s < 60) return `${s}s ago`;
+  return `${Math.round(s / 60)}m ago`;
 }
 
 /** −100…100 as a bar growing left (red) or right (green) from the centre. */
