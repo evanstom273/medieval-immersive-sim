@@ -101,6 +101,8 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
   private paused = false;
   /** A GTA-style switch in flight: control passes to `next` when the camera lands. */
   private switching: { plan: SwitchPlan; t: number; next: Character } | null = null;
+  /** Someone picked mid-switch: switch to them as soon as this one lands. */
+  private queuedSwitch: string | null = null;
   senses!: Senses;
   /** Walls etc. that block sight and muffle sound (not inflated, unlike the nav grid). */
   private sightBlockers: Obstacle[] = [];
@@ -580,7 +582,13 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
    */
   private switchTo(id: string): void {
     const next = this.characters.find((c) => c.id === id);
-    if (!next || next === this.active || this.switching) return;
+    if (!next) return;
+    if (this.switching) {
+      // Can't interrupt a switch, but remember the choice rather than ignoring it.
+      this.queuedSwitch = next === this.switching.next ? null : next.id;
+      return;
+    }
+    if (next === this.active) return;
     this.closeMenu();
     const prev = this.active;
     prev.controlled = false;
@@ -610,6 +618,9 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     next.lockTarget = null;
     next.brain.reset(this.now);
     this.active = next;
+    const queued = this.queuedSwitch;
+    this.queuedSwitch = null;
+    if (queued) this.time.delayedCall(350, () => this.switchTo(queued));
     switchChannel.emit({ phase: 'arrive', id: next.id, name: next.name, colour: cssColour(next), activity: this.activityOf(next) });
   }
 
@@ -913,7 +924,8 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
 
     if (this.switching) {
       // Mid-switch nobody is under your control: consume the presses so they don't fire on landing.
-      for (const key of Object.values(k)) Phaser.Input.Keyboard.JustDown(key);
+      // (Number keys still get through: picking someone else mid-switch queues it.)
+      for (const [name, key] of Object.entries(k)) if (!['one', 'two', 'three', 'four', 'pause'].includes(name)) Phaser.Input.Keyboard.JustDown(key);
     }
     if (Phaser.Input.Keyboard.JustDown(k.combat)) this.toggleCombat();
     if (Phaser.Input.Keyboard.JustDown(k.lock)) this.toggleLock();
@@ -1309,13 +1321,14 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     let switchFocus: Point | null = null;
     if (sw) {
       if (!this.paused) sw.t += dt;
-      const s = sampleSwitch(sw.plan, Math.min(sw.t, switchDuration(sw.plan)), { x: sw.next.x, y: sw.next.y });
+      const s = sampleSwitch(sw.plan, sw.t, { x: sw.next.x, y: sw.next.y });
       this.rig.span = s.span;
       switchFocus = s.focus;
       // Colour drains as you rise and comes back as you drop in (the game canvas only; the UI keeps its colour).
       const grey = s.airborne * sw.plan.intensity;
       this.game.canvas.style.filter = grey > 0.01 ? `grayscale(${(grey * 0.9).toFixed(3)}) brightness(${(1 - grey * 0.12).toFixed(3)})` : '';
-      if (s.done) this.landSwitch();
+      // Failsafe: never let a switch hang (it would block all further switching).
+      if (s.done || sw.t > switchDuration(sw.plan) + 0.5) this.landSwitch();
     } else {
       this.rig.update(dt);
     }

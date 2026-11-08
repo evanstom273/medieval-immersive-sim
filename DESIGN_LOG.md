@@ -164,6 +164,7 @@ When an item changes status, move it and add a dated note rather than silently r
 - **Switching plays a camera transition:** pull out, pan across, drop in on the new person. **Scaled to distance:** a nearby hop is a ~1 s glide with a slight pull-out; a long one pulls right out and **holds a wide shot of both people** before dropping in (~2.5 s across the sandbox).
 - **The world keeps running:** the person you leave carries on by themselves at once; the person you're heading to keeps doing their thing, and the camera follows them, so you land mid-activity. **You take control on landing.**
 - **Not skippable:** input during the switch is ignored (keys, clicks, taps, the stick, zoom). Pause still works and freezes the transition too.
+- **2026-11-08 21:11 UTC:** picking someone else mid-switch isn't ignored: it's queued, and the next switch starts as soon as this one lands.
 - **Flourishes:** colour drains from the game as you rise and returns as you drop in (lighter on short hops; the UI keeps its colour); a **name card** with who you've become and what they're doing appears on landing.
 - **Overview tie-in:** the switch is a zoom out / pan / zoom in, the same camera movement planned for moving between direct control and the overview. When the overview exists, long switches could pass through it.
 - **Placeholders:** pull-out height (1.35 × distance + 6 m), wide shot for switches over 15 m (0.7 s), phase timings.

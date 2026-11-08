@@ -68,8 +68,11 @@ export function sampleSwitch(p: SwitchPlan, t: number, to: Point): SwitchSample 
   if (t < p.up + p.hold) {
     return { focus: mid, span: p.topSpan, airborne: 1, done: false };
   }
-  const k = Math.min(1, (t - p.up - p.hold) / p.down);
+  // Decide "done" by time, not by the interpolation fraction: (up + hold + down) − up − hold can
+  // round to just under `down`, which left some switches 99.999…% complete forever.
+  const done = t >= switchDuration(p);
+  const k = done ? 1 : Math.min(1, (t - p.up - p.hold) / p.down);
   const e = ease(k);
   const span = lerpSpan(p.topSpan, p.startSpan, e);
-  return { focus: { x: lerp(mid.x, to.x, e), y: lerp(mid.y, to.y, e) }, span, airborne: air(span), done: k >= 1 };
+  return { focus: { x: lerp(mid.x, to.x, e), y: lerp(mid.y, to.y, e) }, span, airborne: air(span), done };
 }

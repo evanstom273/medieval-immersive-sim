@@ -32,6 +32,14 @@ describe('switch transition', () => {
     expect(end.span).toBeCloseTo(8);
   });
 
+  it('always lands: every distance finishes exactly at its duration (regression: rounding left some stuck)', () => {
+    for (let i = 1; i <= 2000; i++) {
+      const d = i * 1.37;
+      const p = planSwitch({ x: 0, y: 0 }, { x: d, y: 0 }, 8, M);
+      expect(sampleSwitch(p, switchDuration(p), { x: d, y: 0 }).done).toBe(true);
+    }
+  });
+
   it('follows the target if they move during the switch', () => {
     const p = planSwitch({ x: 0, y: 0 }, { x: 10 * M, y: 0 }, 8, M);
     const end = sampleSwitch(p, switchDuration(p), { x: 12 * M, y: 2 * M });
