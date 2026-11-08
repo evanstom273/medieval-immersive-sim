@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import {
   hudChannel,
   menuChannel,
+  pausedChannel,
   messageChannel,
   rosterChannel,
   uiCommands,
@@ -76,7 +77,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
   private active!: Character;
 
   private keys!: Record<
-    'up' | 'down' | 'left' | 'right' | 'sprint' | 'crouch' | 'combat' | 'lock' | 'talk' | 'debug' | 'senses' | 'esc' | 'one' | 'two' | 'three' | 'four',
+    'up' | 'down' | 'left' | 'right' | 'sprint' | 'crouch' | 'combat' | 'lock' | 'talk' | 'debug' | 'senses' | 'pause' | 'esc' | 'one' | 'two' | 'three' | 'four',
     Phaser.Input.Keyboard.Key
   >;
   private solids!: Phaser.Physics.Arcade.StaticGroup;
@@ -95,6 +96,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
   private markerFade: { x: number; y: number; t: number } | null = null;
   private cameraFocus: { x: number; y: number } | null = null;
   private lockedNoticeAt = -Infinity;
+  private paused = false;
   senses!: Senses;
   /** Walls etc. that block sight and muffle sound (not inflated, unlike the nav grid). */
   private sightBlockers: Obstacle[] = [];
@@ -302,6 +304,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
         talk: KEY.E,
         debug: KEY.F3,
         senses: KEY.F4,
+        pause: KEY.SPACE,
         esc: KEY.ESC,
         one: KEY.ONE,
         two: KEY.TWO,
@@ -410,6 +413,12 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
       case 'menuClose':
         this.closeMenu();
         break;
+      case 'setPaused':
+        this.setPaused(c.paused);
+        break;
+      case 'cancelAction':
+        this.cancelAction();
+        break;
       case 'toggleSenses':
         this.sensesOverlay = !this.sensesOverlay;
         break;
@@ -473,6 +482,30 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
       if (this.interactables[i].hitTest(x, y)) return this.interactables[i];
     }
     return null;
+  }
+
+  /** Pause the simulation (the camera, zoom and menus still work). */
+  private setPaused(paused: boolean): void {
+    if (paused === this.paused) return;
+    this.paused = paused;
+    if (paused) {
+      this.physics.pause();
+      this.tweens.pauseAll();
+    } else {
+      this.physics.resume();
+      this.tweens.resumeAll();
+    }
+    pausedChannel.emit(paused);
+  }
+
+  /** Stop whatever the active character is doing (walking somewhere, talking, squaring up). */
+  private cancelAction(): void {
+    const a = this.active;
+    a.cancelOrder();
+    a.social = null;
+    a.lockTarget = null;
+    this.press = null;
+    if (a.mode === 'combat') this.toggleCombat();
   }
 
   private toggleCombat(): void {
@@ -851,6 +884,12 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     const k = this.keys;
     const a = this.active;
 
+    if (Phaser.Input.Keyboard.JustDown(k.pause)) this.setPaused(!this.paused);
+    if (this.paused) {
+      if (Phaser.Input.Keyboard.JustDown(k.esc)) this.closeMenu();
+      return;
+    }
+
     if (Phaser.Input.Keyboard.JustDown(k.combat)) this.toggleCombat();
     if (Phaser.Input.Keyboard.JustDown(k.lock)) this.toggleLock();
     if (Phaser.Input.Keyboard.JustDown(k.talk)) this.talk();
@@ -1211,6 +1250,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
         temperament: TEMPERAMENTS[c.temperament].label,
         temperamentNote: TEMPERAMENTS[c.temperament].description,
         activity: this.activityOf(c),
+        busy: !!(c.order || c.social || c.mode === 'combat' || c.lockTarget),
       }));
       rosterChannel.emit({
         members,

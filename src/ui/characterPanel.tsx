@@ -1,20 +1,20 @@
-import { useState, type ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import type { HudState, MemoryRow, RelationshipRow, RosterMember } from '../game/bridge';
 import { MOCK_PROFILES, NEEDS, SKILLS, type SkillGroup } from '../game/characters/mockProfiles';
 import { opinionWord } from '../game/social/relationships';
 
 /**
- * Character panel for whoever you're controlling, Sims-style but our own:
- * tabs for Needs, Skills, Relationships and Character.
+ * Character panel contents for whoever you're controlling (shown by the
+ * bottom bar): tabs for Needs, Skills, People and Self.
  *
  * Needs, skills, age, occupation, traits and background are PLACEHOLDER mock
  * data (see mockProfiles.ts). Health, temperament, activity, relationships
  * and memories are live.
  */
 
-type Tab = 'needs' | 'skills' | 'people' | 'character';
+export type Tab = 'needs' | 'skills' | 'people' | 'character';
 
-const TABS: { id: Tab; label: string; icon: string }[] = [
+export const TABS: { id: Tab; label: string; icon: string }[] = [
   { id: 'needs', label: 'Needs', icon: '🍞' },
   { id: 'skills', label: 'Skills', icon: '🛠️' },
   { id: 'people', label: 'People', icon: '👥' },
@@ -24,85 +24,9 @@ const TABS: { id: Tab; label: string; icon: string }[] = [
 const GAIT: Record<string, string> = { still: 'Standing', crouch: 'Sneaking', walk: 'Walking', sprint: 'Running' };
 const SENSE_ICON: Record<MemoryRow['sense'], string> = { sight: '👁', sound: '👂', smell: '👃', touch: '✋' };
 
-export interface DockProps {
-  member: RosterMember;
-  members: RosterMember[];
-  hud: HudState | null;
-  rows: RelationshipRow[];
-  memories: MemoryRow[];
-  /** Phone: show as a bottom sheet. */
-  sheet: boolean;
-  onClose: () => void;
-}
-
-export function CharacterDock(props: DockProps) {
-  const [tab, setTab] = useState<Tab>('needs');
-  const { member: m, sheet } = props;
-  const profile = MOCK_PROFILES[m.id];
-
-  return (
-    <div
-      className={`pointer-events-auto flex flex-col overflow-hidden bg-neutral-900/80 text-white shadow-2xl ring-1 ring-white/10 backdrop-blur-md ${
-        sheet ? 'fixed inset-x-0 bottom-0 z-20 max-h-[64vh] rounded-t-3xl' : 'h-[420px] w-[360px] rounded-2xl'
-      }`}
-      style={sheet ? { paddingBottom: 'env(safe-area-inset-bottom)' } : undefined}
-      onPointerDown={(e) => e.stopPropagation()}
-    >
-      {sheet && <div className="mx-auto mt-2 h-1 w-10 shrink-0 rounded-full bg-white/25" />}
-
-      {/* Header */}
-      <div className="flex shrink-0 items-center gap-3 px-4 pt-3 pb-2">
-        <Avatar colour={m.colour} name={m.name} size={40} dim={m.status === 'ko'} />
-        <div className="min-w-0 flex-1">
-          <div className="flex items-baseline gap-2">
-            <span className="text-base font-semibold">{m.name}</span>
-            {profile && (
-              <span className="truncate text-xs text-white/50">
-                {profile.occupation} · {profile.age}
-              </span>
-            )}
-          </div>
-          <div className="truncate text-xs text-white/60">{m.activity}</div>
-          <HealthBar value={m.health} max={m.maxHealth} />
-        </div>
-        <button className="self-start rounded-full px-2 py-0.5 text-lg leading-none text-white/50 hover:bg-white/10 hover:text-white" onClick={props.onClose} aria-label="Close">
-          {sheet ? '×' : '▾'}
-        </button>
-      </div>
-
-      {/* Tabs */}
-      <div className="flex shrink-0 gap-1 border-b border-white/10 px-3">
-        {TABS.map((t) => (
-          <button
-            key={t.id}
-            onClick={(e) => {
-              setTab(t.id);
-              e.currentTarget.blur();
-            }}
-            className={`-mb-px flex flex-1 items-center justify-center gap-1 border-b-2 px-1 py-2 text-xs font-medium transition ${
-              tab === t.id ? 'border-white text-white' : 'border-transparent text-white/50 hover:text-white/80'
-            }`}
-          >
-            <span>{t.icon}</span>
-            <span>{t.label}</span>
-          </button>
-        ))}
-      </div>
-
-      {/* Body */}
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
-        {tab === 'needs' && <NeedsTab id={m.id} />}
-        {tab === 'skills' && <SkillsTab id={m.id} />}
-        {tab === 'people' && <PeopleTab rows={props.rows} members={props.members} memories={props.memories} />}
-        {tab === 'character' && <CharacterTab member={m} hud={props.hud} memories={props.memories} />}
-      </div>
-    </div>
-  );
-}
-
 // ------------------------------------------------------------------ tabs
 
-function NeedsTab({ id }: { id: string }) {
+export function NeedsTab({ id }: { id: string }) {
   const p = MOCK_PROFILES[id];
   if (!p) return null;
   const avg = NEEDS.reduce((s, n) => s + p.needs[n.id], 0) / NEEDS.length;
@@ -131,7 +55,7 @@ function NeedsTab({ id }: { id: string }) {
   );
 }
 
-function SkillsTab({ id }: { id: string }) {
+export function SkillsTab({ id }: { id: string }) {
   const p = MOCK_PROFILES[id];
   if (!p) return null;
   const groups: SkillGroup[] = ['Body', 'Mind & tongue', 'Trades'];
@@ -171,7 +95,7 @@ function SkillsTab({ id }: { id: string }) {
   );
 }
 
-function PeopleTab({ rows, members, memories }: { rows: RelationshipRow[]; members: RosterMember[]; memories: MemoryRow[] }) {
+export function PeopleTab({ rows, members, memories }: { rows: RelationshipRow[]; members: RosterMember[]; memories: MemoryRow[] }) {
   return (
     <div className="flex flex-col gap-3">
       {rows.map((r) => {
@@ -202,7 +126,7 @@ function PeopleTab({ rows, members, memories }: { rows: RelationshipRow[]; membe
   );
 }
 
-function CharacterTab({ member: m, hud, memories }: { member: RosterMember; hud: HudState | null; memories: MemoryRow[] }) {
+export function CharacterTab({ member: m, hud, memories }: { member: RosterMember; hud: HudState | null; memories: MemoryRow[] }) {
   const p = MOCK_PROFILES[m.id];
   return (
     <div>
@@ -271,7 +195,7 @@ export function Avatar({ colour, name, size, dim }: { colour: string; name: stri
   );
 }
 
-function HealthBar({ value, max }: { value: number; max: number }) {
+export function HealthBar({ value, max }: { value: number; max: number }) {
   const f = Math.max(0, value / max);
   return (
     <div className="mt-1 flex items-center gap-2">

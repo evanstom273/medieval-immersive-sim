@@ -139,12 +139,24 @@ When an item changes status, move it and add a dated note rather than silently r
 *2026-11-08 20:42 UTC*
 
 - **Tabbed panel for the character you control:** Needs, Skills, People (relationships), Self (character). It only ever shows whoever you're controlling.
-- **Desktop:** docked bottom-left above the portraits, open by default; ▾ collapses it and clicking your own portrait reopens it.
-- **Phones:** slides up as a bottom sheet when you tap your own portrait.
+- ~~Desktop: docked bottom-left above the portraits… Phones: bottom sheet from your portrait.~~ *Superseded 2026-11-08 20:46 UTC by the bottom bar (below).*
 - **What's live and what's placeholder:**
   - **Live:** health, temperament, current activity, relationships (both directions, with memories involving each person), memories.
   - **Static placeholder data** (`src/game/characters/mockProfiles.ts`), labelled as such in the panel: needs (Hunger, Rest, Warmth, Comfort, Hygiene, Company, plus a mood summary), skills (Body: Brawling, Stealth, Labour; Mind & tongue: Persuasion, Haggling, Letters; Trades: Baking, Smithing, Farming, Carpentry; levels 0–10), age, occupation, traits and background.
 - The need and skill lists, the occupations, traits and backgrounds are example content to settle the layout, not design decisions.
+
+### Bottom bar (main game UI)
+*2026-11-08 20:46 UTC*
+
+- **A full-width game bar along the bottom, Sims-style in structure but our own clean look:**
+  - **Left:** a big portrait of the character you control (health ring, status badge), with their name, occupation, mood and current activity beside it, and the rest of the household as small portraits to switch to.
+  - **Centre:** time controls and clock.
+  - **Right:** the character panel (Needs / Skills / People / Self), popping up above a row of tab icons. Open by default on desktop; click the active tab or × to close.
+- **Top-left: current-action chip** (e.g. "Walking", "Chat · Agnes", "Ready to fight") with × to cancel.
+- **Pause works** (button or Space): the world freezes; camera, zoom and menus still work.
+- **Placeholders:** the faster-speed buttons are shown but disabled until the time model is decided; the clock ("Day 1 · Morning") and mood are not simulated.
+- **Controls help** moved into a "?" on the bar.
+- **Phones:** a compact version of the same bar; the panel opens as a sheet above it; the touch buttons sit above the bar.
 
 ---
 

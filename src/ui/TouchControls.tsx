@@ -238,7 +238,8 @@ export function TouchControls() {
         className="absolute"
         style={{
           right: 'max(16px, env(safe-area-inset-right))',
-          bottom: 'max(16px, env(safe-area-inset-bottom))',
+          // Above the bottom bar.
+          bottom: 'calc(84px + env(safe-area-inset-bottom))',
           width: 216,
           height: 150,
         }}

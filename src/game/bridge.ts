@@ -52,6 +52,8 @@ export interface RosterMember {
   temperamentNote: string;
   /** What they're up to, e.g. "Chatting with Agnes". */
   activity: string;
+  /** Doing something that can be cancelled (walking somewhere, talking, squaring up). */
+  busy: boolean;
 }
 
 export interface RelationshipRow {
@@ -100,5 +102,10 @@ export type UiCommand =
   | { kind: 'switchTo'; id: string }
   | { kind: 'menuChoice'; optionId: string }
   | { kind: 'menuClose' }
-  | { kind: 'toggleSenses' };
+  | { kind: 'toggleSenses' }
+  | { kind: 'setPaused'; paused: boolean }
+  | { kind: 'cancelAction' };
+
+/** Game → UI: is the simulation paused? */
+export const pausedChannel = new Channel<boolean>();
 export const uiCommands = new Channel<UiCommand>();
