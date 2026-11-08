@@ -135,6 +135,17 @@ When an item changes status, move it and add a dated note rather than silently r
   - Bold people who only *hear* a fight go and investigate; meek ones move away.
 - **Awareness indicators:** a ? (noticing you) / ! (has just noticed you) over people, shown only while you're sneaking or in a fight stance, when being noticed matters. Plus a **senses debug overlay** (F4, or the Tuning panel): cones, noise rings, scents, smell radii.
 
+### Character panel
+*2026-11-08 20:42 UTC*
+
+- **Tabbed panel for the character you control:** Needs, Skills, People (relationships), Self (character). It only ever shows whoever you're controlling.
+- **Desktop:** docked bottom-left above the portraits, open by default; ▾ collapses it and clicking your own portrait reopens it.
+- **Phones:** slides up as a bottom sheet when you tap your own portrait.
+- **What's live and what's placeholder:**
+  - **Live:** health, temperament, current activity, relationships (both directions, with memories involving each person), memories.
+  - **Static placeholder data** (`src/game/characters/mockProfiles.ts`), labelled as such in the panel: needs (Hunger, Rest, Warmth, Comfort, Hygiene, Company, plus a mood summary), skills (Body: Brawling, Stealth, Labour; Mind & tongue: Persuasion, Haggling, Letters; Trades: Baking, Smithing, Farming, Carpentry; levels 0–10), age, occupation, traits and background.
+- The need and skill lists, the occupations, traits and backgrounds are example content to settle the layout, not design decisions.
+
 ---
 
 ## Undecided

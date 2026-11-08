@@ -1,0 +1,329 @@
+import { useState, type ReactNode } from 'react';
+import type { HudState, MemoryRow, RelationshipRow, RosterMember } from '../game/bridge';
+import { MOCK_PROFILES, NEEDS, SKILLS, type SkillGroup } from '../game/characters/mockProfiles';
+import { opinionWord } from '../game/social/relationships';
+
+/**
+ * Character panel for whoever you're controlling, Sims-style but our own:
+ * tabs for Needs, Skills, Relationships and Character.
+ *
+ * Needs, skills, age, occupation, traits and background are PLACEHOLDER mock
+ * data (see mockProfiles.ts). Health, temperament, activity, relationships
+ * and memories are live.
+ */
+
+type Tab = 'needs' | 'skills' | 'people' | 'character';
+
+const TABS: { id: Tab; label: string; icon: string }[] = [
+  { id: 'needs', label: 'Needs', icon: '🍞' },
+  { id: 'skills', label: 'Skills', icon: '🛠️' },
+  { id: 'people', label: 'People', icon: '👥' },
+  { id: 'character', label: 'Self', icon: '👤' },
+];
+
+const GAIT: Record<string, string> = { still: 'Standing', crouch: 'Sneaking', walk: 'Walking', sprint: 'Running' };
+const SENSE_ICON: Record<MemoryRow['sense'], string> = { sight: '👁', sound: '👂', smell: '👃', touch: '✋' };
+
+export interface DockProps {
+  member: RosterMember;
+  members: RosterMember[];
+  hud: HudState | null;
+  rows: RelationshipRow[];
+  memories: MemoryRow[];
+  /** Phone: show as a bottom sheet. */
+  sheet: boolean;
+  onClose: () => void;
+}
+
+export function CharacterDock(props: DockProps) {
+  const [tab, setTab] = useState<Tab>('needs');
+  const { member: m, sheet } = props;
+  const profile = MOCK_PROFILES[m.id];
+
+  return (
+    <div
+      className={`pointer-events-auto flex flex-col overflow-hidden bg-neutral-900/80 text-white shadow-2xl ring-1 ring-white/10 backdrop-blur-md ${
+        sheet ? 'fixed inset-x-0 bottom-0 z-20 max-h-[64vh] rounded-t-3xl' : 'h-[420px] w-[360px] rounded-2xl'
+      }`}
+      style={sheet ? { paddingBottom: 'env(safe-area-inset-bottom)' } : undefined}
+      onPointerDown={(e) => e.stopPropagation()}
+    >
+      {sheet && <div className="mx-auto mt-2 h-1 w-10 shrink-0 rounded-full bg-white/25" />}
+
+      {/* Header */}
+      <div className="flex shrink-0 items-center gap-3 px-4 pt-3 pb-2">
+        <Avatar colour={m.colour} name={m.name} size={40} dim={m.status === 'ko'} />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-baseline gap-2">
+            <span className="text-base font-semibold">{m.name}</span>
+            {profile && (
+              <span className="truncate text-xs text-white/50">
+                {profile.occupation} · {profile.age}
+              </span>
+            )}
+          </div>
+          <div className="truncate text-xs text-white/60">{m.activity}</div>
+          <HealthBar value={m.health} max={m.maxHealth} />
+        </div>
+        <button className="self-start rounded-full px-2 py-0.5 text-lg leading-none text-white/50 hover:bg-white/10 hover:text-white" onClick={props.onClose} aria-label="Close">
+          {sheet ? '×' : '▾'}
+        </button>
+      </div>
+
+      {/* Tabs */}
+      <div className="flex shrink-0 gap-1 border-b border-white/10 px-3">
+        {TABS.map((t) => (
+          <button
+            key={t.id}
+            onClick={(e) => {
+              setTab(t.id);
+              e.currentTarget.blur();
+            }}
+            className={`-mb-px flex flex-1 items-center justify-center gap-1 border-b-2 px-1 py-2 text-xs font-medium transition ${
+              tab === t.id ? 'border-white text-white' : 'border-transparent text-white/50 hover:text-white/80'
+            }`}
+          >
+            <span>{t.icon}</span>
+            <span>{t.label}</span>
+          </button>
+        ))}
+      </div>
+
+      {/* Body */}
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
+        {tab === 'needs' && <NeedsTab id={m.id} />}
+        {tab === 'skills' && <SkillsTab id={m.id} />}
+        {tab === 'people' && <PeopleTab rows={props.rows} members={props.members} memories={props.memories} />}
+        {tab === 'character' && <CharacterTab member={m} hud={props.hud} memories={props.memories} />}
+      </div>
+    </div>
+  );
+}
+
+// ------------------------------------------------------------------ tabs
+
+function NeedsTab({ id }: { id: string }) {
+  const p = MOCK_PROFILES[id];
+  if (!p) return null;
+  const avg = NEEDS.reduce((s, n) => s + p.needs[n.id], 0) / NEEDS.length;
+  const mood = avg > 0.75 ? ['Content', '😌'] : avg > 0.55 ? ['Fine', '🙂'] : avg > 0.4 ? ['Uneasy', '😕'] : ['Miserable', '😣'];
+  return (
+    <div>
+      <Placeholder />
+      <div className="mb-3 flex items-center gap-2 rounded-xl bg-white/5 px-3 py-2 text-sm">
+        <span className="text-xl">{mood[1]}</span>
+        <span>
+          Mood: <span className="font-semibold">{mood[0]}</span>
+        </span>
+      </div>
+      <div className="grid grid-cols-2 gap-x-4 gap-y-3">
+        {NEEDS.map((n) => (
+          <div key={n.id}>
+            <div className="mb-1 flex items-center gap-1.5 text-xs">
+              <span>{n.icon}</span>
+              <span className="text-white/80">{n.label}</span>
+            </div>
+            <Bar value={p.needs[n.id]} />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function SkillsTab({ id }: { id: string }) {
+  const p = MOCK_PROFILES[id];
+  if (!p) return null;
+  const groups: SkillGroup[] = ['Body', 'Mind & tongue', 'Trades'];
+  return (
+    <div>
+      <Placeholder />
+      {groups.map((g) => (
+        <div key={g} className="mb-3">
+          <SectionTitle>{g}</SectionTitle>
+          <div className="flex flex-col gap-2">
+            {SKILLS.filter((s) => s.group === g).map((s) => {
+              const v = p.skills[s.id] ?? { level: 0, progress: 0 };
+              return (
+                <div key={s.id} className="flex items-center gap-2 text-xs">
+                  <span className="w-5 text-center">{s.icon}</span>
+                  <span className={`w-20 ${v.level ? 'text-white/85' : 'text-white/40'}`}>{s.label}</span>
+                  <div className="flex flex-1 flex-col gap-1">
+                    <div className="flex gap-0.5">
+                      {Array.from({ length: 10 }, (_, i) => (
+                        <span key={i} className={`h-2 flex-1 rounded-sm ${i < v.level ? 'bg-white/85' : 'bg-white/10'}`} />
+                      ))}
+                    </div>
+                    {v.level < 10 && (
+                      <div className="h-0.5 rounded-full bg-white/5">
+                        <div className="h-full rounded-full bg-sky-300/60" style={{ width: `${v.progress * 100}%` }} />
+                      </div>
+                    )}
+                  </div>
+                  <span className="w-4 text-right text-white/50 tabular-nums">{v.level}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function PeopleTab({ rows, members, memories }: { rows: RelationshipRow[]; members: RosterMember[]; memories: MemoryRow[] }) {
+  return (
+    <div className="flex flex-col gap-3">
+      {rows.map((r) => {
+        const other = members.find((x) => x.id === r.id);
+        const about = memories.filter((mm) => mm.actor === r.id || mm.target === r.id).slice(0, 2);
+        return (
+          <div key={r.id} className="rounded-xl bg-white/5 p-2.5">
+            <div className="flex items-center gap-2">
+              {other && <Avatar colour={other.colour} name={other.name} size={28} dim={other.status === 'ko'} />}
+              <div className="flex-1">
+                <div className="text-sm font-medium">{r.name}</div>
+                <div className="text-[11px] text-white/50">
+                  {opinionWord(r.theirs)} to you · {other ? `${other.temperament}` : ''}
+                </div>
+              </div>
+            </div>
+            <OpinionBar label="You" value={r.mine} />
+            <OpinionBar label="Them" value={r.theirs} />
+            {about.map((mm, i) => (
+              <div key={i} className="mt-1 truncate text-[11px] text-white/45" style={{ opacity: 0.4 + 0.6 * mm.confidence }}>
+                {SENSE_ICON[mm.sense]} {mm.text} · {ago(mm.agoS)}
+              </div>
+            ))}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function CharacterTab({ member: m, hud, memories }: { member: RosterMember; hud: HudState | null; memories: MemoryRow[] }) {
+  const p = MOCK_PROFILES[m.id];
+  return (
+    <div>
+      <SectionTitle>Temperament</SectionTitle>
+      <div className="mb-3 text-sm">
+        <span className="font-medium">{m.temperament}</span> <span className="text-white/55">— {m.temperamentNote}</span>
+      </div>
+
+      {p && (
+        <>
+          <SectionTitle>
+            Traits <PlaceholderTag />
+          </SectionTitle>
+          <div className="mb-3 flex flex-wrap gap-1.5">
+            {p.traits.map((t) => (
+              <span key={t} className="rounded-full bg-white/10 px-2.5 py-0.5 text-xs">
+                {t}
+              </span>
+            ))}
+          </div>
+          <SectionTitle>
+            Background <PlaceholderTag />
+          </SectionTitle>
+          <p className="mb-3 text-xs leading-relaxed text-white/70">{p.background}</p>
+        </>
+      )}
+
+      <SectionTitle>Right now</SectionTitle>
+      <div className="mb-3 text-xs text-white/70 tabular-nums">
+        {m.activity}
+        {hud && (
+          <div className="text-white/45">
+            {hud.mode === 'combat' ? 'Combat ready' : 'Exploring'} · {hud.crouched && hud.gait === 'still' ? 'Crouched' : GAIT[hud.gait]} · {hud.speed.toFixed(1)} m/s
+          </div>
+        )}
+      </div>
+
+      <SectionTitle>Memories</SectionTitle>
+      {memories.length === 0 ? (
+        <div className="text-xs text-white/40">Nothing of note.</div>
+      ) : (
+        <div className="flex flex-col gap-1">
+          {memories.map((mm, i) => (
+            <div key={i} className="flex items-baseline gap-1.5 text-xs" style={{ opacity: 0.35 + 0.65 * mm.confidence }} title={`${Math.round(mm.confidence * 100)}% sure`}>
+              <span className="w-4 shrink-0 text-center">{SENSE_ICON[mm.sense]}</span>
+              <span className="flex-1 truncate">{mm.text}</span>
+              <span className="shrink-0 text-[10px] text-white/40 tabular-nums">{ago(mm.agoS)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ------------------------------------------------------------------ bits
+
+export function Avatar({ colour, name, size, dim }: { colour: string; name: string; size: number; dim?: boolean }) {
+  return (
+    <span
+      className={`flex shrink-0 items-center justify-center rounded-full font-semibold text-white shadow ${dim ? 'grayscale' : ''}`}
+      style={{ background: colour, width: size, height: size, fontSize: size * 0.42 }}
+    >
+      {name[0]}
+    </span>
+  );
+}
+
+function HealthBar({ value, max }: { value: number; max: number }) {
+  const f = Math.max(0, value / max);
+  return (
+    <div className="mt-1 flex items-center gap-2">
+      <div className="h-1 flex-1 overflow-hidden rounded-full bg-white/10">
+        <div className="h-full rounded-full" style={{ width: `${f * 100}%`, background: f > 0.5 ? '#7fd47f' : f > 0.25 ? '#e8c25a' : '#e0574a' }} />
+      </div>
+      <span className="text-[10px] text-white/50 tabular-nums">♥ {value}</span>
+    </div>
+  );
+}
+
+function Bar({ value }: { value: number }) {
+  const colour = value > 0.6 ? '#7fd47f' : value > 0.3 ? '#e8c25a' : '#e0574a';
+  return (
+    <div className="h-2 overflow-hidden rounded-full bg-white/10">
+      <div className="h-full rounded-full transition-[width]" style={{ width: `${value * 100}%`, background: colour }} />
+    </div>
+  );
+}
+
+/** −100…100 as a bar growing left (red) or right (green) from the centre. */
+function OpinionBar({ label, value }: { label: string; value: number }) {
+  const w = Math.abs(value) / 2;
+  return (
+    <div className="mt-1 flex items-center gap-2 text-[10px] text-white/40">
+      <span className="w-8">{label}</span>
+      <div className="relative h-1 flex-1 rounded-full bg-white/10">
+        <div className="absolute top-0 left-1/2 h-full w-px bg-white/30" />
+        <div
+          className="absolute top-0 h-full rounded-full"
+          style={{ left: value >= 0 ? '50%' : `${50 - w}%`, width: `${w}%`, background: value >= 0 ? '#7fd47f' : '#e0574a' }}
+        />
+      </div>
+      <span className="w-7 text-right tabular-nums">{Math.round(value)}</span>
+    </div>
+  );
+}
+
+function SectionTitle({ children }: { children: ReactNode }) {
+  return <div className="mb-1.5 flex items-center gap-2 text-[11px] font-medium tracking-wide text-white/50 uppercase">{children}</div>;
+}
+
+function Placeholder() {
+  return <div className="mb-3 rounded-lg border border-dashed border-white/15 px-2.5 py-1.5 text-[11px] text-white/45">Placeholder values: not simulated yet.</div>;
+}
+
+function PlaceholderTag() {
+  return <span className="rounded bg-white/10 px-1 py-px text-[9px] tracking-normal text-white/40 normal-case">placeholder</span>;
+}
+
+function ago(s: number): string {
+  if (s < 5) return 'just now';
+  if (s < 60) return `${s}s ago`;
+  return `${Math.round(s / 60)}m ago`;
+}

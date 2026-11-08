@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
-import { hudChannel, rosterChannel, uiCommands, type HudState, type MemoryRow, type RelationshipRow, type RosterMember, type RosterState } from '../game/bridge';
+import { hudChannel, rosterChannel, uiCommands, type HudState, type RosterMember, type RosterState } from '../game/bridge';
 import { inputSourceChannel, type InputSource } from '../game/input/touchInput';
-import { opinionWord } from '../game/social/relationships';
+import { CharacterDock } from './CharacterDock';
 
 /**
- * Who's who: portraits to switch control, and a card for the active character
- * (state, health, temperament, and how they and the others feel about each other).
+ * Who's who: portraits to switch control, and the character panel for whoever
+ * you're controlling. Click/tap your own portrait to open or close the panel.
  */
 export function PortraitBar() {
   const [roster, setRoster] = useState<RosterState | null>(null);
@@ -41,7 +41,17 @@ export function PortraitBar() {
     </div>
   );
 
-  const card = cardOpen && <Card member={active} hud={hud} rows={roster.relationships} memories={roster.memories} />;
+  const card = cardOpen && (
+    <CharacterDock
+      member={active}
+      members={roster.members}
+      hud={hud}
+      rows={roster.relationships}
+      memories={roster.memories}
+      sheet={touch}
+      onClose={() => setCardOpen(false)}
+    />
+  );
 
   return (
     <div
@@ -109,91 +119,5 @@ function Portrait(props: { member: RosterMember; index: number; size: number; sh
         <span className="absolute -bottom-1 -left-1 rounded-full bg-neutral-900/85 px-1.5 text-[10px] leading-4 font-medium text-white/70">{props.index + 1}</span>
       )}
     </button>
-  );
-}
-
-const GAIT: Record<string, string> = { still: 'Standing', crouch: 'Sneaking', walk: 'Walking', sprint: 'Running' };
-
-function Card(props: { member: RosterMember; hud: HudState | null; rows: RelationshipRow[]; memories: MemoryRow[] }) {
-  const { member: m, hud } = props;
-  const f = Math.max(0, m.health / m.maxHealth);
-  return (
-    <div className="pointer-events-auto w-72 max-w-[calc(100vw-24px)] rounded-2xl bg-neutral-900/75 p-3 text-white shadow-xl ring-1 ring-white/10 backdrop-blur-md">
-      <div className="flex items-baseline justify-between gap-2">
-        <div className="text-base font-semibold">{m.name}</div>
-        <div className="text-xs text-white/60" title={m.temperamentNote}>
-          {m.temperament}
-        </div>
-      </div>
-      <div className="mt-0.5 truncate text-xs text-white/70">{m.activity}</div>
-
-      <div className="mt-2 flex items-center gap-2 text-[11px] text-white/60">
-        <span className="w-12">Health</span>
-        <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/10">
-          <div className="h-full rounded-full" style={{ width: `${f * 100}%`, background: f > 0.5 ? '#7fd47f' : f > 0.25 ? '#e8c25a' : '#e0574a' }} />
-        </div>
-        <span className="w-8 text-right tabular-nums">{m.health}</span>
-      </div>
-      {hud && (
-        <div className="mt-1 text-[11px] text-white/50 tabular-nums">
-          {hud.mode === 'combat' ? 'Combat ready' : 'Exploring'} · {hud.crouched && hud.gait === 'still' ? 'Crouched' : GAIT[hud.gait]} · {hud.speed.toFixed(1)} m/s · view {hud.span.toFixed(0)} m
-        </div>
-      )}
-
-      <div className="mt-3 text-[11px] font-medium tracking-wide text-white/50 uppercase">Relationships</div>
-      <div className="mt-1 flex flex-col gap-1.5">
-        {props.rows.map((r) => (
-          <div key={r.id} className="text-xs">
-            <div className="flex justify-between">
-              <span>{r.name}</span>
-              <span className="text-white/50">{opinionWord(r.theirs)} to you</span>
-            </div>
-            <OpinionBar label="You" value={r.mine} />
-            <OpinionBar label="Them" value={r.theirs} />
-          </div>
-        ))}
-      </div>
-
-      <div className="mt-3 text-[11px] font-medium tracking-wide text-white/50 uppercase">Memories</div>
-      {props.memories.length === 0 ? (
-        <div className="mt-1 text-xs text-white/40">Nothing of note.</div>
-      ) : (
-        <div className="mt-1 flex flex-col gap-0.5">
-          {props.memories.map((m, i) => (
-            <div key={i} className="flex items-baseline gap-1.5 text-xs" style={{ opacity: 0.35 + 0.65 * m.confidence }} title={`${Math.round(m.confidence * 100)}% sure`}>
-              <span className="w-4 shrink-0 text-center">{SENSE_ICON[m.sense]}</span>
-              <span className="flex-1 truncate">{m.text}</span>
-              <span className="shrink-0 text-[10px] text-white/40 tabular-nums">{ago(m.agoS)}</span>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-const SENSE_ICON: Record<MemoryRow['sense'], string> = { sight: '👁', sound: '👂', smell: '👃', touch: '✋' };
-
-function ago(s: number): string {
-  if (s < 5) return 'just now';
-  if (s < 60) return `${s}s ago`;
-  return `${Math.round(s / 60)}m ago`;
-}
-
-/** −100…100 as a bar growing left (red) or right (green) from the centre. */
-function OpinionBar({ label, value }: { label: string; value: number }) {
-  const w = Math.abs(value) / 2;
-  return (
-    <div className="mt-0.5 flex items-center gap-2 text-[10px] text-white/40">
-      <span className="w-8">{label}</span>
-      <div className="relative h-1 flex-1 rounded-full bg-white/10">
-        <div className="absolute top-0 left-1/2 h-full w-px bg-white/30" />
-        <div
-          className="absolute top-0 h-full rounded-full"
-          style={{ left: value >= 0 ? '50%' : `${50 - w}%`, width: `${w}%`, background: value >= 0 ? '#7fd47f' : '#e0574a' }}
-        />
-      </div>
-      <span className="w-7 text-right tabular-nums">{Math.round(value)}</span>
-    </div>
   );
 }

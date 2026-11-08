@@ -65,6 +65,9 @@ export interface RelationshipRow {
 
 export interface MemoryRow {
   text: string;
+  /** Who it involves (ids), so the panel can show memories per relationship. */
+  actor?: string;
+  target?: string;
   sense: 'sight' | 'sound' | 'smell' | 'touch';
   /** 0..1, fading over time. */
   confidence: number;

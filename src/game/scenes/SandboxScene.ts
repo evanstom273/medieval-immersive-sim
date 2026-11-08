@@ -1217,10 +1217,12 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
         activeId: a.id,
         memories: this.senses
           .memoriesOf(a)
-          .recent(this.now, 5)
+          .recent(this.now, 12)
           .map(({ memory, confidence }) => ({
             text: describeMemory(memory, (id) => (id === a.id ? 'me' : (this.characters.find((c) => c.id === id)?.name ?? 'someone'))),
             sense: memory.sense,
+            actor: memory.actor,
+            target: memory.target,
             confidence,
             agoS: Math.round((this.now - memory.lastAt) / 1000),
           })),
