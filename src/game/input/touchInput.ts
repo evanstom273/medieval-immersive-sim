@@ -15,6 +15,10 @@ export const touchStick = {
 
 export type TouchCommand =
   | { kind: 'tap'; x: number; y: number }
+  /** Finger held on the ground: walk there, then keep following it (see 'hold'/'release'). */
+  | { kind: 'press'; x: number; y: number }
+  | { kind: 'hold'; x: number; y: number }
+  | { kind: 'release' }
   | { kind: 'zoom'; factor: number }
   | { kind: 'toggleCrouch' }
   | { kind: 'toggleCombat' }

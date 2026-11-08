@@ -3,6 +3,7 @@ import { hudChannel, messageChannel, type ControlMode } from '../bridge';
 import { createMotorState, speedOf, stepMotor, toggleCrouch, type MotorInput, type MotorState } from '../movement/motor';
 import { PX_PER_METRE, tuning } from '../movement/tuning';
 import { NavGrid, type Obstacle, type Point } from '../navigation/NavGrid';
+import { MoveOrder } from '../navigation/MoveOrder';
 import { CameraRig } from '../camera/CameraRig';
 import { inputSourceChannel, touchCommands, touchStick, type InputSource, type TouchCommand } from '../input/touchInput';
 import { CharacterView, handOffset, PUNCH_EXTEND, PUNCH_TOTAL, type CharacterPose, type Hand } from '../world/CharacterView';
@@ -21,6 +22,10 @@ const REACH = 0.95 * PX_PER_METRE;
 /** Lock-on acquires targets within this range and drops them beyond LOCK_BREAK. */
 const LOCK_RANGE = 6 * PX_PER_METRE;
 const LOCK_BREAK = 10 * PX_PER_METRE;
+/** Holding the button/finger this long on the ground switches from "walk there" to "follow me". */
+const HOLD_TO_FOLLOW_MS = 180;
+/** While following, re-plan the route at most this often. */
+const FOLLOW_REPLAN_MS = 100;
 /** Camera catch-up rate (per second, exponential). Frame-rate independent. */
 const CAMERA_FOLLOW = 10;
 
@@ -50,10 +55,15 @@ export class MovementTestScene extends Phaser.Scene {
   private hovered: Interactable | null = null;
   private solids!: Phaser.Physics.Arcade.StaticGroup;
   private nav = new NavGrid(WORLD_W, WORLD_H, 8);
-  /** Click-to-use target we're walking toward, and the route there. */
-  private walkTarget: Interactable | null = null;
-  private walkPath: Point[] = [];
-  private walkProgress = { best: Infinity, stuckFor: 0 };
+  private navDirty = true;
+  /** Current point-and-click order, and what to use on arrival (if anything). */
+  private order: MoveOrder | null = null;
+  private orderUse: Interactable | null = null;
+  /** Mouse button / finger held down on the ground (hold-to-follow). */
+  private press: { since: number; lastPlan: number; point: Point; touch: boolean } | null = null;
+  private routeGfx!: Phaser.GameObjects.Graphics;
+  /** Destination marker that fades out after arriving. */
+  private markerFade: { x: number; y: number; t: number } | null = null;
   /** Briefly turn to face something after using it. */
   private look: { angle: number; until: number } | null = null;
 
@@ -105,6 +115,7 @@ export class MovementTestScene extends Phaser.Scene {
     this.events.on(Phaser.Scenes.Events.POST_UPDATE, this.lateUpdate, this);
 
     this.lockRing = this.add.graphics().setDepth(16);
+    this.routeGfx = this.add.graphics().setDepth(5);
 
     this.setupInput();
     this.say('Click or tap things to use them.');
@@ -281,20 +292,33 @@ export class MovementTestScene extends Phaser.Scene {
       case 'punch':
         if (this.mode === 'combat') this.punch(c.hand);
         break;
-      case 'tap': {
+      case 'tap':
+      case 'press': {
         if (this.mode === 'combat') return;
-        // Container CSS px → canvas device px → world.
-        const dpr = this.scale.width / Math.max(1, this.game.canvas.clientWidth);
-        const world = this.cameras.main.getWorldPoint(c.x * dpr, c.y * dpr);
-        this.useAt(world.x, world.y);
+        const world = this.touchToWorld(c.x, c.y);
+        this.pressAt(world.x, world.y, c.kind === 'press', true);
         break;
       }
+      case 'hold':
+        if (this.press?.touch) this.press.point = this.touchToWorld(c.x, c.y);
+        break;
+      case 'release':
+        if (this.press?.touch) this.press = null;
+        break;
     }
+  }
+
+  /** Container CSS px → canvas device px → world. */
+  private touchToWorld(x: number, y: number): Point {
+    const dpr = this.scale.width / Math.max(1, this.game.canvas.clientWidth);
+    const w = this.cameras.main.getWorldPoint(x * dpr, y * dpr);
+    return { x: w.x, y: w.y };
   }
 
   private toggleCombat(): void {
     this.mode = this.mode === 'explore' ? 'combat' : 'explore';
-    this.walkTarget = null;
+    this.cancelOrder();
+    this.press = null;
     this.pose.punch = { left: null, right: null };
     if (this.mode === 'explore') this.lockTarget = null;
   }
@@ -324,11 +348,75 @@ export class MovementTestScene extends Phaser.Scene {
     if (!best) this.say('Nothing to lock on to.');
   }
 
-  private useAt(x: number, y: number): void {
+  /**
+   * Click/tap at a world point: use the object there (walking over if needed),
+   * or walk to the spot. `hold` starts hold-to-follow tracking for ground presses.
+   */
+  private pressAt(x: number, y: number, hold: boolean, touch: boolean): void {
     const target = this.interactableAt(x, y);
-    if (!target) return;
-    if (this.inReach(target)) this.use(target);
-    else this.planWalk(target);
+    if (target) {
+      if (this.inReach(target)) this.use(target);
+      else this.orderTo(target);
+      return;
+    }
+    this.orderToPoint({ x, y });
+    if (hold) this.press = { since: this.time.now, lastPlan: this.time.now, point: { x, y }, touch };
+  }
+
+  private playerPos(): Point {
+    return { x: this.playerBody.center.x, y: this.playerBody.center.y };
+  }
+
+  private ensureNav(): NavGrid {
+    if (this.navDirty) {
+      this.nav.build(this.obstacles(), BODY_RADIUS + 2);
+      this.navDirty = false;
+    }
+    return this.nav;
+  }
+
+  private orderToPoint(p: Point): boolean {
+    const order = MoveOrder.plan(this.ensureNav(), this.playerPos(), { kind: 'point', x: p.x, y: p.y });
+    if (!order) return false;
+    this.order = order;
+    this.orderUse = null;
+    this.markerFade = null;
+    return true;
+  }
+
+  private orderTo(target: Interactable): void {
+    const order = MoveOrder.plan(this.ensureNav(), this.playerPos(), {
+      kind: 'reach',
+      closest: (from) => target.closestPoint(from.x, from.y),
+      reach: REACH,
+    });
+    if (!order) {
+      this.cancelOrder();
+      this.say("You can't find a way to reach that.");
+      return;
+    }
+    this.order = order;
+    this.orderUse = target;
+    this.markerFade = null;
+  }
+
+  private cancelOrder(): void {
+    this.order = null;
+    this.orderUse = null;
+  }
+
+  /** Hold-to-follow: keep steering the order toward the held point. */
+  private follow(time: number): void {
+    const press = this.press!;
+    if (time - press.lastPlan < FOLLOW_REPLAN_MS) return;
+    press.lastPlan = time;
+    const nav = this.ensureNav();
+    if (this.order && this.order.goal.kind === 'point') {
+      this.order.retarget(nav, this.playerPos(), press.point);
+    } else if (this.orderToPoint(press.point)) {
+      this.order!.following = true;
+    }
+    if (this.order) this.order.following = true;
   }
 
   private onPointerDown(p: Phaser.Input.Pointer): void {
@@ -346,7 +434,7 @@ export class MovementTestScene extends Phaser.Scene {
     }
     if (!p.leftButtonDown()) return;
     const world = p.positionToCamera(this.cameras.main) as Phaser.Math.Vector2;
-    this.useAt(world.x, world.y);
+    this.pressAt(world.x, world.y, true, false);
   }
 
   /** Current solid obstacles, from the enabled static bodies (so open doors don't count). */
@@ -363,29 +451,6 @@ export class MovementTestScene extends Phaser.Scene {
       if (o) out.push(o);
     }
     return out;
-  }
-
-  private planWalk(target: Interactable): void {
-    // Rebuilt per request: cheap at this size, and always reflects doors as they are now.
-    this.nav.build(this.obstacles(), BODY_RADIUS + 2);
-    const start = { x: this.playerBody.center.x, y: this.playerBody.center.y };
-    const aim = target.closestPoint(start.x, start.y);
-    const path = this.nav.findPath(
-      start,
-      (p) => {
-        const q = target.closestPoint(p.x, p.y);
-        return Math.hypot(q.x - p.x, q.y - p.y) <= REACH * 0.85;
-      },
-      { x: aim.x, y: aim.y },
-    );
-    if (!path) {
-      this.walkTarget = null;
-      this.say("You can't find a way to reach that.");
-      return;
-    }
-    this.walkTarget = target;
-    this.walkPath = path;
-    this.walkProgress = { best: Infinity, stuckFor: 0 };
   }
 
   private interactableAt(x: number, y: number): Interactable | null {
@@ -405,7 +470,9 @@ export class MovementTestScene extends Phaser.Scene {
   }
 
   private use(target: Interactable): void {
-    this.walkTarget = null;
+    this.cancelOrder();
+    // Using things can change what's walkable (e.g. locking a door).
+    this.navDirty = true;
     const p = target.closestPoint(this.playerBody.center.x, this.playerBody.center.y);
     this.look = {
       angle: Math.atan2(p.y - this.playerBody.center.y, p.x - this.playerBody.center.x),
@@ -460,11 +527,40 @@ export class MovementTestScene extends Phaser.Scene {
       }
     }
 
-    // Keyboard, else the touch stick; either cancels click-to-walk.
+    // Keyboard, else the touch stick; either cancels point-and-click.
     let move = { x: (k.right.isDown ? 1 : 0) - (k.left.isDown ? 1 : 0), y: (k.down.isDown ? 1 : 0) - (k.up.isDown ? 1 : 0) };
     if (move.x === 0 && move.y === 0) move = { ...touchStick.move };
-    if (move.x !== 0 || move.y !== 0) this.walkTarget = null;
-    if (this.walkTarget) move = this.stepWalkTarget(dt);
+    const manual = move.x !== 0 || move.y !== 0;
+    if (manual) {
+      this.cancelOrder();
+      this.press = null;
+    }
+
+    // Hold-to-follow (mouse button or finger held on the ground).
+    if (this.press) {
+      if (!this.press.touch) {
+        if (!this.input.activePointer.leftButtonDown()) this.press = null;
+        else this.press.point = { x: pointer.x, y: pointer.y };
+      }
+      if (this.press && time - this.press.since >= HOLD_TO_FOLLOW_MS) this.follow(time);
+    }
+
+    let orderRun = false;
+    if (this.order) {
+      const st = this.order.step({ x: cx, y: cy }, dt);
+      if (st.arrived) {
+        const use = this.orderUse;
+        if (this.order.goal.kind === 'point') this.markerFade = { ...this.order.destination, t: 0 };
+        this.cancelOrder();
+        if (use) this.use(use);
+      } else if (st.stuck) {
+        if (!this.order.following) this.say('Something is in the way.');
+        this.cancelOrder();
+      } else {
+        move = st.move;
+        orderRun = st.run;
+      }
+    }
 
     // Drop a lock that's gone out of range.
     if (this.lockTarget && Phaser.Math.Distance.Between(cx, cy, this.lockTarget.x, this.lockTarget.y) > LOCK_BREAK) {
@@ -480,7 +576,8 @@ export class MovementTestScene extends Phaser.Scene {
     const input: MotorInput = {
       move,
       // Pushing the touch stick to the rim never breaks a sneak; only the sprint key does.
-      sprint: k.sprint.isDown || (touchStick.sprint && !this.motor.crouched),
+      // Long point-and-click trips run too, unless sneaking.
+      sprint: k.sprint.isDown || ((touchStick.sprint || orderRun) && !this.motor.crouched),
       aimAngle,
       lookAngle: this.look && time < this.look.until ? this.look.angle : null,
     };
@@ -536,6 +633,7 @@ export class MovementTestScene extends Phaser.Scene {
     const y = this.playerObj.y;
     this.view.update(x, y, this.motor.facing, this.pose);
     this.drawLockRing(time);
+    this.drawRoute(x, y, time, dt);
 
     this.rig.update(dt);
     const cam = this.cameras.main;
@@ -547,36 +645,30 @@ export class MovementTestScene extends Phaser.Scene {
     cam.centerOn(this.cameraFocus.x, this.cameraFocus.y);
   }
 
-  /** Follow the planned route to the click target; give up if something stops us making progress. */
-  private stepWalkTarget(dt: number): { x: number; y: number } {
-    const target = this.walkTarget!;
-    if (this.inReach(target)) {
-      this.use(target);
-      return { x: 0, y: 0 };
+  /** Point-and-click feedback: a faint line along the route and a marker at the destination. */
+  private drawRoute(x: number, y: number, time: number, dt: number): void {
+    const g = this.routeGfx;
+    g.clear();
+    const marker = (mx: number, my: number, alpha: number) => {
+      const r = 9 + Math.sin(time / 180) * 1.5;
+      g.lineStyle(2.5, 0xf3e3b5, 0.85 * alpha);
+      g.strokeCircle(mx, my, r);
+      g.fillStyle(0xf3e3b5, 0.6 * alpha);
+      g.fillCircle(mx, my, 2.5);
+    };
+    if (this.order) {
+      g.lineStyle(2, 0xf3e3b5, 0.35);
+      g.beginPath();
+      g.moveTo(x, y);
+      for (const p of this.order.path) g.lineTo(p.x, p.y);
+      g.strokePath();
+      if (this.order.goal.kind === 'point') marker(this.order.destination.x, this.order.destination.y, 1);
+    } else if (this.markerFade) {
+      this.markerFade.t += dt;
+      const a = 1 - this.markerFade.t / 0.4;
+      if (a <= 0) this.markerFade = null;
+      else marker(this.markerFade.x, this.markerFade.y, a);
     }
-    const cx = this.playerBody.center.x;
-    const cy = this.playerBody.center.y;
-    while (this.walkPath.length > 1 && Math.hypot(this.walkPath[0].x - cx, this.walkPath[0].y - cy) < 6) {
-      this.walkPath.shift();
-      this.walkProgress = { best: Infinity, stuckFor: 0 };
-    }
-    // Final leg: head for the object itself.
-    const wp = this.walkPath[0] ?? target.closestPoint(cx, cy);
-    const dx = wp.x - cx;
-    const dy = wp.y - cy;
-    const d = Math.hypot(dx, dy);
-    if (d < this.walkProgress.best - 1) {
-      this.walkProgress = { best: d, stuckFor: 0 };
-    } else {
-      this.walkProgress.stuckFor += dt;
-      if (this.walkProgress.stuckFor > 0.8) {
-        this.walkTarget = null;
-        this.say('Something is in the way.');
-        return { x: 0, y: 0 };
-      }
-    }
-    if (d < 1) return { x: 0, y: 0 };
-    return { x: dx / d, y: dy / d };
   }
 
   private updatePose(dt: number): void {

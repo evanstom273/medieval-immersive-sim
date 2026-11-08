@@ -92,6 +92,29 @@ export class NavGrid {
     return this.isBlockedCell(Math.floor(x / this.cellSize), Math.floor(y / this.cellSize));
   }
 
+  /** Nearest free point to `p` within `maxRadius` (px), or null. Returns `p` itself if it's free. */
+  nearestFree(p: Point, maxRadius: number): Point | null {
+    if (!this.isBlockedAt(p.x, p.y)) return { x: p.x, y: p.y };
+    const cs = this.cellSize;
+    const pc = Math.floor(p.x / cs);
+    const pr = Math.floor(p.y / cs);
+    const rings = Math.ceil(maxRadius / cs);
+    let best: Point | null = null;
+    let bestD = Infinity;
+    for (let dr = -rings; dr <= rings; dr++) {
+      for (let dc = -rings; dc <= rings; dc++) {
+        if (this.isBlockedCell(pc + dc, pr + dr)) continue;
+        const q = { x: (pc + dc + 0.5) * cs, y: (pr + dr + 0.5) * cs };
+        const d = Math.hypot(q.x - p.x, q.y - p.y);
+        if (d <= maxRadius && d < bestD) {
+          bestD = d;
+          best = q;
+        }
+      }
+    }
+    return best;
+  }
+
   private centre(i: number): Point {
     const c = i % this.cols;
     const r = (i - c) / this.cols;

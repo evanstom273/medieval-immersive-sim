@@ -7,7 +7,8 @@ import { inputSourceChannel, touchCommands, touchStick, type TouchCommand } from
  * mouse is used (touchscreen laptops).
  *
  * - Drag starting on the left half: floating movement stick. Push to the rim to sprint.
- * - Tap anywhere: use the thing under your finger (out of combat).
+ * - Tap: walk to the spot, or use the thing under your finger (out of combat).
+ * - Press and hold (or drag on the right half): walk there and keep following your finger.
  * - Two fingers: pinch to zoom.
  * - Buttons bottom-right: sneak, combat, and in combat left hand / right hand / lock-on.
  */
@@ -15,8 +16,10 @@ import { inputSourceChannel, touchCommands, touchStick, type TouchCommand } from
 const STICK_RADIUS = 56; // CSS px
 const DRAG_THRESHOLD = 12; // px before a touch counts as a drag
 const TAP_MAX_MS = 300;
+/** Held still this long without dragging: becomes hold-to-follow. */
+const HOLD_MS = 250;
 
-type Role = 'pending' | 'stick' | 'pinch' | 'ignored';
+type Role = 'pending' | 'stick' | 'pinch' | 'follow' | 'ignored';
 
 interface Track {
   id: number;
@@ -26,6 +29,7 @@ interface Track {
   y: number;
   t0: number;
   role: Role;
+  holdTimer?: number;
 }
 
 const send = (c: TouchCommand) => touchCommands.emit(c);
@@ -87,6 +91,12 @@ export function TouchControls() {
     showStick(false);
   };
 
+  const startFollow = (t: Track) => {
+    t.role = 'follow';
+    clearTimeout(t.holdTimer);
+    send({ kind: 'press', x: t.x, y: t.y });
+  };
+
   const pinchPair = () => [...tracks.current.values()].filter((t) => t.role === 'pinch');
 
   const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
@@ -95,11 +105,17 @@ export function TouchControls() {
     const p = local(e);
     const track: Track = { id: e.pointerId, startX: p.x, startY: p.y, x: p.x, y: p.y, t0: performance.now(), role: 'pending' };
     tracks.current.set(e.pointerId, track);
+    track.holdTimer = window.setTimeout(() => {
+      if (track.role === 'pending' && tracks.current.get(track.id) === track) startFollow(track);
+    }, HOLD_MS);
 
     // Two free fingers (not driving the stick) make a pinch.
     const free = [...tracks.current.values()].filter((t) => t.role === 'pending');
     if (free.length === 2) {
-      free.forEach((t) => (t.role = 'pinch'));
+      free.forEach((t) => {
+        t.role = 'pinch';
+        clearTimeout(t.holdTimer);
+      });
       pinchDist.current = Math.hypot(free[0].x - free[1].x, free[0].y - free[1].y);
     }
   };
@@ -124,13 +140,22 @@ export function TouchControls() {
     if (t.role === 'pending' && Math.hypot(t.x - t.startX, t.y - t.startY) > DRAG_THRESHOLD) {
       const width = layer.current!.clientWidth;
       const stickTaken = [...tracks.current.values()].some((o) => o.role === 'stick');
+      clearTimeout(t.holdTimer);
+      const followTaken = [...tracks.current.values()].some((o) => o.role === 'follow');
       if (t.startX < width / 2 && !stickTaken) {
         t.role = 'stick';
         stickOrigin.current = { x: t.startX, y: t.startY };
         showStick(true);
+      } else if (!followTaken) {
+        startFollow(t);
       } else {
         t.role = 'ignored';
       }
+    }
+
+    if (t.role === 'follow') {
+      send({ kind: 'hold', x: t.x, y: t.y });
+      return;
     }
 
     if (t.role === 'stick') {
@@ -169,7 +194,9 @@ export function TouchControls() {
     const t = tracks.current.get(e.pointerId);
     if (!t) return;
     tracks.current.delete(e.pointerId);
+    clearTimeout(t.holdTimer);
     if (t.role === 'stick') releaseStick();
+    if (t.role === 'follow') send({ kind: 'release' });
     if (t.role === 'pinch') {
       // The other finger stays down but no longer pinches.
       pinchPair().forEach((o) => (o.role = 'ignored'));

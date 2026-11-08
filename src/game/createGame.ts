@@ -38,6 +38,11 @@ export function createGame(parent: HTMLElement): Phaser.Game {
     input: {
       activePointers: 3,
     },
+    // After start-up or regaining focus, Phaser clamps frame time to 1/60 s for `panicMax` frames,
+    // so a device that renders slowly at first runs in slow motion. Keep that window short.
+    fps: {
+      panicMax: 20,
+    },
     scene: [MovementTestScene],
   });
 

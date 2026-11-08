@@ -15,7 +15,7 @@ npm run build    # typecheck + production build
 
 | Action | Input |
 | --- | --- |
-| Move | WASD |
+| Move | WASD, or left-click the ground (hold to keep following the cursor) |
 | Sprint | Hold Ctrl |
 | Sneak | Shift (toggle) |
 | Ready / relax (combat mode) | R |
@@ -27,7 +27,7 @@ npm run build    # typecheck + production build
 | Zoom | Scroll wheel |
 | Show collision | F3 |
 
-On touch screens: drag on the left half for a floating stick (push to the rim to sprint), tap things to use them, pinch to zoom. The buttons bottom-right are Sneak, Ready/Relax, and in combat Left, Right and Lock.
+On touch screens: drag on the left half for a floating stick (push to the rim to sprint), tap the ground to walk there (press and hold to follow your finger), tap things to use them, pinch to zoom. The buttons bottom-right are Sneak, Ready/Relax, and in combat Left, Right and Lock.
 
 The **Movement tuning** panel (top right) live-edits speeds, acceleration and turn rates.
 

@@ -82,6 +82,15 @@ When an item changes status, move it and add a dated note rather than silently r
 - Pathfinding treats unlocked doors as passable (you'll push through) and locked doors as walls.
 - **2026-11-08 19:33 UTC — doors swing both ways** (up to 90° either side). With walk-to-push as the way to open doors, a one-way door couldn't be opened from its pull side, and you'd be trapped if it shut behind you. One-way doors would need a pull action (e.g. via the interaction menu) and are only worth revisiting if doors become tactical (barricading, holding shut).
 
+### Point-and-click movement
+*2026-11-08 19:53 UTC*
+
+- **Alongside WASD and touch**, not instead of them. Any WASD or stick input cancels a point-and-click order.
+- **Desktop:** left-click the ground to walk there. Hold the button and the character follows the cursor (Diablo-style); on release they finish walking to the last point. Clicking an object still uses it (walking over first if needed). In combat, clicks remain punches, so there's no click-to-move while fighting.
+- **Touch:** tap the ground to walk there, tap an object to use it. Press and hold (or drag starting on the right half) to follow your finger. A drag starting on the left half is still the stick.
+- **Speed is distance-based:** short trips walk, long trips run. While following, they run when the cursor/finger is far away and walk when it's close. **Sneaking always stays sneaking.**
+- **Feedback:** a marker at the destination and a faint line along the route.
+
 ### Touch controls
 *2026-11-08 19:23 UTC*
 
@@ -194,6 +203,8 @@ When an item changes status, move it and add a dated note rather than silently r
 - **Default speeds:** sneak 0.8, walk 1.4, sprint 3.6 m/s; accel 14, decel 18 m/s². Placeholders, live-tunable in the prototype's debug panel. *(2026-11-08 19:32 UTC: lowered from 0.9 / 1.7 / 4.4 — felt too fast.)*
 - **Combat key** is R for now.
 - **Click-to-walk pathfinding:** 8 px grid A* with obstacle inflation and string-pulling, in pure TypeScript (`src/game/navigation`). Written so NPCs can use it later. Not yet decided whether it scales to whole towns or needs a navmesh / hierarchical approach.
+- **Point-and-click numbers (2026-11-08 19:53 UTC):** run if the route is over 6 m; while following, run beyond 4 m and walk again inside 3 m; hold 180 ms (mouse) / 250 ms (touch) to start following. Clicking inside something solid walks to the nearest standable spot within 2 m. Placeholders.
+- **Move orders** (`src/game/navigation/MoveOrder.ts`) are pure TypeScript and driver-agnostic, so NPCs can use the same "go there" logic later.
 - **Reach checks** ignore line of sight for now (you could, in principle, use something through a thin wall).
 - **Character and objects** are placeholder geometry, not final art.
 - **Door placeholders (2026-11-08 19:32 UTC):** ~~doors swing both ways up to 90° (real medieval doors usually swing one way).~~ *Moved to Agreed 2026-11-08 19:33 UTC.* Anyone can lock any door: no keys, ownership or lockpicking yet. Doors don't collide with furniture while swinging. No door weight or resistance yet; a first attempt at faking weight shoved the player into the door frame. *(2026-11-08 19:37 UTC: doors made lighter: they keep swinging after a push (momentum 1.4×) and slow gently (friction 2.2/s). Both are live-tunable in the debug panel; values are placeholders.)* *(2026-11-08 19:42 UTC: added closing weight 7, bounce 30%, thud threshold 0.8 rad/s. Closing weight is tunable; all placeholders.)*
