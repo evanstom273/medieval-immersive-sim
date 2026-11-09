@@ -36,7 +36,7 @@ export interface Opening {
   swing?: 'in' | 'out';
 }
 
-/** A straight wall, east–west or north–south, given by its centre line. */
+/** A straight wall given by its centre line: east–west, north–south, or at 45° (e.g. a corner cut off for a door). */
 export interface Wall {
   from: Pt;
   to: Pt;
@@ -60,7 +60,11 @@ export interface Room {
 export type Fixture =
   | { kind: 'hearth'; x: number; y: number; w: number; d: number }
   | { kind: 'ladder' | 'stair'; x: number; y: number; w: number; d: number; /** Goes up towards: */ heading: 'n' | 's' | 'e' | 'w'; toLevel: number; style?: string }
-  | { kind: 'hatch'; x: number; y: number; w: number; d: number };
+  | { kind: 'hatch'; x: number; y: number; w: number; d: number }
+  /** The opening in a floor where a stair from below comes up. */
+  | { kind: 'stairwell'; x: number; y: number; w: number; d: number }
+  /** A column holding up the floor above (e.g. where an upper storey overhangs a cut-away corner). (x, y) is its centre. */
+  | { kind: 'column'; x: number; y: number; w: number; d: number; material: WallMaterial };
 
 export interface Storey {
   level: number;
@@ -96,6 +100,13 @@ export interface Chimney {
   aboveRidge: number;
 }
 
+/** A sign hung over the street (shops and taverns had them). */
+export interface Sign {
+  text: string;
+  /** Along the front, from the west corner. */
+  at: number;
+}
+
 export interface Building {
   id: string;
   name: string;
@@ -106,5 +117,13 @@ export interface Building {
   storeys: Storey[];
   roof: Roof;
   chimneys: Chimney[];
+  sign?: Sign;
   notes?: string;
+}
+
+/** A building placed on the map: its north-west corner at (x, y), in metres. Buildings in a row share their side walls' line. */
+export interface Plot {
+  building: Building;
+  x: number;
+  y: number;
 }

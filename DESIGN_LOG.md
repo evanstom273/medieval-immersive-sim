@@ -337,6 +337,7 @@ When an item changes status, move it and add a dated note rather than silently r
 - **Knock-on effects to work through as they come up:** firearms exist (matters when weapons are designed); print, newspapers, pamphlets and contracts make Letters a bigger skill and spread gossip and news; chimneys and glazing are normal in ordinary homes; coffee houses alongside alehouses; post-Reformation church (services, not Mass). Money is unchanged (pounds, shillings, pence).
 - **The art so far mostly survives:** wattle and daub, timber frame, rubble, dressed stone, planks, earth floors, boards and flagstones were all still in use. The glazed floor tiles are a medieval style and may want a period update.
 - The repository keeps its name.
+- *2026-11-09 05:55 UTC:* **the period is flavour, not a rulebook.** Historical accuracy isn't required: anachronisms that make a better game are fine (e.g. a general store alongside specialist shops).
 
 ### Buildings: a format, then preset buildings
 *2026-11-09 05:45 UTC*
@@ -347,6 +348,7 @@ When an item changes status, move it and add a dated note rather than silently r
 - **Variety comes from a solid set of designs per building type, multiplied** by material swaps, mirroring, furnishing and wear.
 - **First building: a cottage** (`src/game/buildings/cottage.ts`): hall round a hearth, buttery, chamber, loft up a ladder; timber frame on a stone plinth, a rubble gable with a brick chimney, thatch. Drawn from its plan on the art catalogue: outside as the game sees it, inside with walls cut down, and top-down plans of each storey. Rooms are labelled with text until there's furniture.
 - An **inn** is the right word for the period (alehouse, tavern, inn and coffee house each meant something different).
+- *2026-11-09 06:30 UTC:* **a terrace** (`src/game/buildings/row.ts`): a coffee house, a butcher's, a narrow townhouse and a general store sharing side walls along a street, two full storeys each, gables to the street, drawn outside, cut away and as plans of both floors. The format gained **rows of buildings (plots)**, **stairwells**, **45° walls** and **columns**: the general store's street corner is cut away on the diagonal for its door, with the floor above carried on a column.
 
 ---
 
