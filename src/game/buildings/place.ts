@@ -62,7 +62,7 @@ export interface WallPiece {
   over: number;
   foot: P2[];
   edge: [P2, P2] | null;
-  /** North–south walls: this piece is the south end and shows its end face. */
+  /** North–south walls: the piece shows its south end (stacked, the ends fill the wall in). */
   cap: boolean;
   /** For draw order: the southmost point. */
   south: number;
@@ -297,7 +297,9 @@ function placeStorey(town: Town, b: Building, s: Storey, pi: number, ox: number,
     const south = (foot: P2[]) => Math.max(...foot.map((p) => p.y));
     const addPiece = (a: number, b: number, over: number) => {
       const foot = footOf(w.from, w.dir, w.thickness, a, b);
-      const capHere = w.kind === 'ns' && !(w.dir.y > 0 ? w.joinedB : w.joinedA) && Math.abs((w.dir.y > 0 ? b : a) - (w.dir.y > 0 ? w.b : w.a)) < 0.5;
+      // A north–south wall's long sides are edge-on to the camera: what shows is its top and the end of
+      // each piece, which stack up into the whole wall.
+      const capHere = w.kind === 'ns';
       town.pieces.push({ wall: w, a, b, over, foot, edge: w.kind === 'ns' ? null : southEdge(foot), cap: capHere, south: south(foot) });
     };
     for (const [a, b] of runs) {

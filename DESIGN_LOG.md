@@ -365,6 +365,7 @@ When an item changes status, move it and add a dated note rather than silently r
 - **2026-11-09 13:42 UTC — Lyra:** the coffee house's coffee room (front) was too small and its kitchen (back) too big: the ground-floor partition moved forward (6.0 m → 4.6 m from the back).
 - **2026-11-09 13:42 UTC:** the view stays inside once you're in a room, until you leave the building's footprint (no flicker out to the roofs and back in doorways between rooms or on the way out).
 - Layout fixes so doors never swing into stairs (at any scale): the coffee house's back door moved west; the townhouse's back door opens into the kitchen, its stair has a landing, the kitchen door is at the north end of the passage, and upstairs the dining room opens off the bedchamber; the cottage ladder moved away from the buttery door (further again once doors grew with the storeys); a few stairs moved further into their rooms. (The catalogue boards still show the old positions.)
+- **2026-11-09 15:27 UTC — Lyra:** the coffee house bay's front wall now stops under its own little gable (like its sides), so the gable sits on it. North–south walls show their end on every 1 m piece, so they read as solid walls down to the floor rather than floating beams (in ¾ their long sides are edge-on to the camera).
 - PLACEHOLDERS: NPCs don't use stairs; senses ignore storeys; building windows don't open; furniture other than hearths isn't in yet; art is one texel per world pixel (soft when zoomed right in).
 
 ## Undecided

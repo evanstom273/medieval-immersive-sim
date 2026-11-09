@@ -58,7 +58,7 @@ export const COFFEE_HOUSE: Building = {
         // The middle is pulled out over the porch as a bay with its own gable, on columns.
         ext([0, 9.85], [2.4, 9.85], 'timber', [win('leaded', 0.6, 1.1, 1.2, 0.8)]),
         ext([4.1, 9.85], [6.5, 9.85], 'timber', [win('leaded', 0.7, 1.1, 1.2, 0.8)]),
-        ext([2.4, 10.85], [4.1, 10.85], 'timber', [win('leaded', 0.3, 1.1, 1.2, 0.8)], 0.3),
+        { ...ext([2.4, 10.85], [4.1, 10.85], 'timber', [win('leaded', 0.3, 1.1, 1.2, 0.8)], 0.3), top: 2.3 },
         { ...ext([2.55, 9.85], [2.55, 11], 'timber'), top: 2.3 },
         { ...ext([3.95, 9.85], [3.95, 11], 'timber'), top: 2.3 },
         party(0.1, D, 'timber'),

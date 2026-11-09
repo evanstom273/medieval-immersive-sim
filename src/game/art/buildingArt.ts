@@ -124,28 +124,30 @@ export function townArt(town: Town): ArtJob[] {
       });
     }
 
-    // ---- a north–south wall's south end, when it's free
+    // ---- a north–south wall's side, as the camera sees it (edge-on): one strip of its material from the top of
+    // its north end down to the floor at its south end, which every piece's end samples; outlined down both
+    // sides, and along the bottom at a free south end.
     if (w.kind === 'ns') {
-      const southA = w.dir.y < 0;
-      const joined = southA ? w.joinedA : w.joinedB;
-      if (!joined) {
-        const ys = Math.max(...w.foot.map((p) => p.y));
-        const xs = w.foot.map((p) => p.x);
-        const x0 = Math.min(...xs);
-        const x1 = Math.max(...xs);
-        const quad = [S(x0, ys, w.base), S(x1, ys, w.base), S(x1, ys, w.top), S(x0, ys, w.top)];
-        job(jobKey.cap(w), bounds(quad), (k) => {
-          const r = bounds(quad, 0);
-          k.layer();
-          k.clipD(polyD(quad));
-          k.face(w.material, r.x - 20, r.y, r.w + 40, r.h, false);
-          k.clip(null);
-          k.layer();
-          k.add({ fill: '#000000', fo: 0.1 }, polyD(quad));
-          k.add({ fill: 'none', stroke: OUT, sw: 1.4 }, polyD(quad));
-          k.flush();
-        });
-      }
+      const ys0 = Math.min(...w.foot.map((p) => p.y));
+      const ys1 = Math.max(...w.foot.map((p) => p.y));
+      const xs = w.foot.map((p) => p.x);
+      const x0 = Math.min(...xs);
+      const x1 = Math.max(...xs);
+      const southFree = !(w.dir.y < 0 ? w.joinedA : w.joinedB);
+      const quad = [S(x0, ys1, w.base), S(x1, ys1, w.base), S(x1, ys0, w.top), S(x0, ys0, w.top)];
+      job(jobKey.cap(w), bounds(quad), (k) => {
+        const r = bounds(quad, 0);
+        k.layer();
+        k.clip(r.x, r.y, r.w, r.h);
+        k.face(w.material, r.x - 20, r.y, r.w + 40, r.h, false);
+        k.clip(null);
+        k.layer();
+        k.add({ fill: '#000000', fo: 0.1 }, k.rect(r.x, r.y, r.w, r.h));
+        k.add({ fill: 'none', stroke: OUT, sw: 1.4 }, k.line([[r.x, r.y], [r.x, r.y + r.h]]));
+        k.add({ fill: 'none', stroke: OUT, sw: 1.4 }, k.line([[r.x + r.w, r.y], [r.x + r.w, r.y + r.h]]));
+        if (southFree) k.add({ fill: 'none', stroke: OUT, sw: 1.4 }, k.line([[r.x, r.y + r.h], [r.x + r.w, r.y + r.h]]));
+        k.flush();
+      });
     }
   }
 
