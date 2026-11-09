@@ -47,6 +47,8 @@ interface PieceView {
   shown: number;
   front: boolean;
   bounds: Bounds;
+  /** The footprint's ground bounds (for finding the wall round a door). */
+  foot: Bounds;
   depth: number;
   visible: boolean;
 }
@@ -100,6 +102,7 @@ export class BuildingView {
         shown: w.top,
         front: w.column ? true : isFront(piece, floorsByLevel.get(w.level) ?? []),
         bounds: screenBounds([...piece.foot.map((p) => S(p.x, p.y, w.base)), ...piece.foot.map((p) => S(p.x, p.y, w.top))]),
+        foot: screenBounds(piece.foot.map((p) => [p.x, p.y])),
         depth: bandOf(w.level) + piece.south / 1000,
         visible: true,
       };
@@ -261,7 +264,7 @@ export class BuildingView {
     let best: number | null = null;
     for (const pv of this.pieces) {
       if (pv.level !== level || pv.piece.over > 0) continue;
-      const bb = screenBounds(pv.piece.foot.map((p) => [p.x, p.y]));
+      const bb = pv.foot;
       if (x < bb.x0 - slack || x > bb.x1 + slack || y < bb.y0 - slack || y > bb.y1 + slack) continue;
       const h = pv.shown - pv.piece.wall.base;
       best = best === null ? h : Math.min(best, h);

@@ -110,7 +110,7 @@ export class MapScene extends Phaser.Scene {
     // Out in the overview the ink map turns into the painted one (labels stay).
     const paint = alpha * crossfade(span, 3200, 6500);
     this.painted?.setAlpha(paint).setVisible(paint > 0.001);
-    this.region?.update(alpha * (1 - crossfade(span, 3200, 6500)), screenScale, alpha);
+    this.region?.update(alpha * (1 - crossfade(span, 3200, 6500)), screenScale, this.cameras.main, alpha);
     const seen = new Set<string>();
     for (const t of tokens) {
       seen.add(t.id);
