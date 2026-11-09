@@ -325,6 +325,7 @@ When an item changes status, move it and add a dated note rather than silently r
   - **Details:** dirt and wear, bodies and graves, fire and smoke at several sizes, weather overlays.
 - **Not in this pass:** weapons (later); clothing (its own pass afterwards).
 - **First board: buildings and structure.**
+- *2026-11-09 04:10 UTC (after the Stuart-era decision):* walls are wattle and daub, timber frame, rubble, **brick (Flemish bond)**, dressed stone and planks. Floors are earth and rushes, boards, flagstones, **plain red quarry tiles**, the red-and-yellow glazed chequer (kept because it looks good, though it's an older style) and **black-and-white marble on the diagonal**. Undecided: carpets and rugs (in this period mostly a luxury thrown over tables; probably objects laid on a floor rather than a floor type) and rush matting (what most homes actually had).
 
 ### Period: the Stuart era
 *2026-11-09 03:58 UTC*
