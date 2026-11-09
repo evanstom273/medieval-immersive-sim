@@ -304,6 +304,26 @@ When an item changes status, move it and add a dated note rather than silently r
   - **Free will:** leave the person you control alone for 15 seconds and they look after themselves; any input takes back control.
   - PLACEHOLDERS: every number (drain rates, gains, thresholds, moodlet values, mood formula); the larder's endless food (real food comes with items); warmth from season, time, indoors and fires only (no weather or clothing yet), with the year assumed to start in spring; no traits weighting choices yet; the furniture's plain-box art and layout.
 
+### Art pass: the catalogue
+*2026-11-09 02:40 UTC*
+
+- **The game's art is now being made in the art-style document's style** (detailed, layered, cel-shaded SVG; elevated ¾; 1 SVG unit = 1 world pixel).
+- **Setting: invented but grounded** in real medieval Europe, not one region. **For now: temperate and green** (mild wet summers, cold winters, oak woods, fields, hedges, a river). Kept open: if there's a wider world outside the town, it could have **biomes, each with towns whose building styles match**, so materials and styles should be easy to swap per region.
+- **Method: a catalogue first**, on design boards (one board per category, approved and tweaked before anything goes into the game), the same way as the character mock-ups.
+- **Variety: quality tiers (poor / ordinary / fine) and a few looks within each tier.**
+- **What the catalogue covers:**
+  - **Buildings:** homes (cottage, townhouse, better-off house, manor), trade buildings (bakery, forge, mill, brewery or alehouse, workshop, barn, stable), public (church, tavern or inn, market hall or stalls, town gate and walls), outbuildings (privy, woodshed, pigsty, henhouse, well, fences, gates).
+  - **Building parts:** walls by material (wattle-and-daub, timber frame, stone, plank, with worn and damaged versions), floors (earth with rushes, planks, flagstones, tiles), roofs (thatch, shingles, clay tiles, slate), doors, windows (shutters, rare glazing), stairs and ladders.
+  - **Outdoors:** ground (grass, dirt, mud, cobbles, gravel, sand, with blended edges), water (river, stream, pond, ford, bridge, mill race), plants (trees, bushes, hedges, flowers, weeds, crops by growth stage), and seasonal versions.
+  - **Furniture:** sleeping (pallet to curtained bed, cradle), seating and tables, storage (chests, cupboards, shelves, barrels, sacks, baskets, crates), hearth and kitchen.
+  - **Household items:** tableware (wooden and pewter), cooking gear, light (candles, rushlights, lanterns), cleaning and care (broom, bucket, basin, chamber pot, linen).
+  - **Food and drink:** raw, cooked, drink and containers, each food fresh, stale and rotten.
+  - **Tools and goods:** farming, crafts, trade goods, money.
+  - **Animals:** livestock and young, working animals with carts and ploughs, pets and vermin, wild animals.
+  - **Details:** dirt and wear, bodies and graves, fire and smoke at several sizes, weather overlays.
+- **Not in this pass:** weapons (later); clothing (its own pass afterwards).
+- **First board: buildings and structure.**
+
 ---
 
 ## Undecided
