@@ -70,7 +70,12 @@ export class Door implements Interactable {
   private swing: DoorSwing = { angle: 0, angVel: 0 };
   readonly geom: DoorGeom;
   /** Door height (px of world height). */
-  readonly height = 2.0 * M;
+  readonly height: number;
+  /** Height of the floor it stands on (px), and which storey that is. */
+  readonly z: number;
+  readonly level: number;
+  /** Hidden (its storey isn't shown). */
+  hidden = false;
   /** Drawn height, when its wall is cut down (cutaway / walls down); null = full height. */
   displayHeight: number | null = null;
   /** Unit ground direction into the room it closes, if it's a room's door (for "from inside" rules). */
@@ -82,8 +87,16 @@ export class Door implements Interactable {
    * @param thickness      leaf thickness
    * @param baseAngle      leaf direction when closed (radians)
    */
-  constructor(hingeX: number, hingeY: number, length: number, thickness: number, baseAngle = 0) {
+  constructor(hingeX: number, hingeY: number, length: number, thickness: number, baseAngle = 0, opts: { height?: number; z?: number; level?: number } = {}) {
     this.geom = { hingeX, hingeY, baseAngle, length, thickness, maxAngle: Math.PI / 2 };
+    this.height = opts.height ?? 2.0 * M;
+    this.z = opts.z ?? 0;
+    this.level = opts.level ?? 0;
+  }
+
+  /** Where the leaf is now: hinge and latch ends (ground), and the angle. */
+  leafNow(): { hinge: Pt; latch: Pt; angle: number; thickness: number } {
+    return { hinge: this.hingePoint(), latch: this.latchPoint(), angle: this.geom.baseAngle + this.swing.angle, thickness: this.geom.thickness };
   }
 
   get isLocked(): boolean {
@@ -137,8 +150,10 @@ export class Door implements Interactable {
     const angle = baseAngle + this.swing.angle;
     const outline = this.highlighted ? HIGHLIGHT : OUTLINE;
     const leaf = slabPts(hingeX, hingeY, angle, length, thickness);
+    if (this.hidden) return emptyBounds();
     const h = p.upright ? Math.min(this.height, this.displayHeight ?? this.height) : 0;
-    const b = prism(g, p, leaf, 0, h, { colour: 0x6b4a2b, top: 0x7a5634, outline, outlineWidth: this.highlighted ? 3 : 1.5 });
+    const z0 = p.upright ? this.z : 0;
+    const b = prism(g, p, leaf, z0, h, { colour: 0x6b4a2b, top: 0x7a5634, outline, outlineWidth: this.highlighted ? 3 : 1.5 });
     if (!p.upright) {
       // Planks, seen from above.
       g.lineStyle(1, 0x4a321c, 1);
@@ -151,14 +166,14 @@ export class Door implements Interactable {
       }
     }
     // Hinge pin.
-    const pin = p.toScreen(hingeX, hingeY, h);
+    const pin = p.toScreen(hingeX, hingeY, z0 + h);
     g.fillStyle(0x3a3a3a, 1);
     g.fillCircle(pin.x, pin.y, 3);
     // Iron bolt across the latch end when locked.
     if (this.locked) {
       const bolt = slabPts(hingeX + Math.cos(angle) * (length - 14), hingeY + Math.sin(angle) * (length - 14), angle, 10, thickness + 6);
       const boltZ = Math.min(0.9 * M, Math.max(0, h - 0.15 * M));
-      prism(g, p, bolt, p.upright ? boltZ : 0, p.upright ? Math.min(0.15 * M, h) : 0, { colour: 0x2e2e2e, outline: 0x111111, outlineWidth: 1 }, b);
+      prism(g, p, bolt, p.upright ? z0 + boltZ : 0, p.upright ? Math.min(0.15 * M, h) : 0, { colour: 0x2e2e2e, outline: 0x111111, outlineWidth: 1 }, b);
     }
     return b;
   }

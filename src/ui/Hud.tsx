@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { messageChannel } from '../game/bridge';
+import { floorChannel, messageChannel, uiCommands, type FloorState } from '../game/bridge';
 
 interface Message {
   id: number;
@@ -22,12 +22,18 @@ export function Hud() {
     [],
   );
 
+  const [floor, setFloor] = useState<FloorState | null>(() => floorChannel.last ?? null);
+  useEffect(() => floorChannel.on(setFloor), []);
+  // Narrow screens: drop below the action chip / Tuning button row.
+  const narrow = window.innerWidth < 640;
+  const top = narrow ? 'calc(env(safe-area-inset-top) + 60px)' : 'max(16px, calc(env(safe-area-inset-top) + 12px))';
+
   return (
     <div className="pointer-events-none absolute inset-0 text-white">
+      {floor && <FloorButtons floor={floor} top={top} />}
       <div
         className="absolute left-1/2 flex w-max max-w-[min(36rem,calc(100vw-2rem))] -translate-x-1/2 flex-col items-center gap-1"
-        // Narrow screens: drop below the action chip / Tuning button row.
-        style={{ top: window.innerWidth < 640 ? 'calc(env(safe-area-inset-top) + 60px)' : 'max(16px, calc(env(safe-area-inset-top) + 12px))' }}
+        style={{ top: floor ? `calc(${top} + 46px)` : top }}
       >
         {messages.map((m) => (
           <div key={m.id} className="rounded-full bg-neutral-900/70 px-3 py-1 text-center text-sm shadow ring-1 ring-white/10 backdrop-blur-sm">
@@ -35,6 +41,22 @@ export function Hud() {
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+/** Sims-style floor buttons: show the storey below or above (above the top one are the roofs). PageDown / PageUp too. */
+function FloorButtons({ floor, top }: { floor: FloorState; top: string }) {
+  const btn = 'flex h-9 w-9 items-center justify-center rounded-full text-lg transition-colors enabled:hover:bg-white/15 disabled:opacity-30';
+  return (
+    <div className="pointer-events-auto absolute left-1/2 flex -translate-x-1/2 items-center gap-1 rounded-full bg-neutral-900/75 p-0.5 shadow ring-1 ring-white/10 backdrop-blur-sm" style={{ top }}>
+      <button className={btn} disabled={!floor.canDown} title="Floor below (Page Down)" aria-label="Floor below" onClick={() => uiCommands.emit({ kind: 'floor', dir: -1 })}>
+        ▼
+      </button>
+      <span className="min-w-[7.5rem] text-center text-sm font-medium select-none">{floor.label}</span>
+      <button className={btn} disabled={!floor.canUp} title="Floor above (Page Up)" aria-label="Floor above" onClick={() => uiCommands.emit({ kind: 'floor', dir: 1 })}>
+        ▲
+      </button>
     </div>
   );
 }

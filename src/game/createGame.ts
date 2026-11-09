@@ -25,7 +25,8 @@ export function createGame(parent: HTMLElement, choice: SceneChoice = 'sandbox',
   const initial = size();
 
   const game = new Phaser.Game({
-    type: Phaser.AUTO,
+    // WebGL: buildings are drawn as textured meshes (Mesh2D), which the canvas renderer can't do.
+    type: Phaser.WEBGL,
     parent,
     backgroundColor: '#1c1b19',
     scale: {

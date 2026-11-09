@@ -116,6 +116,8 @@ export type UiCommand =
   | { kind: 'setPaused'; paused: boolean }
   | { kind: 'setWalls'; mode: 'up' | 'cutaway' | 'down' }
   | { kind: 'cycleWalls' }
+  /** Show the storey above (1) or below (−1); above the top storey are the roofs. */
+  | { kind: 'floor'; dir: 1 | -1 }
   | { kind: 'cancelAction' }
   /** Open the wait dialog for the character you control. */
   | { kind: 'wait' }
@@ -134,6 +136,14 @@ export const switchChannel = new Channel<SwitchEvent>();
 
 /** Game → UI: Sims-style wall display mode. */
 export const wallsChannel = new Channel<'up' | 'cutaway' | 'down'>();
+
+/** Game → UI: which storey is shown (Sims-style), and whether there's one above / below. Never sent if there are no buildings. */
+export interface FloorState {
+  label: string;
+  canUp: boolean;
+  canDown: boolean;
+}
+export const floorChannel = new Channel<FloorState>();
 
 /** Game → UI: is the simulation paused? */
 export const pausedChannel = new Channel<boolean>();

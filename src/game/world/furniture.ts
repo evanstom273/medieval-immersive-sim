@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import type { Gains, MoodletId, NeedId } from '../life/needs';
 import { PX_PER_METRE } from '../movement/tuning';
-import { circlePts, emptyBounds, flat, HIGHLIGHT, OUTLINE, prism, rectPts, type Bounds } from '../view/draw';
+import { circlePts, emptyBounds, flat, HIGHLIGHT, OUTLINE, prism, prismBounds, rectPts, type Bounds } from '../view/draw';
 import type { Projection, Pt } from '../view/projection';
 import type { InteractContext, Interactable, MenuOption } from './interactables';
 
@@ -149,6 +149,8 @@ export class Furniture implements Offering {
   readonly users = new Set<string>();
   private highlighted = false;
   private readonly spec: KindSpec;
+  /** Drawn by something else (e.g. a building's hearth, drawn with the building's art). */
+  hidden = false;
 
   constructor(scene: Phaser.Scene, staticGroup: Phaser.Physics.Arcade.StaticGroup | null, kind: FurnitureKind, x: number, y: number, w: number, h: number) {
     this.kind = kind;
@@ -191,8 +193,10 @@ export class Furniture implements Offering {
 
   render(g: Phaser.GameObjects.Graphics, p: Projection): Bounds {
     const b = emptyBounds();
-    if (this.spec.invisible) return b;
     const r = this.rect;
+    // Drawn elsewhere: still there to click on.
+    if (this.hidden) return prismBounds(p, rectPts(r.x, r.y, r.width, r.height), 0, this.spec.height, b);
+    if (this.spec.invisible) return b;
     const outline = this.highlighted ? HIGHLIGHT : OUTLINE;
     const ow = this.highlighted ? 3 : 1.5;
     const h = p.upright ? this.spec.height : 0;

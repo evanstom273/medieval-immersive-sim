@@ -1,3 +1,4 @@
+import type { Plot } from '../buildings/format';
 import Phaser from 'phaser';
 import { perfCommands, perfResultChannel, perfStatsChannel, type PerfCommand } from '../bridge';
 import type { CharacterDef } from '../characters/Character';
@@ -38,6 +39,11 @@ export class PerfScene extends SandboxScene {
 
   constructor() {
     super('perf');
+  }
+
+  /** No preset buildings in the performance test. */
+  protected plots(): Plot[] {
+    return [];
   }
 
   protected world(): WorldSize {

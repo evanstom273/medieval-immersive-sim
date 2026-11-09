@@ -116,6 +116,16 @@ export class NavGrid {
     }
   }
 
+  /** Also block every cell whose centre fails `walkable` (e.g. off the edge of an upper floor). Call after `build`. */
+  blockWhere(walkable: (x: number, y: number) => boolean): void {
+    const cs = this.cellSize;
+    for (let r = 0; r < this.rows; r++) {
+      for (let c = 0; c < this.cols; c++) {
+        if (!walkable((c + 0.5) * cs, (r + 0.5) * cs)) this.blocked[r * this.cols + c] = 1;
+      }
+    }
+  }
+
   /** Replace the set of links (call after `build`, whenever doors/windows change). Links touching blocked cells are dropped. */
   setLinks(links: NavLink[]): void {
     this.links.clear();

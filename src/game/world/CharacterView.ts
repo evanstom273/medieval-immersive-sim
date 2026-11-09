@@ -61,7 +61,13 @@ export interface CharacterPose {
   asleep: boolean;
   /** Sitting down (drawn lower). */
   sitting: boolean;
+  /** Height of the floor they're on (world px), and their storey (for draw order). */
+  floor: number;
+  level: number;
 }
+
+/** Each storey draws in its own band of depths (see BuildingView). */
+export const LEVEL_BAND = 20;
 
 export function createPose(): CharacterPose {
   return {
@@ -77,6 +83,8 @@ export function createPose(): CharacterPose {
     lift: 0,
     asleep: false,
     sitting: false,
+    floor: 0,
+    level: 0,
   };
 }
 
@@ -324,19 +332,20 @@ export class CharacterView {
       ring.clear();
       if (pose.controlled) {
         ring.lineStyle(2, 0xffffff, 0.55);
-        ringOnGround(ring, p, x, y, 25);
+        ringOnGround(ring, p, x, y, 25, pose.floor);
+        ring.setDepth(pose.level > 0 ? 10 + pose.level * LEVEL_BAND - 0.5 : 3);
       }
       this.ringShown = pose.controlled;
     }
     const b = this.setup(p);
     this.root.setVisible(true);
-    this.root.setDepth(this.depthOverride ?? 10 + p.depth(x, y) / 1000 + 0.0005);
+    this.root.setDepth(this.depthOverride ?? 10 + pose.level * LEVEL_BAND + p.depth(x, y) / 1000 + 0.0005);
 
     const flash = pose.hitFlash > 0;
     const lying = pose.state === 'ko' || pose.asleep;
 
     // Which way they face on screen, in 45° steps.
-    const base = p.toScreen(x, y, lying ? 0 : pose.lift);
+    const base = p.toScreen(x, y, lying ? pose.floor : pose.floor + pose.lift);
     const ahead = p.toScreen(x + Math.cos(facing) * 10, y + Math.sin(facing) * 10);
     const kRaw = lying ? 2 : Math.round(Math.atan2(ahead.y - base.y, ahead.x - base.x) / (Math.PI / 4));
     const { k, flip } = canonical(kRaw);
@@ -363,7 +372,7 @@ export class CharacterView {
     this.root.setPosition(base.x, base.y).setRotation(0).setScale(flip ? -1 : 1, 1);
     this.figure.setScale(1 / RES, squash / RES);
     this.glow.setScale(1 / RES, squash / RES);
-    const ground = p.toScreen(x, y);
+    const ground = p.toScreen(x, y, pose.floor);
     this.shadow.setVisible(true).setPosition(0, ground.y - base.y).setScale(1 / RES);
 
     // Hands: exact positions on the ground plane, behind or in front of the body, at a height that suits the body.
@@ -404,7 +413,7 @@ export class CharacterView {
     const c = Math.cos(facing);
     const s = Math.sin(facing);
     const length = (-v.headTop * b.u) / up; // hem to the top of the head, in world px
-    const z = pose.lift + 0.1 * M; // the body has some thickness
+    const z = pose.floor + pose.lift + 0.1 * M; // the body has some thickness
     const feet = { x: x - c * length * 0.5, y: y - s * length * 0.5 };
     const fs = p.toScreen(feet.x, feet.y, z);
     const hs = p.toScreen(feet.x + c * length, feet.y + s * length, z);

@@ -5,6 +5,7 @@ import {
   pausedChannel,
   switchChannel,
   wallsChannel,
+  floorChannel,
   messageChannel,
   rosterChannel,
   uiCommands,
@@ -47,6 +48,13 @@ import { formatDate, formatDuration, formatTime, GameClock, DAWN_HOUR, DAYS_PER_
 import { Furniture, type Offer, type Offering } from '../world/furniture';
 import { addMoodlet, ambientWarmth, moodOf, MOODLETS, expireMoodlets, healthLossPerHour, inDanger, irritability, pressingSign, speedFactor, tickNeeds, type MoodletId, type TickInput } from '../life/needs';
 import { interruptsRest, MAX_REST_HOURS, REST_SPEED, type RestKind, type RestStimulus } from '../time/rest';
+import type { Plot } from '../buildings/format';
+import { COTTAGE } from '../buildings/cottage';
+import { TERRACE } from '../buildings/row';
+import { floorAt, inRect, placeTown, stairEnds, stairProgress, type Town } from '../buildings/place';
+import { townArt } from '../art/buildingArt';
+import { pack, sheetSvg, type Placed } from '../art/atlas';
+import { BuildingView, bandOf, type ViewLevel } from '../view/BuildingView';
 
 /**
  * PLACEHOLDER sandbox: a field, a small house with a door, a chest, a sign,
@@ -55,8 +63,8 @@ import { interruptsRest, MAX_REST_HOURS, REST_SPEED, type RestKind, type RestSti
  */
 
 /** The sandbox's size (world px). Other scenes set their own via world(). */
-const WORLD_W = 2560;
-const WORLD_H = 1792;
+const WORLD_W = 4096;
+const WORLD_H = 2304;
 
 export interface WorldSize {
   w: number;
@@ -109,6 +117,12 @@ interface Dummy extends Targetable {
 }
 
 const WALLS_STORAGE_KEY = 'mis.wallMode';
+
+/** What the floor buttons call each storey. */
+function floorLabel(v: ViewLevel): string {
+  if (v === 'roof') return 'Roofs';
+  return ['Cellar', 'Ground floor', 'First floor', 'Second floor', 'Third floor'][v + 1] ?? `Floor ${v}`;
+}
 /** Movement and physics run in fixed steps of this size (60 a second). */
 const MOVE_DT = 1 / 60;
 /** A world tick (brains, senses, conversations, footsteps) every this many movement steps: 20 a second. */
@@ -131,7 +145,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
   protected active!: Character;
 
   private keys!: Record<
-    'up' | 'down' | 'left' | 'right' | 'sprint' | 'crouch' | 'combat' | 'lock' | 'talk' | 'debug' | 'senses' | 'pause' | 'walls' | 'esc' | 'one' | 'two' | 'three' | 'four' | 'five' | 'six' | 'seven' | 'eight' | 'nine',
+    'up' | 'down' | 'left' | 'right' | 'sprint' | 'crouch' | 'combat' | 'lock' | 'talk' | 'debug' | 'senses' | 'pause' | 'walls' | 'floorUp' | 'floorDown' | 'esc' | 'one' | 'two' | 'three' | 'four' | 'five' | 'six' | 'seven' | 'eight' | 'nine',
     Phaser.Input.Keyboard.Key
   >;
   private solids!: Phaser.Physics.Arcade.StaticGroup;
@@ -222,6 +236,21 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
   private restAsk: { kind: RestKind; bed: Offering | null; wasPaused: boolean } | null = null;
   /** How many times normal speed the last frame actually ran. */
   private speedNow = 1;
+  /** The preset buildings, laid out, and their art. */
+  protected town: Town | null = null;
+  private buildingView: BuildingView | null = null;
+  private art: { jobs: Map<string, Placed>; sheets: string[] } | null = null;
+  /** Which storey each solid belongs to (missing = the ground). */
+  private solidLevel = new WeakMap<object, number>();
+  private personOf = new WeakMap<object, Character>();
+  /** Path grids for the storeys above the ground. */
+  private upperNavs = new Map<number, NavGrid>();
+  private upperNavDirty = true;
+  /** Doors hung in the preset buildings' doorways. */
+  private townDoors = new Set<Door>();
+  /** Which storey is shown, and the one the game last chose itself (entering or leaving a building, or a stair). */
+  private viewLevel: ViewLevel = 'roof';
+  private autoView: ViewLevel | null = null;
 
   constructor(key = 'sandbox') {
     super(key);
@@ -236,6 +265,30 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
 
   get now(): number {
     return this.simMs;
+  }
+
+  /** The preset buildings and where they stand (metres). */
+  protected plots(): Plot[] {
+    return [...TERRACE.map((p) => ({ ...p, x: p.x + 30, y: p.y + 9 })), { building: COTTAGE, x: 40, y: 27 }];
+  }
+
+  preload(): void {
+    const plots = this.plots();
+    if (!plots.length) return;
+    this.town = placeTown(plots);
+    // The catalogue art, baked onto a few sheets (SVG, rasterised by the browser).
+    const jobs = townArt(this.town);
+    const { placed, sheetCount } = pack(jobs);
+    const sheets: string[] = [];
+    for (let i = 0; i < sheetCount; i++) {
+      const key = `buildings-${i}`;
+      sheets.push(key);
+      if (this.textures.exists(key)) continue;
+      const url = URL.createObjectURL(new Blob([sheetSvg(jobs, placed, i)], { type: 'image/svg+xml' }));
+      this.load.svg(key, url);
+      this.load.once(Phaser.Loader.Events.COMPLETE, () => URL.revokeObjectURL(url));
+    }
+    this.art = { jobs: placed, sheets };
   }
 
   get hour(): number {
@@ -258,12 +311,15 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     this.scenery = new Scenery(this, this.size.w, this.size.h);
     this.solids = this.physics.add.staticGroup();
     this.buildWorld(this.solids);
+    if (this.town) this.buildTown(this.solids, this.town);
     for (const obj of this.interactables) this.objectGfx.set(obj, { g: this.add.graphics(), bounds: emptyBounds() });
     for (const w of this.windows) w.outerG = this.add.graphics();
 
     for (const def of this.cast()) this.characters.push(new Character(this, def));
     this.peopleObjs = this.characters.map((c) => c.obj);
-    this.physics.add.collider(this.peopleObjs, this.solids);
+    this.characters.forEach((c) => this.personOf.set(c.obj, c));
+    // People only bump into the walls of the storey they're on.
+    this.physics.add.collider(this.peopleObjs, this.solids, undefined, (a, b) => (this.solidLevel.get(b as object) ?? 0) === (this.personOf.get(a as object)?.level ?? 0));
     // People don't use Arcade's collider with each other (it splits overlaps 50/50 and zeroes
     // velocities); they're kept apart by separatePeople(), weighted by who they are.
 
@@ -296,6 +352,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     }
     this.setWalls(walls);
     this.setView('threequarter');
+    if (this.buildingView) this.setViewLevel('roof');
 
     // Draw everyone and move the camera AFTER physics has moved bodies this frame.
     this.events.on(Phaser.Scenes.Events.POST_UPDATE, this.lateUpdate, this);
@@ -432,6 +489,51 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     this.dummy = { name: 'the training dummy', x: dx, y: dy, radius: 14, g: this.add.graphics(), hits: 0, flashUntil: 0, wobble: { x: 0, y: 0 }, isTargetable: () => true };
   }
 
+  /**
+   * The preset buildings: solid walls per storey, doors in the doorways, hearths, and the
+   * view that draws them with the catalogue art.
+   */
+  private buildTown(solids: Phaser.Physics.Arcade.StaticGroup, town: Town): void {
+    for (const b of [...town.bodies, ...town.barriers]) {
+      const r = this.add.rectangle(b.x + b.w / 2, b.y + b.h / 2, b.w, b.h).setVisible(false);
+      this.physics.add.existing(r, true);
+      solids.add(r);
+      if (b.level !== 0) this.solidLevel.set(r, b.level);
+      else if (town.bodies.includes(b)) this.sightBlockers.push({ kind: 'rect', x: b.x, y: b.y, w: b.w, h: b.h });
+    }
+    // A pavement along the front of a row of buildings (two or more sharing a front).
+    const rows = new Map<number, typeof town.buildings>();
+    for (const b of town.buildings) {
+      const y = Math.round(b.rect.y + b.rect.h);
+      rows.set(y, [...(rows.get(y) ?? []), b]);
+    }
+    for (const [y, row] of rows) {
+      if (row.length < 2) continue;
+      const x0 = Math.min(...row.map((b) => b.rect.x));
+      const x1 = Math.max(...row.map((b) => b.rect.x + b.rect.w));
+      this.scenery.add({ kind: 'paving', x: x0 - 0.5 * M, y, w: x1 - x0 + M, h: 1.6 * M, colour: 0xa39b8c });
+    }
+    for (const b of town.buildings) this.indoorAreas.push(new Phaser.Geom.Rectangle(b.rect.x, b.rect.y, b.rect.w, b.rect.h));
+    town.fixtures.forEach((fx) => {
+      if (fx.fixture.kind !== 'hearth' || fx.level !== 0) return;
+      const r = fx.rect;
+      const f = new Furniture(this, solids, 'hearth', r.x + r.w / 2, r.y + r.h / 2, r.w, r.h);
+      f.hidden = true;
+      this.interactables.push(f);
+      this.heatSources.push({ x: r.x + r.w / 2, y: r.y + r.h / 2 });
+    });
+    const view = new BuildingView(this, town, this.art!.jobs, this.art!.sheets);
+    this.buildingView = view;
+    town.doors.forEach((d, i) => {
+      const door = new Door(d.hinge.x, d.hinge.y, d.length, 10, d.baseAngle, { height: d.height, z: d.z, level: d.level });
+      door.inward = d.inward;
+      this.doors.push(door);
+      this.interactables.push(door);
+      this.townDoors.add(door);
+      view.attachDoor(door, i);
+    });
+  }
+
   // ================================================================ life: needs, doing things, free will
 
   /** Feel something (a moodlet). */
@@ -498,7 +600,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     if (d.obj && d.offer.posture !== 'stand') {
       // Get up on the open side.
       const want = { x: c.x, y: c.y + 0.9 * M };
-      const p = this.ensureNav().nearestFree(want, 2.5 * M) ?? want;
+      const p = this.ensureNav(c.level).nearestFree(want, 2.5 * M) ?? want;
       c.obj.setPosition(p.x, p.y);
       c.body.reset(p.x, p.y);
       c.prevX = p.x;
@@ -623,6 +725,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
   /** Sims-style walls: up, cutaway (cut down in front of rooms), or down. */
   setWalls(mode: WallMode): void {
     this.scenery.setMode(mode);
+    if (this.buildingView) this.buildingView.mode = mode;
     try {
       localStorage.setItem(WALLS_STORAGE_KEY, mode);
     } catch {
@@ -654,6 +757,8 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
         senses: KEY.F4,
         pause: KEY.SPACE,
         walls: KEY.V,
+        floorUp: KEY.PAGE_UP,
+        floorDown: KEY.PAGE_DOWN,
         esc: KEY.ESC,
         one: KEY.ONE,
         two: KEY.TWO,
@@ -815,6 +920,9 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
       case 'cycleWalls':
         this.cycleWalls();
         break;
+      case 'floor':
+        this.stepViewLevel(c.dir);
+        break;
       case 'setWalls':
         this.setWalls(c.mode);
         break;
@@ -864,7 +972,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     if (this.restAsk) return;
     this.endRest();
     const a = this.active;
-    const { x, y } = this.ground({ x: sx, y: sy });
+    const { x, y, level } = this.groundAt(sx, sy);
     const who = this.characterAt(sx, sy);
     if (who) {
       if (who === a) this.openSelfMenu();
@@ -878,9 +986,99 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     }
     if (a.status === 'yielded') this.standUp(a);
     a.social = null;
-    if (this.orderToPoint(a, { x, y })) this.markerFade = null;
+    if (this.orderTo(a, { x, y }, level)) this.markerFade = null;
     else this.say("You can't find a way there.");
-    if (hold) this.press = { since: this.now, lastPlan: this.now, point: { x, y }, touch };
+    if (hold && level === a.level) this.press = { since: this.now, lastPlan: this.now, point: { x, y }, touch };
+  }
+
+  /** The floor under a camera-space point: on the storey shown, if there's floor there, else the ground. */
+  private groundAt(sx: number, sy: number): { x: number; y: number; level: number } {
+    const town = this.town;
+    const v = this.viewLevel;
+    if (town && this.buildingView && v !== 'roof') {
+      for (let level = v; level > 0; level--) {
+        for (const f of town.floors) {
+          if (f.level !== level) continue;
+          const g = this.proj.toGround(sx, sy + f.z * this.proj.up);
+          if (floorAt(town, g.x, g.y, level) === f) return { x: g.x, y: g.y, level };
+        }
+      }
+    }
+    const g = this.ground({ x: sx, y: sy });
+    return { x: g.x, y: g.y, level: 0 };
+  }
+
+  /** Walk somewhere, on any storey: up or down the nearest stair (in the right building) on the way. */
+  orderTo(c: Character, p: Point, level: number): boolean {
+    const town = this.town;
+    if (level === c.level || !town) return this.orderToPoint(c, p);
+    const up = level > c.level;
+    const next = up ? c.level + 1 : c.level - 1;
+    const plot = floorAt(town, p.x, p.y, level)?.plot ?? floorAt(town, c.x, c.y, c.level)?.plot;
+    const zones = town.stairs
+      .map((z, i) => ({ z, i, ends: stairEnds(z) }))
+      .filter(({ z }) => (up ? z.fromLevel === c.level && z.toLevel === next : z.toLevel === c.level && z.fromLevel === next))
+      .sort((a, b) => (a.z.plot === plot ? 0 : 1e9) - (b.z.plot === plot ? 0 : 1e9) + Math.hypot(a.ends.foot.x - c.x, a.ends.foot.y - c.y) - Math.hypot(b.ends.foot.x - c.x, b.ends.foot.y - c.y));
+    for (const { i, ends } of zones) {
+      const entry = up ? ends.foot : ends.top;
+      const exit = up ? ends.top : ends.foot;
+      const climb = () => {
+        c.order = MoveOrder.along([entry, exit]);
+        c.onArrive = () => {
+          if (c.level !== next) return;
+          if (next === level) this.orderToPoint(c, p);
+          else this.orderTo(c, p, level);
+        };
+      };
+      if (c.stair === i) {
+        climb();
+        return true;
+      }
+      const order = this.planOrder(c, { kind: 'point', x: entry.x, y: entry.y });
+      if (!order) continue;
+      c.order = order;
+      c.onArrive = climb;
+      return true;
+    }
+    return false;
+  }
+
+  /** Is this person on a storey that's shown? (Upstairs is hidden while you look at the ground floor, and from outside.) */
+  private personShown(c: Character): boolean {
+    if (!this.buildingView) return true;
+    return this.viewLevel === 'roof' ? c.level === 0 : c.level <= this.viewLevel;
+  }
+
+  /**
+   * The storey shown follows the person you control: going into a building shows their floor,
+   * a stair takes the view up or down with them, and stepping outside shows the roofs again.
+   * The floor buttons override it until the next of those.
+   */
+  private updateViewLevel(): void {
+    const town = this.town;
+    if (!town) return;
+    const a = this.active;
+    const inside = a.stair >= 0 || !!floorAt(town, a.x, a.y, a.level);
+    const want: ViewLevel = inside ? a.level : 'roof';
+    if (want !== this.autoView) {
+      this.autoView = want;
+      this.setViewLevel(want);
+    }
+  }
+
+  private setViewLevel(v: ViewLevel): void {
+    this.viewLevel = v;
+    this.buildingView?.setView(v);
+    floorChannel.emit({ label: floorLabel(v), canUp: v !== 'roof', canDown: v === 'roof' || v > 0 });
+  }
+
+  /** One storey up (to the roofs at the top) or down. */
+  private stepViewLevel(dir: 1 | -1): void {
+    if (!this.town) return;
+    const top = this.town.topLevel;
+    const v = this.viewLevel;
+    if (dir > 0) this.setViewLevel(v === 'roof' ? 'roof' : v >= top ? 'roof' : v + 1);
+    else this.setViewLevel(v === 'roof' ? top : Math.max(0, v - 1));
   }
 
   /** Who's under a camera-space point? Seen from above: their footprint; upright: their drawn figure (nearest first). */
@@ -1183,17 +1381,19 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
 
   // ================================================================ World: shared actions (player and AI)
 
-  protected ensureNav(): NavGrid {
+  protected ensureNav(level = 0): NavGrid {
+    if (level !== 0) return this.upperNav(level);
     if (this.navDirty) {
       const obstacles: Obstacle[] = [];
       for (const child of this.solids.getChildren()) {
+        if (this.solidLevel.has(child)) continue;
         const b = (child as Phaser.GameObjects.GameObject).body as Phaser.Physics.Arcade.StaticBody | null;
         if (!b || !b.enable) continue;
         if (b.isCircle) obstacles.push({ kind: 'circle', x: b.center.x, y: b.center.y, r: b.halfWidth });
         else obstacles.push({ kind: 'rect', x: b.x, y: b.y, w: b.width, h: b.height });
       }
       for (const door of this.doors) {
-        const o = door.navObstacle();
+        const o = door.level === 0 ? door.navObstacle() : null;
         if (o) obstacles.push(o);
       }
       this.nav.build(obstacles, BODY_RADIUS + 2);
@@ -1201,6 +1401,32 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
       this.navDirty = false;
     }
     return this.nav;
+  }
+
+  /** The path grid for a storey above the ground: its walls, and nothing off the edge of its floors. */
+  private upperNav(level: number): NavGrid {
+    if (this.upperNavDirty) {
+      this.upperNavs.clear();
+      this.upperNavDirty = false;
+    }
+    let nav = this.upperNavs.get(level);
+    if (nav) return nav;
+    const obstacles: Obstacle[] = [];
+    for (const child of this.solids.getChildren()) {
+      if (this.solidLevel.get(child) !== level) continue;
+      const b = (child as Phaser.GameObjects.GameObject).body as Phaser.Physics.Arcade.StaticBody | null;
+      if (b?.enable) obstacles.push({ kind: 'rect', x: b.x, y: b.y, w: b.width, h: b.height });
+    }
+    for (const door of this.doors) {
+      const o = door.level === level ? door.navObstacle() : null;
+      if (o) obstacles.push(o);
+    }
+    nav = new NavGrid(this.size.w, this.size.h, this.size.cell);
+    nav.build(obstacles, BODY_RADIUS + 2);
+    const town = this.town;
+    nav.blockWhere((x, y) => !!town && !!floorAt(town, x, y, level));
+    this.upperNavs.set(level, nav);
+    return nav;
   }
 
   // ---------------------------------------------------------------- senses (SensesHost)
@@ -1306,7 +1532,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
           return;
         }
         d.perform('unlock', { say: (m) => c.controlled && this.say(m) });
-        this.navDirty = true;
+        this.navDirty = this.upperNavDirty = true;
       }
       c.order?.linkDone();
       return;
@@ -1325,7 +1551,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     c.linkBusy = true;
     c.look = { angle: c.angleTo(w.centre), until: this.now + 800 };
     this.noise('door', w.centre.x, w.centre.y, c, 3);
-    this.navDirty = true;
+    this.navDirty = this.upperNavDirty = true;
     this.time.delayedCall(700, () => {
       c.linkBusy = false;
       if (c.order && w.passable && c.status === 'ok') climb();
@@ -1338,7 +1564,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
    * there's no other way there (e.g. the door's locked and a window is the only way).
    */
   private planOrder(c: Character, goal: Parameters<typeof MoveOrder.plan>[2]): MoveOrder | null {
-    const nav = this.ensureNav();
+    const nav = this.ensureNav(c.level);
     if (!c.controlled) return MoveOrder.plan(nav, c.pos(), goal, true);
     const plain = MoveOrder.plan(nav, c.pos(), goal, false);
     if (plain) return plain;
@@ -1375,7 +1601,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
   }
 
   wanderPoint(c: Character, radius: number): Point | null {
-    const nav = this.ensureNav();
+    const nav = this.ensureNav(c.level);
     for (let i = 0; i < 6; i++) {
       const a = this.rng() * Math.PI * 2;
       const d = between(this.rng, 2 * M, radius);
@@ -1397,7 +1623,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
         begin: (o, offer) => this.beginDoing(c, o, offer),
       };
       obj.perform(optionId, ctx);
-      this.navDirty = true; // e.g. a door got locked
+      this.navDirty = this.upperNavDirty = true; // e.g. a door got locked
     };
     const p = obj.closestPoint(c.x, c.y);
     if (c.distanceTo(p) <= REACH) {
@@ -1427,7 +1653,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
         return;
       }
       this.noise('door', w.centre.x, w.centre.y, c, 3);
-      this.navDirty = true;
+      this.navDirty = this.upperNavDirty = true;
       c.linkBusy = true;
       c.look = { angle: c.angleTo(w.centre), until: this.now + 800 };
       this.time.delayedCall(700, () => {
@@ -1600,6 +1826,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
   /** Add someone to the world (e.g. the performance test's spawner). */
   spawnPerson(def: CharacterDef): Character {
     const c = new Character(this, def);
+    this.personOf.set(c.obj, c);
     this.characters.push(c);
     this.senses.addCharacter(c);
     c.brain.reset(this.now + this.rng() * 1500);
@@ -1645,6 +1872,8 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     // The rest dialog keeps the game paused until it's answered.
     if (Phaser.Input.Keyboard.JustDown(k.pause) && !this.restAsk) this.setPaused(!this.paused);
     if (Phaser.Input.Keyboard.JustDown(k.walls)) this.cycleWalls();
+    if (Phaser.Input.Keyboard.JustDown(k.floorUp)) this.stepViewLevel(1);
+    if (Phaser.Input.Keyboard.JustDown(k.floorDown)) this.stepViewLevel(-1);
     if (this.paused) {
       if (Phaser.Input.Keyboard.JustDown(k.esc)) {
         if (this.restAsk) this.answerRest(null);
@@ -1833,6 +2062,35 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
 
     profiler.end('movement');
     this.physicsStep(dt);
+    this.updateLevels();
+  }
+
+  /** Stairs: walking up one lifts you as you go, and halfway up you're on the floor above. */
+  private updateLevels(): void {
+    const town = this.town;
+    if (!town) return;
+    for (const c of this.characters) {
+      let on = -1;
+      for (let i = 0; i < town.stairs.length; i++) {
+        const z = town.stairs[i];
+        if ((c.level === z.fromLevel || c.level === z.toLevel) && inRect(c, z.rect)) {
+          on = i;
+          break;
+        }
+      }
+      if (on >= 0) {
+        const z = town.stairs[on];
+        const t = stairProgress(z, c.x, c.y);
+        c.z = z.zFrom + (z.zTo - z.zFrom) * t;
+        c.level = t > 0.5 ? z.toLevel : z.fromLevel;
+      } else if (c.level > 0) {
+        const f = floorAt(town, c.x, c.y, c.level);
+        if (f) c.z = f.z;
+      } else c.z = 0;
+      c.stair = on;
+      c.pose.floor = c.z;
+      c.pose.level = c.level;
+    }
   }
 
   /** Arcade's physics, stepped by us at the movement rate (not once per rendered frame). */
@@ -1948,7 +2206,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
         r.bed.users.delete(a.id);
         // Get up on the open side.
         const want = { x: a.x, y: a.y + 0.9 * M };
-        const p = this.ensureNav().nearestFree(want, 2.5 * M) ?? want;
+        const p = this.ensureNav(a.level).nearestFree(want, 2.5 * M) ?? want;
         a.obj.setPosition(p.x, p.y);
         a.body.reset(p.x, p.y);
         a.body.checkCollision.none = false;
@@ -1968,7 +2226,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     const done = new Set<Character>();
     for (const c of people) {
       if (done.has(c)) continue;
-      const group = this.bumpGrid.query(c.x, c.y, BODY_RADIUS * 4, this.bumpNear).filter((o) => Math.hypot(o.x - c.x, o.y - c.y) < BODY_RADIUS * 2 + 2);
+      const group = this.bumpGrid.query(c.x, c.y, BODY_RADIUS * 4, this.bumpNear).filter((o) => o.level === c.level && Math.hypot(o.x - c.x, o.y - c.y) < BODY_RADIUS * 2 + 2);
       if (group.length < 2) continue;
       const moves = separate(group.map((o) => ({ x: o.x, y: o.y, r: BODY_RADIUS, resistance: this.resistanceOf(o) })));
       group.forEach((o, i) => {
@@ -2003,6 +2261,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
 
   private pushDoors(c: Character, dt: number, time: number): void {
     for (const door of this.doors) {
+      if (door.level !== c.level) continue;
       const res = door.pushBy({ x: c.body.center.x, y: c.body.center.y, r: BODY_RADIUS }, dt, c.motor.crouched);
       const len = Math.hypot(res.pushX, res.pushY);
       if (len > 0) {
@@ -2026,7 +2285,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     const a = this.active;
     if (time - press.lastPlan < FOLLOW_REPLAN_MS) return;
     press.lastPlan = time;
-    if (a.order && a.order.goal.kind === 'point') a.order.retarget(this.ensureNav(), a.pos(), press.point);
+    if (a.order && a.order.goal.kind === 'point') a.order.retarget(this.ensureNav(a.level), a.pos(), press.point);
     else this.orderToPoint(a, press.point);
     if (a.order) a.order.following = true;
   }
@@ -2344,7 +2603,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
 
     const p = this.proj;
     for (const c of this.characters) {
-      if (!this.onScreen(c)) {
+      if (!this.onScreen(c) || !this.personShown(c)) {
         // Off screen: not drawn (whatever the level of detail), and nothing to click.
         c.view.hide();
         c.overhead.setShown(false);
@@ -2373,11 +2632,17 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     this.scenery.cull({ x0: view.x - pad, y0: view.y - pad, x1: view.right + pad, y1: view.bottom + pad });
     this.scenery.updateGround({ x0: view.x - pad, y0: view.y - pad, x1: view.right + pad, y1: view.bottom + pad });
     this.scenery.update(dt, { x: a.x, y: a.y }, this.charScreen.get(a)?.bounds ?? null);
+    const bv = this.buildingView;
+    if (bv) {
+      this.updateViewLevel();
+      bv.update(dt, a, a.level, this.charScreen.get(a)?.bounds ?? null, { x0: view.x - pad, y0: view.y - pad, x1: view.right + pad, y1: view.bottom + pad });
+    }
     // Doors and windows cut down with their wall.
     for (const door of this.doors) {
       const h = door.hingePoint();
-      door.displayHeight = this.scenery.wallHeightNear(h.x, h.y, 14);
+      door.displayHeight = bv && this.townDoors.has(door) ? bv.wallHeightNear(h.x, h.y, door.level) : this.scenery.wallHeightNear(h.x, h.y, 14);
     }
+    bv?.updateDoors(this.doors);
     for (const w of this.windows) w.cut = this.scenery.isCutNear(w.centre.x, w.centre.y, 2);
     for (const obj of this.interactables) {
       const o = this.objectGfx.get(obj)!;
@@ -2392,7 +2657,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
         const outsideFacesViewer = p.toward ? -(obj.inward.x * p.toward.x + obj.inward.y * p.toward.y) >= -0.01 : true;
         obj.outerG?.setDepth(outsideFacesViewer ? key + 0.0002 : key - 0.00004);
       } else {
-        o.g.setDepth(p.upright ? 10 + p.depth(sp.x, sp.y) / 1000 + 0.0002 : obj.name === 'door' ? 12 : 11);
+        o.g.setDepth(p.upright ? (obj instanceof Door ? bandOf(obj.level) : 10) + p.depth(sp.x, sp.y) / 1000 + 0.0002 : obj.name === 'door' ? 12 : 11);
       }
     }
     this.drawFire(time, dt);

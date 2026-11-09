@@ -101,7 +101,7 @@ export const BUTCHERS: Building = {
         { name: 'Cutting room', use: 'work: butchery, hanging', outline: box(0.2, 0.3, 4.8, 5.425), floor: 'quarry' },
       ],
       fixtures: [
-        { kind: 'stair', x: 0.3, y: 0.6, w: 0.9, d: 2.8, heading: 'n', toLevel: 1 },
+        { kind: 'stair', x: 0.3, y: 1.0, w: 0.9, d: 2.8, heading: 'n', toLevel: 1 },
         { kind: 'hearth', x: 3.7, y: 2.0, w: 1.1, d: 1.4 },
       ],
     },
@@ -120,7 +120,7 @@ export const BUTCHERS: Building = {
         { name: 'Parlour', use: 'living', outline: box(0.2, 5.075, 4.8, 9.7), floor: 'boards' },
         { name: 'Chamber', use: 'sleeping', outline: box(0.2, 0.3, 4.8, 4.925), floor: 'boards' },
       ],
-      fixtures: [{ kind: 'stairwell', x: 0.3, y: 0.6, w: 0.9, d: 2.8 }],
+      fixtures: [{ kind: 'stairwell', x: 0.3, y: 1.0, w: 0.9, d: 2.8 }],
     },
   ],
   roof: { shape: 'gable', ridge: 'ns', covering: 'tile', pitch: 50, overhang: 0.3, eaves: 5.8 },
@@ -204,7 +204,7 @@ export const GENERAL_STORE: Building = {
         { name: 'Storeroom', use: 'store', outline: box(0.2, 0.3, 5.7, 4.925), floor: 'earth' },
       ],
       fixtures: [
-        { kind: 'stair', x: 0.3, y: 0.8, w: 0.95, d: 3.0, heading: 'n', toLevel: 1 },
+        { kind: 'stair', x: 0.3, y: 1.0, w: 0.95, d: 3.0, heading: 'n', toLevel: 1 },
         { kind: 'column', x: 5.82, y: 9.82, w: 0.3, d: 0.3, material: 'ashlar' },
       ],
     },
@@ -224,7 +224,7 @@ export const GENERAL_STORE: Building = {
         { name: 'Chamber', use: 'sleeping', outline: box(0.2, 0.3, 5.7, 4.925), floor: 'boards' },
       ],
       fixtures: [
-        { kind: 'stairwell', x: 0.3, y: 0.8, w: 0.95, d: 3.0 },
+        { kind: 'stairwell', x: 0.3, y: 1.0, w: 0.95, d: 3.0 },
         { kind: 'hearth', x: 4.55, y: 1.8, w: 1.1, d: 1.4 },
       ],
     },

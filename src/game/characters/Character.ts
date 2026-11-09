@@ -108,6 +108,11 @@ export class Character implements Targetable {
   sitting = false;
   /** How high they lie when lying on something (a bed, a pallet). */
   lieHeight = 0;
+  /** Which storey they're on (0 ground, 1 the floor above…) and the height of what they stand on (world px). */
+  level = 0;
+  z = 0;
+  /** Walking up or down a stair (index into the town's stairs), or −1. */
+  stair = -1;
   /** When they last showed a need over their head (scene ms). */
   signAt = 0;
   /** Position at the previous movement step (drawing smooths between it and the current one). */

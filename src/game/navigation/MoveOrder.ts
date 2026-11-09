@@ -67,6 +67,12 @@ export class MoveOrder {
     return new MoveOrder(goal, path, pathLength(from, path) > RUN_DISTANCE, useLinks);
   }
 
+  /** Walk straight along these points (no planning), e.g. up a stair. */
+  static along(points: Point[], run = false): MoveOrder {
+    const last = points[points.length - 1];
+    return new MoveOrder({ kind: 'point', x: last.x, y: last.y }, points.map((p) => ({ x: p.x, y: p.y })), run, false);
+  }
+
   /** The link at the front of the route has been dealt with: carry on from its far side. */
   linkDone(): void {
     if (this.path[0]?.link) this.path.shift();
