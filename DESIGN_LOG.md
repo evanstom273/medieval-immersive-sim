@@ -311,6 +311,8 @@ When an item changes status, move it and add a dated note rather than silently r
 - **Setting: invented but grounded** in real medieval Europe, not one region. **For now: temperate and green** (mild wet summers, cold winters, oak woods, fields, hedges, a river). Kept open: if there's a wider world outside the town, it could have **biomes, each with towns whose building styles match**, so materials and styles should be easy to swap per region.
 - **Method: a catalogue first**, on design boards (one board per category, approved and tweaked before anything goes into the game), the same way as the character mock-ups.
 - **Variety: quality tiers (poor / ordinary / fine) and a few looks within each tier.**
+  - *2026-11-09 03:20 UTC:* **tiers describe each piece, not matched sets.** Walls, floors, roofs and furniture are independent: any wall with any floor (cheap walls with a fine floor is fine), in preset buildings and in a future build mode alike.
+- **Modular pieces join seamlessly:** walls meeting at corners or in a straight run read as one thing (one outline, texture carrying on across the join); the same for floors across a room.
 - **What the catalogue covers:**
   - **Buildings:** homes (cottage, townhouse, better-off house, manor), trade buildings (bakery, forge, mill, brewery or alehouse, workshop, barn, stable), public (church, tavern or inn, market hall or stalls, town gate and walls), outbuildings (privy, woodshed, pigsty, henhouse, well, fences, gates).
   - **Building parts:** walls by material (wattle-and-daub, timber frame, stone, plank, with worn and damaged versions), floors (earth with rushes, planks, flagstones, tiles), roofs (thatch, shingles, clay tiles, slate), doors, windows (shutters, rare glazing), stairs and ladders.
