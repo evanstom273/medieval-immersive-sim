@@ -1,15 +1,16 @@
 import type { ReactNode } from 'react';
 import type { HudState, MemoryRow, RelationshipRow, RosterMember } from '../game/bridge';
-import { MOCK_PROFILES, NEEDS, SKILLS, type SkillGroup } from '../game/characters/mockProfiles';
+import { MOCK_PROFILES, SKILLS, type SkillGroup } from '../game/characters/mockProfiles';
+import { moodWord, NEED_DEFS } from '../game/life/needs';
 import { opinionWord } from '../game/social/relationships';
 
 /**
  * Character panel contents for whoever you're controlling (shown by the
  * bottom bar): tabs for Needs, Skills, People and Self.
  *
- * Needs, skills, age, occupation, traits and background are PLACEHOLDER mock
- * data (see mockProfiles.ts). Health, temperament, activity, relationships
- * and memories are live.
+ * Skills, occupation, traits and background are PLACEHOLDER mock data (see
+ * mockProfiles.ts). Needs, mood, health, temperament, activity,
+ * relationships and memories are live.
  */
 
 export type Tab = 'needs' | 'skills' | 'people' | 'character';
@@ -26,31 +27,50 @@ const SENSE_ICON: Record<MemoryRow['sense'], string> = { sight: '👁', sound: '
 
 // ------------------------------------------------------------------ tabs
 
-export function NeedsTab({ id }: { id: string }) {
-  const p = MOCK_PROFILES[id];
-  if (!p) return null;
-  const avg = NEEDS.reduce((s, n) => s + p.needs[n.id], 0) / NEEDS.length;
-  const mood = avg > 0.75 ? ['Content', '😌'] : avg > 0.55 ? ['Fine', '🙂'] : avg > 0.4 ? ['Uneasy', '😕'] : ['Miserable', '😣'];
+export function NeedsTab({ member: m }: { member: RosterMember }) {
+  const life = m.life;
+  if (!life) return null;
+  const mood = moodWord(m.mood);
   return (
     <div>
-      <Placeholder />
       <div className="mb-3 flex items-center gap-2 rounded-xl bg-white/5 px-3 py-2 text-sm">
-        <span className="text-xl">{mood[1]}</span>
+        <span className="text-xl">{mood.icon}</span>
         <span>
-          Mood: <span className="font-semibold">{mood[0]}</span>
+          Mood: <span className="font-semibold">{mood.label}</span>
+        </span>
+        <span className="ml-auto text-xs text-white/45 tabular-nums">
+          {m.mood > 0 ? '+' : ''}
+          {m.mood}
         </span>
       </div>
       <div className="grid grid-cols-2 gap-x-4 gap-y-3">
-        {NEEDS.map((n) => (
+        {NEED_DEFS.map((n) => (
           <div key={n.id}>
             <div className="mb-1 flex items-center gap-1.5 text-xs">
               <span>{n.icon}</span>
               <span className="text-white/80">{n.label}</span>
             </div>
-            <Bar value={p.needs[n.id]} />
+            <Bar value={life.needs[n.id] ?? 0} />
           </div>
         ))}
       </div>
+      {life.moodlets.length > 0 && (
+        <div className="mt-4">
+          <SectionTitle>Feelings</SectionTitle>
+          <div className="flex flex-col gap-1">
+            {life.moodlets.map((f) => (
+              <div key={f.label} className="flex items-center gap-2 text-xs">
+                <span className={`w-8 text-right font-semibold tabular-nums ${f.value > 0 ? 'text-emerald-300' : f.value < 0 ? 'text-rose-300' : 'text-white/50'}`}>
+                  {f.value > 0 ? '+' : ''}
+                  {f.value}
+                </span>
+                <span className="text-white/85">{f.label}</span>
+                <span className="ml-auto text-white/35 tabular-nums">{f.hoursLeft >= 1 ? `${Math.round(f.hoursLeft)} h` : `${Math.max(1, Math.round(f.hoursLeft * 60))} min`}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

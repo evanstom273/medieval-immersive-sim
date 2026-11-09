@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { PX_PER_METRE } from '../movement/tuning';
 import { circlePts, emptyBounds, flat, HIGHLIGHT, OUTLINE, prism, prismBounds, rectPts, slabPts, type Bounds } from '../view/draw';
 import type { Projection, Pt } from '../view/projection';
+import type { Offer, Offering } from './furniture';
 import { closestOnLeaf, resolveDoorContact, stepDoor, type Circle, type ContactResult, type DoorGeom, type DoorSwing } from './doorPhysics';
 
 /**
@@ -16,7 +17,9 @@ export interface InteractContext {
   /** Tell the player something (only shown when the actor is the character they control). */
   say(message: string): void;
   /** Lie down in a bed (the character you control: asks how long first). */
-  sleepIn?(bed: Bed): void;
+  sleepIn?(bed: Offering): void;
+  /** Start doing something an object offers (sitting, drinking, sleeping…). */
+  begin?(obj: Offering, offer: Offer): void;
 }
 
 /** An entry in an interaction menu. */
@@ -272,13 +275,31 @@ export class Chest implements Interactable {
  * PLACEHOLDER bed: a low frame with a mattress and pillow. Solid; whoever
  * sleeps in it lies on top. Pillow end is the -x end.
  */
-export class Bed implements Interactable {
+export class Bed implements Offering {
   readonly name = 'bed';
   static readonly HEIGHT = 0.42 * M;
+  static readonly SLEEP: Offer = { id: 'sleep', label: 'Sleep', icon: '🛏️', gains: { rest: 0.14, comfort: 0.1 }, posture: 'lie', hours: 9, untilFull: 'rest', moodlet: 'slept_bed', single: true };
   private highlighted = false;
   readonly rect: Phaser.Geom.Rectangle;
+  readonly users = new Set<string>();
+  readonly lieHeight = Bed.HEIGHT;
   /** Who's in it, if anyone. */
-  occupant: string | null = null;
+  get occupant(): string | null {
+    for (const u of this.users) return u;
+    return null;
+  }
+  set occupant(id: string | null) {
+    this.users.clear();
+    if (id) this.users.add(id);
+  }
+
+  offers(): readonly Offer[] {
+    return [Bed.SLEEP];
+  }
+
+  spotFor(): { x: number; y: number; facing: number } {
+    return this.sleepSpot();
+  }
 
   constructor(scene: Phaser.Scene, staticGroup: Phaser.Physics.Arcade.StaticGroup, x: number, y: number, w: number, h: number) {
     this.rect = new Phaser.Geom.Rectangle(x - w / 2, y - h / 2, w, h);
@@ -327,7 +348,10 @@ export class Bed implements Interactable {
   }
 
   perform(optionId: string, ctx: InteractContext): void {
-    if (optionId === 'sleep' && !this.occupant) ctx.sleepIn?.(this);
+    if (optionId !== 'sleep' || this.occupant) return;
+    // The person you're playing is asked how long; anyone else just goes to bed.
+    if (ctx.sleepIn) ctx.sleepIn(this);
+    else ctx.begin?.(this, Bed.SLEEP);
   }
 
   setHighlight(on: boolean): void {

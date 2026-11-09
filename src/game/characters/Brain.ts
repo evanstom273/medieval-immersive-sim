@@ -11,11 +11,17 @@ import { between, weighted, type Rng } from '../util/rng';
 import type { Hand } from '../world/CharacterView';
 import { canFight } from './body';
 import type { Interactable } from '../world/interactables';
+import { isOffering, type Offer, type Offering } from '../world/furniture';
+import { scoreOffer, WORTH_DOING } from '../life/choose';
+import type { MoodletId } from '../life/needs';
 import type { Character } from './Character';
 
 /**
- * Autonomy for characters the player isn't controlling. PLACEHOLDER behaviour:
- * idle wandering, using nearby objects, warming by the fire, chatting; reacting
+ * Autonomy for characters the player isn't controlling (and the one you are,
+ * on free will). Needs first: objects nearby advertise what they do for which
+ * needs, and the most useful one wins (see life/choose.ts), with a simple
+ * routine (bed at night, meals at mealtimes). Otherwise PLACEHOLDER behaviour:
+ * idle wandering, using nearby objects, chatting (more when lonely); reacting
  * to being attacked by temperament (fight / flee / yield); and reacting to what
  * they perceive: fights they see or hear, noises, blood, someone close behind,
  * bad smells.
@@ -44,6 +50,12 @@ export interface World {
   noise(kind: NoiseKind, x: number, y: number, source?: Character): void;
   /** Record something visible for anyone who sees it. */
   witness(kind: MemoryKind, x: number, y: number, actor?: Character, target?: Character): void;
+  /** Hour of the day on the game clock (0–24). */
+  readonly hour: number;
+  /** Stop what they're doing with an object (getting up). */
+  stopDoing(c: Character): void;
+  /** Feel something (a moodlet). */
+  feel(c: Character, id: MoodletId): void;
 }
 
 const M = PX_PER_METRE;
@@ -110,6 +122,7 @@ export class Brain {
   }
 
   private startFight(c: Character, foe: Character, w: World): void {
+    w.stopDoing(c);
     c.cancelOrder();
     c.social = null;
     c.mode = 'combat';
@@ -118,6 +131,7 @@ export class Brain {
   }
 
   private startFlee(c: Character, from: Character, w: World): void {
+    w.stopDoing(c);
     c.cancelOrder();
     c.social = null;
     this.state = { kind: 'flee', from, lastPlan: 0, calmAt: w.now + 4000, closeSince: null };
@@ -191,6 +205,8 @@ export class Brain {
     const likeVictim = r.opinion(c.id, victim.id);
     const likeAttacker = r.opinion(c.id, attacker.id);
     const side = likeVictim - likeAttacker;
+    w.stopDoing(c);
+    w.feel(c, 'saw_fight');
     c.cancelOrder();
     c.social = null;
 
@@ -250,6 +266,7 @@ export class Brain {
       return;
     }
     if (c.heldUntil > w.now) return;
+    if (c.doing) return;
 
     const s = this.state;
     switch (s.kind) {
@@ -380,6 +397,7 @@ export class Brain {
   private decide(c: Character, w: World): void {
     c.mode = 'explore';
     c.lockTarget = null;
+    if (this.seeToNeeds(c, w)) return;
     const partners = w.characters.filter(
       (o) =>
         o !== c &&
@@ -397,8 +415,9 @@ export class Brain {
       ['wander', 5],
       ['idle', 2.5],
       ['use', objects.length ? 1 : 0],
-      ['chat', partners.length ? 2 : 0],
-      ['warm', draws.length ? 1.5 : 0],
+      // Lonely people seek company; cold ones drift towards a fire.
+      ['chat', partners.length ? 1 + 6 * (1 - c.needs.company) : 0],
+      ['warm', draws.length ? 2 * (1 - c.needs.warmth) : 0],
     ] as const);
 
     switch (choice) {
@@ -438,6 +457,26 @@ export class Brain {
     // Stand about, glancing around.
     c.look = { angle: w.rng() * Math.PI * 2, until: w.now + 1200 };
     this.state = { kind: 'idle', until: w.now + between(w.rng, 2000, 5000) };
+  }
+
+  /** Go and do whatever nearby would help their needs most, if anything's worth it. */
+  private seeToNeeds(c: Character, w: World): boolean {
+    let best: { obj: Offering; offer: Offer; score: number } | null = null;
+    for (const obj of w.interactables) {
+      if (!isOffering(obj)) continue;
+      const p = obj.closestPoint(c.x, c.y);
+      const d = Math.hypot(p.x - c.x, p.y - c.y) / M;
+      if (d > 60) continue;
+      for (const offer of obj.offers()) {
+        if (offer.single && obj.users.size > 0 && !obj.users.has(c.id)) continue;
+        const score = scoreOffer(offer, c.needs, d, w.hour) * (0.85 + 0.3 * w.rng());
+        if (!best || score > best.score) best = { obj, offer, score };
+      }
+    }
+    if (!best || best.score < WORTH_DOING) return false;
+    w.useObject(c, best.obj, best.offer.id);
+    this.state = { kind: 'busy' };
+    return true;
   }
 
   private pickSocial(opinion: number, rng: Rng): SocialActionId {

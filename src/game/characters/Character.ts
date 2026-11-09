@@ -7,6 +7,8 @@ import type { Point } from '../navigation/NavGrid';
 import type { SocialActionId } from '../social/socialActions';
 import { CharacterView, createPose, type BodyState, type CharacterPose, type Palette } from '../world/CharacterView';
 import { defaultBody, type Body } from './body';
+import { freshNeeds, type Moodlet, type Needs } from '../life/needs';
+import type { Offer, Offering } from '../world/furniture';
 import { Brain } from './Brain';
 import { Overhead } from './Overhead';
 
@@ -31,6 +33,14 @@ export interface CharacterDef {
   x: number;
   y: number;
   facing?: number;
+}
+
+/** Doing something an object offers (or, with no object, sleeping where they dropped). */
+export interface Doing {
+  obj: Offering | null;
+  offer: Offer;
+  /** Game seconds when it's done at the latest. */
+  endS: number;
 }
 
 export interface SocialState {
@@ -89,6 +99,17 @@ export class Character implements Targetable {
   linkBusy = false;
   /** Asleep: eyes shut (sees nothing), lying down. */
   asleep = false;
+  /** Needs (1 = met, 0 = desperate) and the feelings things left behind. */
+  needs: Needs = freshNeeds();
+  moodlets: Moodlet[] = [];
+  /** What they're doing with an object right now, if anything. */
+  doing: Doing | null = null;
+  /** Sitting down (drawn lower). */
+  sitting = false;
+  /** How high they lie when lying on something (a bed, a pallet). */
+  lieHeight = 0;
+  /** When they last showed a need over their head (scene ms). */
+  signAt = 0;
   /** Position at the previous movement step (drawing smooths between it and the current one). */
   prevX: number;
   prevY: number;

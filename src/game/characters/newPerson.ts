@@ -53,7 +53,6 @@ export function playerDef(p: NewPerson, x: number, y: number): CharacterDef {
     occupation: 'Newcomer',
     traits: [],
     background: 'Made in character creation. (PLACEHOLDER: no background, traits or skills chosen yet.)',
-    needs: { hunger: 0.7, rest: 0.7, warmth: 0.7, comfort: 0.7, hygiene: 0.7, social: 0.7 },
     skills: Object.fromEntries(SKILLS.map((s) => [s.id, { level: 1, progress: 0 }])),
   };
   MOCK_PROFILES[PLAYER_ID] = profile;

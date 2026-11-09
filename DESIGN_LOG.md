@@ -292,6 +292,18 @@ When an item changes status, move it and add a dated note rather than silently r
 - *2026-11-09 01:52 UTC:* **Who can be played: everyone from Child (4) up.** Babies (0) and toddlers (1–3) stay part of the family but can't be played; they become playable on turning 4. In game: they can't be chosen in character creation (age starts at 4) or taken control of ("Too young to play").
 - **Who can fight whom** (decided earlier, recorded now): young adults, adults and elders can attack each other. **Teenagers can only attack teenagers.** **Children (preteens and younger) can't attack or be attacked at all**, not even by other children. This is a hard rule.
 
+### Life simulation
+*2026-11-09 02:26 UTC*
+
+- **The design lives in the "Life Simulation Design" doc** (needs, mood and traits, daily life, objects and items, food chain, skills, work and money, homes, health and death, children, relationships, leisure, drink, animals, crime). Decided there through Q&A; built in slices, not all at once.
+- **Slice 1, built:** needs and objects.
+  - **Nine needs** (hunger, thirst, rest, warmth, hygiene, bladder, company, comfort, fun) on the game clock. Each has its own effects (tired = slower, hungry or exhausted = conversations go worse) and feeds mood alongside **moodlets** ("Slept in a bed", "Saw a fight", "Wet myself"…). Live in the Needs tab with mood and feelings; signs over people's heads (🥱, 💧, 🥶…).
+  - **Neglect bites:** thirst, hunger and cold cost health (at nothing, they collapse; death itself isn't built yet). Exhausted people fall asleep where they stand. Hold it too long and there's an accident.
+  - **Objects offer actions** and say which needs they help: bed and straw pallet (sleep), bench (sit), hearth and the cooking fire (warm yourself), well (drink, wash), privy, larder (eat), ale barrel. The house is furnished with these, plus a table, and a privy outside.
+  - **NPCs see to their needs first**, choosing the most useful action nearby, with a simple routine (bed at night, meals around 7, 12 and 18). Otherwise they wander and chat (more when lonely). **NPCs now sleep.**
+  - **Free will:** leave the person you control alone for 15 seconds and they look after themselves; any input takes back control.
+  - PLACEHOLDERS: every number (drain rates, gains, thresholds, moodlet values, mood formula); the larder's endless food (real food comes with items); warmth from season, time, indoors and fires only (no weather or clothing yet), with the year assumed to start in spring; no traits weighting choices yet; the furniture's plain-box art and layout.
+
 ---
 
 ## Undecided

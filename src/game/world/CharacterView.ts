@@ -59,6 +59,8 @@ export interface CharacterPose {
   lift: number;
   /** Lying down asleep (drawn like lying out cold, but in colour). */
   asleep: boolean;
+  /** Sitting down (drawn lower). */
+  sitting: boolean;
 }
 
 export function createPose(): CharacterPose {
@@ -74,6 +76,7 @@ export function createPose(): CharacterPose {
     controlled: false,
     lift: 0,
     asleep: false,
+    sitting: false,
   };
 }
 
@@ -339,8 +342,8 @@ export class CharacterView {
     const { k, flip } = canonical(kRaw);
     const vi = viewIndex(k);
     const v = b.views[vi];
-    const lowered = !lying && (pose.crouched || pose.state === 'yielded');
-    const squash = lowered ? 0.82 : 1;
+    const lowered = !lying && (pose.crouched || pose.state === 'yielded' || pose.sitting);
+    const squash = pose.sitting ? 0.74 : lowered ? 0.82 : 1;
 
     // Lying (asleep or out cold): the front view with the eyes shut.
     this.figure.setFrame(b.frames[lying ? 10 : vi]);

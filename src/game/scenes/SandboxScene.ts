@@ -43,7 +43,9 @@ import { REACTION_ICON, SOCIAL_ACTIONS, describeSocial, resolveSocial, socialAct
 import { between, createRng, type Rng } from '../util/rng';
 import { handOffset, PUNCH_EXTEND, PUNCH_TOTAL, type Hand, type ViewResult } from '../world/CharacterView';
 import { Bed, Chest, Door, Sign, Window, type InteractContext, type Interactable, type MenuOption } from '../world/interactables';
-import { formatDate, formatDuration, formatTime, GameClock, DAWN_HOUR } from '../time/clock';
+import { formatDate, formatDuration, formatTime, GameClock, DAWN_HOUR, DAYS_PER_YEAR } from '../time/clock';
+import { Furniture, type Offer, type Offering } from '../world/furniture';
+import { addMoodlet, ambientWarmth, moodOf, MOODLETS, expireMoodlets, healthLossPerHour, inDanger, irritability, pressingSign, speedFactor, tickNeeds, type MoodletId, type TickInput } from '../life/needs';
 import { interruptsRest, MAX_REST_HOURS, REST_SPEED, type RestKind, type RestStimulus } from '../time/rest';
 
 /**
@@ -78,6 +80,12 @@ const YIELD_MS = 25000;
 const KO_MS = 15000;
 
 const KEY = Phaser.Input.Keyboard.KeyCodes;
+/** Sleeping where you dropped (or on the bare floor). */
+const FLOOR_SLEEP: Offer = { id: 'sleep', label: 'Sleep', icon: '💤', gains: { rest: 0.1 }, posture: 'lie', hours: 9, untilFull: 'rest', moodlet: 'slept_rough' };
+/** Leave the person you control alone this long (real ms) and they start looking after themselves. */
+const FREE_WILL_AFTER_MS = 15000;
+/** How long between someone showing a pressing need over their head (sim ms, roughly). */
+const SIGN_EVERY_MS = 30000;
 /** Shared "not moving" values (read-only), so standing still allocates nothing. */
 const ZERO: Point = Object.freeze({ x: 0, y: 0 }) as Point;
 const NO_MOVE = Object.freeze({ move: ZERO, run: false }) as { move: Point; run: boolean };
@@ -197,9 +205,21 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
   readonly clock = new GameClock();
   private clockTimer = 0;
   /** The active character waiting or sleeping (TES-style), time sped up until `untilS` (game seconds). */
-  private rest: { kind: RestKind; untilS: number; bed: Bed | null } | null = null;
+  private rest: { kind: RestKind; untilS: number; bed: Offering | null; startS: number } | null = null;
+  /** Indoors (warmer) and things that give off heat. */
+  protected indoorAreas: Phaser.Geom.Rectangle[] = [];
+  protected heatSources: Point[] = [];
+  /** Game seconds at the last needs tick. */
+  private lifeS = -1;
+  /** Last time (real ms) the player touched anything. */
+  private lastInputAt = performance.now();
+  /** The person you control is currently looking after themselves (free will). */
+  private freeWilling = false;
+  private readonly scaledMove = { x: 0, y: 0 };
+  /** Reused for every person's needs tick (no garbage). */
+  private readonly needsTick: TickInput = { dt: 0, asleep: false, ambientWarmth: 0, gains: null };
   /** The "how long?" dialog is open (the game is paused behind it). */
-  private restAsk: { kind: RestKind; bed: Bed | null; wasPaused: boolean } | null = null;
+  private restAsk: { kind: RestKind; bed: Offering | null; wasPaused: boolean } | null = null;
   /** How many times normal speed the last frame actually ran. */
   private speedNow = 1;
 
@@ -216,6 +236,10 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
 
   get now(): number {
     return this.simMs;
+  }
+
+  get hour(): number {
+    return this.clock.hourOfDay;
   }
 
   // ================================================================ setup
@@ -339,6 +363,27 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     // PLACEHOLDER bed in the north-west corner, pillow against the west wall.
     const bed = new Bed(this, solids, hx + t + 2 + 64, hy + t + 4 + 32, 128, 64);
     this.interactables.push(bed);
+    // Furnishing (PLACEHOLDER layout): a second bed, straw pallets, a hearth, a table with benches,
+    // a larder (placeholder food until there are items), an ale barrel. Outside: a privy.
+    const bed2 = new Bed(this, solids, hx + 222, hy + t + 4 + 32, 128, 64);
+    this.interactables.push(bed2);
+    const furnish = (kind: Furniture['kind'], x: number, y: number, w: number, h: number, solid = true) => {
+      const f = new Furniture(this, solid ? solids : null, kind, x, y, w, h);
+      this.interactables.push(f);
+      return f;
+    };
+    furnish('pallet', hx + hw - 80, hy + 200, 100, 50);
+    furnish('pallet', hx + hw - 80, hy + 268, 100, 50);
+    furnish('hearth', hx + 150, hy + 230, 64, 64);
+    this.heatSources.push({ x: hx + 150, y: hy + 230 });
+    this.pendingSmells.push({ id: 'hearth', kind: 'smoke', x: hx + 150, y: hy + 230, radius: 5 * M, pleasant: true });
+    furnish('table', hx + 300, hy + 214, 120, 56);
+    furnish('bench', hx + 300, hy + 166, 120, 22);
+    furnish('bench', hx + 300, hy + 262, 120, 22);
+    furnish('larder', hx + t + 30, hy + hh - t - 60, 44, 70);
+    furnish('barrel', hx + hw - t - 30, hy + hh - t - 34, 40, 40);
+    furnish('privy', hx + hw + 110, hy + hh + 20, 64, 64);
+    this.indoorAreas.push(new Phaser.Geom.Rectangle(hx, hy, hw, hh));
     const sign = new Sign(this, solids, 920, 760, 'Movement test. Mind the dummy.');
     this.interactables.push(door, chest, sign);
 
@@ -355,6 +400,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     (well.body as Phaser.Physics.Arcade.StaticBody).setCircle(44);
     solids.add(well);
     this.scenery.add({ kind: 'well', x: 512, y: 1280, r: 44, height: 0.8 * M });
+    this.interactables.push(new Furniture(this, null, 'well', 512, 1280, 88, 88));
 
     // Cooking fire: people catch the smell of smoke and drift over to warm themselves.
     const fx = 760;
@@ -365,6 +411,8 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     solids.add(fireBody);
     this.fire = { x: fx, y: fy, g: this.add.graphics(), smokeTimer: 0 };
     this.pendingSmells.push({ id: 'fire', kind: 'smoke', x: fx, y: fy, radius: 10 * M, pleasant: true });
+    this.interactables.push(new Furniture(this, null, 'fire', fx, fy, 48, 48));
+    this.heatSources.push({ x: fx, y: fy });
 
     // Midden: a dung heap. People wrinkle their noses and don't hang about.
     const mx = 1980;
@@ -382,6 +430,180 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     (dummyBody.body as Phaser.Physics.Arcade.StaticBody).setCircle(14);
     solids.add(dummyBody);
     this.dummy = { name: 'the training dummy', x: dx, y: dy, radius: 14, g: this.add.graphics(), hits: 0, flashUntil: 0, wobble: { x: 0, y: 0 }, isTargetable: () => true };
+  }
+
+  // ================================================================ life: needs, doing things, free will
+
+  /** Feel something (a moodlet). */
+  feel(c: Character, id: MoodletId): void {
+    addMoodlet(c.moodlets, id, this.clock.seconds);
+  }
+
+  /** Stop whatever they're doing with an object (getting up if lying or sitting). */
+  stopDoing(c: Character): void {
+    this.endDoing(c, false);
+  }
+
+  /** Start doing something an object offers (they're already beside it). Returns false if it's taken. */
+  private beginDoing(c: Character, obj: Offering | null, offer: Offer): boolean {
+    if (offer.single && obj && [...obj.users].some((u) => u !== c.id)) {
+      if (c.controlled) this.say(`Someone's using the ${obj.name}.`);
+      return false;
+    }
+    this.endDoing(c, false);
+    c.cancelOrder();
+    c.social = null;
+    c.mode = 'explore';
+    c.lockTarget = null;
+    if (c.motor.crouched) c.motor = toggleCrouch(c.motor);
+    const spot = obj ? obj.spotFor(offer, { x: c.x, y: c.y }) : { x: c.x, y: c.y, facing: c.motor.facing };
+    if (obj && (offer.single || offer.posture !== 'stand')) obj.users.add(c.id);
+    c.doing = { obj, offer, endS: this.clock.seconds + offer.hours * 3600 };
+    if (offer.posture === 'lie') {
+      c.asleep = true;
+      c.lieHeight = obj ? obj.lieHeight : 0;
+      if (obj) this.placeAt(c, spot);
+      else c.motor = { ...c.motor, vx: 0, vy: 0 };
+    } else if (offer.posture === 'sit') {
+      c.sitting = true;
+      this.placeAt(c, spot);
+    } else {
+      c.motor = { ...c.motor, vx: 0, vy: 0, facing: spot.facing };
+    }
+    return true;
+  }
+
+  /** Put someone exactly somewhere (on a bed or bench, so they don't collide with it). */
+  private placeAt(c: Character, spot: { x: number; y: number; facing: number }): void {
+    c.body.checkCollision.none = true;
+    c.obj.setPosition(spot.x, spot.y);
+    c.body.reset(spot.x, spot.y);
+    c.prevX = spot.x;
+    c.prevY = spot.y;
+    c.motor = { ...c.motor, vx: 0, vy: 0, facing: spot.facing };
+  }
+
+  private endDoing(c: Character, completed: boolean): void {
+    const d = c.doing;
+    if (!d) return;
+    c.doing = null;
+    d.obj?.users.delete(c.id);
+    const slept = d.offer.posture === 'lie' ? this.clock.seconds - (d.endS - d.offer.hours * 3600) : 0;
+    if (d.offer.posture === 'lie') {
+      c.asleep = false;
+      c.lieHeight = 0;
+      c.pose.lift = 0;
+    }
+    if (d.offer.posture === 'sit') c.sitting = false;
+    if (d.obj && d.offer.posture !== 'stand') {
+      // Get up on the open side.
+      const want = { x: c.x, y: c.y + 0.9 * M };
+      const p = this.ensureNav().nearestFree(want, 2.5 * M) ?? want;
+      c.obj.setPosition(p.x, p.y);
+      c.body.reset(p.x, p.y);
+      c.prevX = p.x;
+      c.prevY = p.y;
+      c.body.checkCollision.none = false;
+    }
+    // Sleep leaves a feeling after a proper rest (3 hours or more), even if cut short.
+    const felt = d.offer.posture === 'lie' ? slept >= 3 * 3600 : completed;
+    if (felt && d.offer.moodlet) this.feel(c, d.offer.moodlet);
+  }
+
+  private isIndoors(x: number, y: number): boolean {
+    for (const r of this.indoorAreas) if (r.contains(x, y)) return true;
+    return false;
+  }
+
+  /**
+   * Needs on the game clock (every world tick): drain them, apply what people are doing, finish what's
+   * done, and let neglect bite: health lost to thirst, hunger and cold, collapsing from exhaustion,
+   * accidents. Also the occasional sign over someone's head for a pressing need.
+   */
+  private lifeTick(): void {
+    const nowS = this.clock.seconds;
+    if (this.lifeS < 0 || nowS < this.lifeS) {
+      this.lifeS = nowS;
+      return;
+    }
+    const dt = nowS - this.lifeS;
+    if (dt <= 0) return;
+    this.lifeS = nowS;
+    const hour = this.clock.hourOfDay;
+    const dayOfYear = Math.floor(nowS / 86400) % DAYS_PER_YEAR;
+    const resting = this.rest;
+    for (const c of this.characters) {
+      const sleepingRest = c === this.active && resting?.kind === 'sleep';
+      const gains = c.doing ? c.doing.offer.gains : sleepingRest ? (sleepOffer(resting!.bed)?.gains ?? FLOOR_SLEEP.gains) : null;
+      let heat = Infinity;
+      for (const h of this.heatSources) heat = Math.min(heat, Math.hypot(h.x - c.x, h.y - c.y));
+      const t = this.needsTick;
+      t.dt = dt;
+      t.asleep = c.asleep;
+      t.ambientWarmth = ambientWarmth(dayOfYear, hour, this.isIndoors(c.x, c.y), heat / M);
+      t.gains = gains;
+      tickNeeds(c.needs, t);
+      expireMoodlets(c.moodlets, nowS);
+
+      const d = c.doing;
+      if (d && (nowS >= d.endS || (d.offer.untilFull && c.needs[d.offer.untilFull] >= 0.995))) this.endDoing(c, true);
+
+      if (c.status === 'ko') continue;
+      // Neglect: thirst, hunger and cold cost health; at nothing, they collapse.
+      const loss = healthLossPerHour(c.needs) * (dt / 3600);
+      if (loss > 0) {
+        c.health -= loss;
+        if (c.health <= 0) {
+          const why = c.needs.warmth <= 0.001 ? 'the cold' : c.needs.thirst <= 0.001 ? 'thirst' : 'hunger';
+          if (c === this.active) this.endRest();
+          this.endDoing(c, false);
+          this.announce(`${c.name} collapses from ${why}.`, [c], true);
+          this.knockOut(c, null);
+          continue;
+        }
+      }
+      // Exhausted: they drop where they stand.
+      if (c.needs.rest <= 0 && !c.asleep && c.status === 'ok') {
+        this.announce(`${c.name} collapses with exhaustion and falls asleep.`, [c], true);
+        this.beginDoing(c, null, FLOOR_SLEEP);
+      }
+      // Held it too long.
+      if (c.needs.bladder <= 0) {
+        c.needs.bladder = 1;
+        c.needs.hygiene = Math.max(0, c.needs.hygiene - 0.4);
+        this.feel(c, 'accident');
+        this.announce(c === this.active ? "You couldn't hold it any longer." : `${c.name} has had an accident.`, [c]);
+      }
+      // A visible sign of whatever they need most.
+      if (!c.asleep && this.now >= c.signAt && this.fullDetail(c)) {
+        const sign = pressingSign(c.needs);
+        if (sign) c.overhead.emote(sign, this.now, 1600);
+        c.signAt = this.now + SIGN_EVERY_MS * (0.6 + this.rng() * 0.8);
+      }
+    }
+  }
+
+  private noteInput(): void {
+    this.lastInputAt = performance.now();
+    if (!this.freeWilling) return;
+    // Back in charge: they drop what free will had them doing.
+    this.freeWilling = false;
+    const a = this.active;
+    a.cancelOrder();
+    a.social = null;
+    if (!a.asleep) this.endDoing(a, false);
+    a.brain.reset(this.now);
+  }
+
+  /** Left alone long enough, the person you control looks after themselves. */
+  private updateFreeWill(): void {
+    if (this.freeWilling) return;
+    const a = this.active;
+    if (this.rest || this.switching || this.restAsk || a.status !== 'ok' || a.mode === 'combat') return;
+    if (performance.now() - this.lastInputAt < FREE_WILL_AFTER_MS) return;
+    if (a.order || a.social || a.climb) return;
+    this.freeWilling = true;
+    a.brain.reset(this.now);
   }
 
   // ================================================================ view
@@ -453,6 +675,17 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
       if (e.key === 'F3' || e.key === 'F4') e.preventDefault();
     };
     window.addEventListener('keydown', guard);
+    // Any input at all: you're back in charge (ends free will). Capture phase, so it runs before the
+    // game acts on the same click or key.
+    const touched = () => this.noteInput();
+    window.addEventListener('keydown', touched, true);
+    window.addEventListener('pointerdown', touched, true);
+    window.addEventListener('wheel', touched, true);
+    this.events.once(Phaser.Scenes.Events.DESTROY, () => {
+      window.removeEventListener('keydown', touched, true);
+      window.removeEventListener('pointerdown', touched, true);
+      window.removeEventListener('wheel', touched, true);
+    });
     this.game.events.on(Phaser.Core.Events.BLUR, () => kb.resetKeys());
 
     // While typing in a text box (e.g. the perf scene's spawn count), the game lets go of the
@@ -723,6 +956,10 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
       this.endRest(this.rest.kind === 'sleep' ? 'You get up.' : 'You stop waiting.');
       return;
     }
+    if (this.active.doing) {
+      this.endDoing(this.active, false);
+      return;
+    }
     const a = this.active;
     a.cancelOrder();
     a.social = null;
@@ -805,6 +1042,8 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
   private switchTo(id: string): void {
     const next = this.characters.find((c) => c.id === id);
     if (!next) return;
+    this.freeWilling = false;
+    this.lastInputAt = performance.now();
     if (!isPlayableAge(next.age)) {
       this.say(`${next.name} is too young to play.`);
       return;
@@ -1151,7 +1390,12 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     const doIt = () => {
       const p = obj.closestPoint(c.x, c.y);
       c.look = { angle: c.angleTo(p), until: this.now + 500 };
-      const ctx: InteractContext = { say: (msg) => c.controlled && this.say(msg), sleepIn: (bed) => c === this.active && this.askRest('sleep', bed) };
+      const ctx: InteractContext = {
+        say: (msg) => c.controlled && this.say(msg),
+        // You're asked how long to sleep; anyone else (you too, on free will) just goes to bed.
+        sleepIn: c === this.active && !this.freeWilling ? (bed) => this.askRest('sleep', bed) : undefined,
+        begin: (o, offer) => this.beginDoing(c, o, offer),
+      };
       obj.perform(optionId, ctx);
       this.navDirty = true; // e.g. a door got locked
     };
@@ -1440,6 +1684,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     const hasManual = (manual.x !== 0 || manual.y !== 0) && !a.climb;
     if (hasManual && a.status !== 'ko') {
       this.endRest();
+      this.endDoing(a, false);
       a.cancelOrder();
       a.social = null;
       this.press = null;
@@ -1468,11 +1713,13 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
   private worldTick(dt: number): void {
     profiler.tick();
     profiler.begin('brains');
+    this.updateFreeWill();
     for (const c of this.characters) {
       if (c.status === 'ko' || c.climb || c.asleep) continue;
-      if (!c.controlled) c.brain.update(c, this);
+      if (!c.controlled || (c === this.active && this.freeWilling)) c.brain.update(c, this);
       this.updateSocial(c);
     }
+    this.lifeTick();
     profiler.end('brains');
     this.updateFootsteps(dt);
     profiler.begin('senses');
@@ -1538,6 +1785,20 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
       }
       const held = !c.controlled && c.heldUntil > this.now;
       if (held || c.status === 'yielded') move = ZERO;
+      // Busy with something (sitting, drinking, asleep): stay put, unless they've decided to go somewhere.
+      if (c.doing) {
+        if (c.order) this.endDoing(c, false);
+        else move = ZERO;
+      }
+      // Tired or frozen people move slower.
+      if (move !== ZERO) {
+        const f = speedFactor(c.needs);
+        if (f < 1) {
+          this.scaledMove.x = move.x * f;
+          this.scaledMove.y = move.y * f;
+          move = this.scaledMove;
+        }
+      }
 
       if (c.lockTarget && (!c.lockTarget.isTargetable() || Math.hypot(c.lockTarget.x - c.x, c.lockTarget.y - c.y) > LOCK_BREAK)) {
         c.lockTarget = null;
@@ -1619,7 +1880,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
   // ---------------------------------------------------------------- waiting & sleeping
 
   /** Open the TES-style "how long?" dialog (pauses the game behind it). */
-  private askRest(kind: RestKind, bed: Bed | null, explain = false): void {
+  private askRest(kind: RestKind, bed: Offering | null, explain = false): void {
     const a = this.active;
     if (this.rest || this.restAsk) return;
     if (a.status !== 'ok' || a.mode === 'combat' || this.switching) {
@@ -1644,27 +1905,26 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     if (hours && hours > 0) this.startRest(ask.kind, Math.min(MAX_REST_HOURS, hours), ask.bed);
   }
 
-  private startRest(kind: RestKind, hours: number, bed: Bed | null): void {
+  private startRest(kind: RestKind, hours: number, bed: Offering | null): void {
     const a = this.active;
     if (a.status !== 'ok') return;
     a.cancelOrder();
     a.social = null;
     a.lockTarget = null;
     this.press = null;
-    this.rest = { kind, untilS: this.clock.seconds + hours * 3600, bed };
+    this.endDoing(a, false);
+    this.rest = { kind, untilS: this.clock.seconds + hours * 3600, bed, startS: this.clock.seconds };
     // Anyone on their way over for a chat thinks better of it.
     for (const o of this.characters) if (o !== a && o.social?.target === a) o.social = null;
     const span = `${hours} hour${hours === 1 ? '' : 's'}`;
     if (kind === 'sleep') {
       a.asleep = true;
+      a.lieHeight = bed ? bed.lieHeight : 0;
       if (a.motor.crouched) a.motor = toggleCrouch(a.motor);
-      if (bed) {
-        bed.occupant = a.id;
-        const spot = bed.sleepSpot();
-        a.body.checkCollision.none = true;
-        a.obj.setPosition(spot.x, spot.y);
-        a.body.reset(spot.x, spot.y);
-        a.motor = { ...a.motor, vx: 0, vy: 0, facing: spot.facing };
+      const offer = sleepOffer(bed);
+      if (bed && offer) {
+        bed.users.add(a.id);
+        this.placeAt(a, bed.spotFor(offer, { x: a.x, y: a.y }));
       }
       this.say(`You lie down to sleep for ${span}.`);
     } else this.say(`You settle in to wait for ${span}.`);
@@ -1680,13 +1940,15 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     const a = this.active;
     if (a.asleep) {
       a.asleep = false;
+      a.lieHeight = 0;
       a.pose.lift = 0;
+      // A proper night (3 hours or more) leaves a feeling about where they slept.
+      if (r.kind === 'sleep' && this.clock.seconds - r.startS >= 3 * 3600) this.feel(a, sleepOffer(r.bed)?.moodlet ?? 'slept_rough');
       if (r.bed) {
-        r.bed.occupant = null;
-        // Get up on the open side of the bed.
-        const b = r.bed.rect;
-        const want = { x: b.centerX, y: b.bottom + BODY_RADIUS + 6 };
-        const p = this.ensureNav().nearestFree(want, 2 * M) ?? want;
+        r.bed.users.delete(a.id);
+        // Get up on the open side.
+        const want = { x: a.x, y: a.y + 0.9 * M };
+        const p = this.ensureNav().nearestFree(want, 2.5 * M) ?? want;
         a.obj.setPosition(p.x, p.y);
         a.body.reset(p.x, p.y);
         a.body.checkCollision.none = false;
@@ -1733,7 +1995,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
   private updateStatus(c: Character, dt: number): void {
     const now = this.now;
     if (c.status !== 'ok' && now >= c.statusUntil) this.standUp(c);
-    if (c.status === 'ok' && c.health < MAX_HEALTH && now - c.lastHitAt > 8000) {
+    if (c.status === 'ok' && c.health < MAX_HEALTH && now - c.lastHitAt > 8000 && !inDanger(c.needs)) {
       c.health = Math.min(MAX_HEALTH, c.health + 2 * dt);
     }
     c.pose.hitFlash = Math.max(0, c.pose.hitFlash - dt);
@@ -1825,7 +2087,16 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     if (!t.controlled) t.look = { angle: t.angleTo(c), until: now + 200 };
     if (!s.resolved && now - s.phaseAt >= SOCIAL_RESOLVE_MS) {
       s.resolved = true;
-      const outcome = resolveSocial(s.action, this.relationships.opinion(t.id, c.id), t.temperament, this.rng);
+      // Hungry or exhausted people take things worse.
+      const outcome = resolveSocial(s.action, this.relationships.opinion(t.id, c.id) - irritability(t.needs), t.temperament, this.rng);
+      const warm = outcome.reaction === 'pleased' || outcome.reaction === 'amused';
+      const sour = outcome.reaction === 'annoyed' || outcome.reaction === 'hurt' || outcome.reaction === 'angry';
+      for (const p of [c, t]) {
+        p.needs.company = Math.min(1, p.needs.company + (sour ? 0.08 : 0.22));
+        if (warm) p.needs.fun = Math.min(1, p.needs.fun + 0.06);
+        if (warm) this.feel(p, 'nice_chat');
+        if (sour) this.feel(p, 'argument');
+      }
       this.relationships.adjust(t.id, c.id, outcome.targetDelta);
       this.relationships.adjust(c.id, t.id, outcome.actorDelta);
       t.overhead.emote(REACTION_ICON[outcome.reaction], now, 1500);
@@ -1841,7 +2112,8 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     pose.crouched = c.motor.crouched;
     pose.state = c.status;
     pose.asleep = c.asleep;
-    if (c.asleep) pose.lift = Bed.HEIGHT;
+    pose.sitting = c.sitting;
+    if (c.asleep) pose.lift = c.lieHeight;
     pose.controlled = c.controlled;
     pose.highlighted = c === this.hoveredChar;
     const speed = speedOf(c.motor);
@@ -1887,6 +2159,8 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     const away = attacker.angleTo(victim);
     victim.knock = { x: Math.cos(away) * 160, y: Math.sin(away) * 160 };
     victim.social = null;
+    this.endDoing(victim, false);
+    this.feel(victim, 'was_hit');
     if (victim.heldUntil !== Infinity) victim.heldUntil = 0;
     if (victim === this.active && this.rest) this.endRest(interruptsRest(this.rest.kind, { kind: 'hit', by: attacker.name }) ?? undefined);
     this.relationships.adjust(victim.id, attacker.id, HIT_OPINION);
@@ -1936,6 +2210,8 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
       return c.social.phase === 'approach' ? `Going to ${verb} with ${c.social.target.name}` : `${socialAction(c.social.action).label} · ${c.social.target.name}`;
     }
     if (!c.controlled && c.heldUntil > this.now) return 'Talking';
+    if (c.doing) return c.doing.offer.posture === 'lie' ? 'Asleep' : c.doing.obj ? `${c.doing.offer.label} · ${c.doing.obj.name}` : c.doing.offer.label;
+    if (c === this.active && this.freeWilling) return `On their own: ${c.brain.activity || (c.order ? 'walking' : 'idling')}`;
     const b = c.brain.activity;
     if (!c.controlled && b) return b;
     if (c.mode === 'combat') return c.lockTarget ? `Squaring up to ${c.lockTarget.name}` : 'Ready to fight';
@@ -2004,7 +2280,17 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
         temperamentNote: TEMPERAMENTS[c.temperament].description,
         activity: this.activityOf(c),
         // Only something you're controlling can be cancelled from the action chip.
-        busy: c.controlled && !!(this.rest || c.order || c.social || c.mode === 'combat' || c.lockTarget),
+        busy: c.controlled && !!(this.rest || c.order || c.social || c.mode === 'combat' || c.lockTarget || c.doing),
+        mood: moodOf(c.needs, c.moodlets),
+        life:
+          c === a
+            ? {
+                needs: { ...c.needs },
+                moodlets: c.moodlets
+                  .map((m) => ({ label: MOODLETS[m.id].label, value: MOODLETS[m.id].value, hoursLeft: Math.max(0, (m.until - this.clock.seconds) / 3600) }))
+                  .sort((x, y) => Math.abs(y.value) - Math.abs(x.value)),
+              }
+            : undefined,
       }));
       rosterChannel.emit({
         members,
@@ -2066,9 +2352,10 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
         continue;
       }
       c.overhead.setShown(true);
-      const bed = c.asleep ? (this.interactables.find((o) => o instanceof Bed && o.occupant === c.id) as Bed | undefined) : undefined;
-      if (bed) {
-        const sp = bed.sortPoint(p);
+      const lyingOn = c.asleep && c.lieHeight > 0 ? (c.doing?.obj ?? (c === this.active ? this.rest?.bed : null) ?? null) : null;
+      const onTop = lyingOn ?? (c.sitting ? c.doing?.obj ?? null : null);
+      if (onTop) {
+        const sp = onTop.sortPoint(p);
         c.view.depthOverride = 10 + p.depth(sp.x, sp.y) / 1000 + 0.0004;
       } else c.view.depthOverride = null;
       const dp = this.drawPos(c);
@@ -2434,4 +2721,9 @@ function fightBar(attackerAge: number, targetAge: number): string | null {
   if (fightGroup(attackerAge) === 'child') return "Children can't fight";
   if (fightGroup(targetAge) === 'child') return "They're a child";
   return fightGroup(attackerAge) === 'teen' ? 'Only other teenagers' : "They're a teenager";
+}
+
+/** What lying down on something gives (a bed, a straw pallet), if it offers that. */
+function sleepOffer(o: Offering | null): Offer | null {
+  return o?.offers().find((f) => f.posture === 'lie') ?? null;
 }

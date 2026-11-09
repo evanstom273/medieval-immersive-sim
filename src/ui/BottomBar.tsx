@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { clockChannel, hudChannel, pausedChannel, rosterChannel, uiCommands, wallsChannel, type ClockState, type HudState, type RosterMember, type RosterState } from '../game/bridge';
-import { MOCK_PROFILES, NEEDS } from '../game/characters/mockProfiles';
+import { MOCK_PROFILES } from '../game/characters/mockProfiles';
+import { moodWord } from '../game/life/needs';
 import { inputSourceChannel, type InputSource } from '../game/input/touchInput';
 import { Avatar, CharacterTab, NeedsTab, PeopleTab, SkillsTab, TABS, type Tab } from './characterPanel';
 
@@ -12,7 +13,7 @@ import { Avatar, CharacterTab, NeedsTab, PeopleTab, SkillsTab, TABS, type Tab } 
  * - right: the character panel (Needs / Skills / People / Self) above its tabs.
  * Plus a "current action" chip at the top left.
  *
- * Mood, needs and skills are PLACEHOLDERS. The clock is real (day length is a placeholder).
+ * Skills are PLACEHOLDERS; needs and mood are live. The clock is real (day length is a placeholder).
  * No speed buttons: direct control has no fast-forward (only waiting / sleeping speed time up).
  */
 export function BottomBar() {
@@ -56,7 +57,7 @@ export function BottomBar() {
         </button>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
-        {tab === 'needs' && <NeedsTab id={active.id} />}
+        {tab === 'needs' && <NeedsTab member={active} />}
         {tab === 'skills' && <SkillsTab id={active.id} />}
         {tab === 'people' && <PeopleTab rows={roster.relationships} members={roster.members} memories={roster.memories} />}
         {tab === 'character' && <CharacterTab member={active} hud={hud} memories={roster.memories} />}
@@ -129,16 +130,6 @@ export function BottomBar() {
 
 // ------------------------------------------------------------------ pieces
 
-/** Placeholder mood from the mock needs. */
-function moodOf(id: string): { label: string; icon: string } {
-  const p = MOCK_PROFILES[id];
-  if (!p) return { label: 'Fine', icon: '🙂' };
-  const avg = NEEDS.reduce((s, n) => s + p.needs[n.id], 0) / NEEDS.length;
-  if (avg > 0.75) return { label: 'Content', icon: '😌' };
-  if (avg > 0.55) return { label: 'Fine', icon: '🙂' };
-  if (avg > 0.4) return { label: 'Uneasy', icon: '😕' };
-  return { label: 'Miserable', icon: '😣' };
-}
 
 function healthColour(f: number): string {
   return f > 0.5 ? '#7fd47f' : f > 0.25 ? '#e8c25a' : '#e0574a';
@@ -197,14 +188,14 @@ function MiniPortrait({ member: m, size, keyHint }: { member: RosterMember; size
 }
 
 function Identity({ member: m }: { member: RosterMember }) {
-  const mood = moodOf(m.id);
+  const mood = moodWord(m.mood);
   const p = MOCK_PROFILES[m.id];
   return (
     <div className="order-3 flex min-w-0 flex-col pb-1 text-white">
       <div className="text-lg leading-tight font-semibold">{m.name}</div>
       {p && <div className="text-[11px] text-white/45">{p.occupation}</div>}
       <div className="mt-1 flex items-center gap-1.5">
-        <span className="rounded-full bg-white/10 px-2 py-0.5 text-xs" title="Placeholder: mood isn't simulated yet">
+        <span className="rounded-full bg-white/10 px-2 py-0.5 text-xs" title={`Mood ${m.mood > 0 ? '+' : ''}${m.mood}`}>
           {mood.icon} {mood.label}
         </span>
         <span className="text-[11px] text-white/45 tabular-nums">♥ {m.health}</span>
@@ -261,7 +252,7 @@ function TimeControls({ paused, touch, resting }: { paused: boolean; touch: bool
 /** Top-left: what you're doing right now, with a cancel button. */
 function CurrentAction({ member: m, touch }: { member: RosterMember; touch: boolean }) {
   if (!m.busy) return null;
-  const icon = /^Sleeping/.test(m.activity) ? '💤' : /^Waiting/.test(m.activity) ? '⏳' : m.mode === 'combat' ? '⚔️' : /^(Going to|Chat|Joke|Compliment|Embrace|Argue|Insult)/.test(m.activity) ? '💬' : /Running|Walking/.test(m.activity) ? '👣' : '•';
+  const icon = /^(Sleeping|Asleep)/.test(m.activity) ? '💤' : /^On their own/.test(m.activity) ? '🧭' : /^Waiting/.test(m.activity) ? '⏳' : m.mode === 'combat' ? '⚔️' : /^(Going to|Chat|Joke|Compliment|Embrace|Argue|Insult)/.test(m.activity) ? '💬' : /Running|Walking/.test(m.activity) ? '👣' : '•';
   return (
     <div
       className="pointer-events-auto fixed z-20 flex items-center gap-2 rounded-full bg-neutral-900/80 py-1 pr-1 pl-3 text-sm text-white shadow-lg ring-1 ring-white/10 backdrop-blur-sm"

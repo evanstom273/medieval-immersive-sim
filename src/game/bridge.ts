@@ -54,6 +54,16 @@ export interface RosterMember {
   activity: string;
   /** Doing something that can be cancelled (walking somewhere, talking, squaring up). */
   busy: boolean;
+  /** Mood, −100..100 (everyone). */
+  mood: number;
+  /** Needs and feelings: only for the person you control. */
+  life?: LifeInfo;
+}
+
+export interface LifeInfo {
+  /** 1 = met, 0 = desperate, by need id (see life/needs.ts). */
+  needs: Record<string, number>;
+  moodlets: { label: string; value: number; hoursLeft: number }[];
 }
 
 export interface RelationshipRow {
