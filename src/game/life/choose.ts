@@ -42,7 +42,29 @@ export function scoreOffer(offer: Offer, needs: Needs, distanceM: number, hour: 
   }
   // How it'll feel counts too (a bed beats straw), but only once there's a reason to go at all.
   const feeling = relief > 0.01 && offer.moodlet ? MOODLETS[offer.moodlet].value * 0.004 : 0;
-  return ((relief + feeling) * routineFactor(offer, needs, hour)) / (1 + distanceM / 25);
+  // Bedtime: at night people go to bed because it's night, not only when they're tired.
+  const bedtime = offer.posture === 'lie' && isNight(hour) ? 0.08 : 0;
+  return ((relief + feeling) * routineFactor(offer, needs, hour) + bedtime) / (1 + distanceM / 25);
+}
+
+/**
+ * Is this action finished because the need it serves is full? Not sleep at night: people sleep the
+ * night through (getting up from about 5), not the moment they're rested.
+ */
+export function doneWhenFull(offer: Offer, hour: number): boolean {
+  if (!offer.untilFull) return false;
+  if (offer.posture === 'lie' && isNight(hour)) return false;
+  return true;
+}
+
+/** Bed-time hours: nobody gets up, or stops sleeping, in the middle of the night. */
+export function isNight(hour: number): boolean {
+  return hour >= 21 || hour < 5;
+}
+
+/** Asleep at night: they sleep on till morning whatever the clock said when they lay down. */
+export function sleepsOn(offer: Offer, hour: number): boolean {
+  return offer.posture === 'lie' && offer.id === 'sleep' && isNight(hour);
 }
 
 /** Below this, nothing's worth going out of their way for: they do something ordinary instead. */

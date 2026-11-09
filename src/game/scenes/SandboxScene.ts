@@ -52,7 +52,9 @@ import { between, createRng, type Rng } from '../util/rng';
 import { handOffset, PUNCH_EXTEND, PUNCH_TOTAL, type Hand, type ViewResult } from '../world/CharacterView';
 import { Bed, Chest, Door, Sign, Window, type InteractContext, type Interactable, type MenuOption } from '../world/interactables';
 import { formatDate, formatDuration, formatFullDate, formatShortDate, formatTime, GameClock, DAWN_HOUR, DAYS_PER_YEAR } from '../time/clock';
-import { Furniture, type Offer, type Offering } from '../world/furniture';
+import { Furniture, isOffering, type Offer, type Offering } from '../world/furniture';
+import { doneWhenFull, sleepsOn } from '../life/choose';
+import { liveThrough, liveTogether, type AbstractLife, type Source } from '../life/abstractDay';
 import { addMoodlet, ambientWarmth, moodOf, MOODLETS, expireMoodlets, healthLossPerHour, inDanger, irritability, pressingSign, speedFactor, tickNeeds, type MoodletId, type TickInput } from '../life/needs';
 import { interruptsRest, MAX_REST_HOURS, REST_SPEED, type RestKind, type RestStimulus } from '../time/rest';
 import type { Plot } from '../buildings/format';
@@ -310,6 +312,11 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
   private noticeId = 0;
   private overviewLast = 1;
   private overviewDaysRun = 0;
+  /** While the years run: the village's people living their days unwatched (needs, moods, health, what they're doing). */
+  private lives = new Map<string, AbstractLife>();
+  private livedTo = 0;
+  /** The village's things that offer actions, for those unwatched days (by id). */
+  private sources: { list: Source[]; byId: Map<string, Offering> } | null = null;
 
   constructor(key = 'sandbox') {
     super(key);
@@ -716,6 +723,8 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     const dt = nowS - this.lifeS;
     if (dt <= 0) return;
     this.lifeS = nowS;
+    // A jump in time (e.g. back from the overview's years): not hours of neglect all at once.
+    if (dt > 6 * 3600) return;
     const hour = this.clock.hourOfDay;
     const dayOfYear = Math.floor(nowS / 86400) % DAYS_PER_YEAR;
     const resting = this.rest;
@@ -733,7 +742,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
       expireMoodlets(c.moodlets, nowS);
 
       const d = c.doing;
-      if (d && (nowS >= d.endS || (d.offer.untilFull && c.needs[d.offer.untilFull] >= 0.995))) this.endDoing(c, true);
+      if (d && !sleepsOn(d.offer, hour) && (nowS >= d.endS || (doneWhenFull(d.offer, hour) && c.needs[d.offer.untilFull!] >= 0.995))) this.endDoing(c, true);
 
       if (c.status === 'ko') continue;
       // Neglect: thirst, hunger and cold cost health; at nothing, they collapse.
@@ -1471,6 +1480,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
       this.overviewSpeed = 0;
       const me = pop.get(this.active.id);
       if (me && alive(me)) this.youId = me.id;
+      this.handOverLives();
     }
     if (Phaser.Input.Keyboard.JustDown(k.pause)) this.overviewSpeed = this.overviewSpeed ? 0 : this.overviewLast;
     (['one', 'two', 'three', 'four', 'five'] as const).forEach((key, i) => {
@@ -1491,6 +1501,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
           this.lifeEvents(pop.day(this.today(), this.youId));
         }
       }
+      this.liveUnwatched();
     }
     this.emitUi(dt);
   }
@@ -1612,7 +1623,13 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     this.overviewRan = false;
     this.overviewSpeed = 0;
     overviewChannel.emit(null);
-    if (this.overviewDaysRun === 0) return;
+    // Everyone's lived up to now: the live needs clock carries on from here.
+    this.liveUnwatched();
+    this.lifeS = this.clock.seconds;
+    if (this.overviewDaysRun === 0) {
+      this.handBackLives();
+      return;
+    }
     this.overviewDaysRun = 0;
     const pop = this.population!;
     const today = this.today();
@@ -1631,16 +1648,89 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
         const age = Math.floor(ageOf(p, today));
         if (age !== Math.floor(c.figure.age)) c.setFigure(this, { ...c.figure, age });
       }
-      this.endDoing(c, false);
       c.cancelOrder();
       c.social = null;
-      c.asleep = false;
-      c.lieHeight = 0;
-      c.needs = freshNeeds();
-      c.moodlets = [];
       c.brain.reset(this.now + this.rng() * 1500);
     }
+    this.handBackLives();
     this.say(`It is ${formatDate(this.clock.parts())}.`);
+  }
+
+  /** The village's things that offer actions (beds, the larder, the well…), for living unwatched. */
+  private villageSources(): { list: Source[]; byId: Map<string, Offering> } {
+    if (this.sources) return this.sources;
+    const list: Source[] = [];
+    const byId = new Map<string, Offering>();
+    this.interactables.forEach((obj, i) => {
+      if (!isOffering(obj) || (obj instanceof Door && obj.level !== 0)) return;
+      const id = `o${i}`;
+      byId.set(id, obj);
+      list.push({ id, offers: obj.offers(), warm: obj instanceof Furniture && (obj.kind === 'hearth' || obj.kind === 'fire') });
+    });
+    this.sources = { list, byId };
+    return this.sources;
+  }
+
+  /** Going out to the overview: everyone in the village carries on living, unwatched, from exactly where they are. */
+  private handOverLives(): void {
+    const { byId } = this.villageSources();
+    const idOf = (o: Offering | null) => (o ? [...byId].find(([, v]) => v === o)?.[0] ?? null : null);
+    this.lives.clear();
+    for (const c of this.characters) {
+      this.lives.set(c.id, {
+        needs: { ...c.needs },
+        moodlets: c.moodlets.map((m) => ({ ...m })),
+        health: c.health,
+        maxHealth: MAX_HEALTH,
+        doing: c.doing ? { offer: c.doing.offer, source: idOf(c.doing.obj), endS: c.doing.endS } : null,
+        collapsed: c.status === 'ko',
+      });
+    }
+    this.livedTo = this.clock.seconds;
+  }
+
+  /** Live everyone's days up to now (the same needs, things and routine as the live game). */
+  private liveUnwatched(): void {
+    const now = this.clock.seconds;
+    if (now <= this.livedTo) return;
+    const pop = this.population;
+    const home = pop ? pop.living().filter((p) => p.home === 0).length : this.characters.length;
+    const opts = { sources: this.villageSources().list, company: home > 1, dayOfYear: (s: number) => Math.floor(s / 86400) % DAYS_PER_YEAR, rng: this.rng };
+    const living = [...this.lives].filter(([id]) => !pop?.get(id) || alive(pop.get(id)!)).map(([, l]) => l);
+    liveTogether(living, this.livedTo, now, opts);
+    this.livedTo = now;
+  }
+
+  /**
+   * Back in: everyone is as the time they lived left them: their needs, moods and health, and whatever
+   * they're in the middle of (asleep in bed at night, at the larder at noon…). Someone who joined the
+   * village while you were away (born, or married in) has lived a day here already.
+   */
+  private handBackLives(): void {
+    const { byId } = this.villageSources();
+    const day = this.clock.seconds - 86400;
+    for (const c of this.characters) {
+      let life = this.lives.get(c.id);
+      if (!life) {
+        life = { needs: freshNeeds(), moodlets: [], health: MAX_HEALTH, maxHealth: MAX_HEALTH, doing: null, collapsed: false };
+        liveThrough(life, day, this.clock.seconds, { sources: this.villageSources().list, company: true, dayOfYear: (s) => Math.floor(s / 86400) % DAYS_PER_YEAR });
+      }
+      this.endDoing(c, false);
+      c.asleep = false;
+      c.lieHeight = 0;
+      c.needs = life.needs;
+      c.moodlets = life.moodlets;
+      c.health = life.health;
+      if (life.collapsed && c.status !== 'ko') this.knockOut(c, null);
+      else if (!life.collapsed && c.status === 'ko') this.standUp(c);
+      // Carry on with what they're doing (the person you control too, except sleeping: you wake to take over).
+      const d = life.doing;
+      const obj = d?.source ? byId.get(d.source) ?? null : null;
+      if (d && !life.collapsed && (obj || !d.source) && !(c === this.active && d.offer.posture === 'lie')) {
+        if (this.beginDoing(c, obj, d.offer) && c.doing) c.doing.endS = d.endS;
+      }
+    }
+    this.lives.clear();
   }
 
   /** Take control of someone at once (no camera flight): the heir, after a long skip. */
