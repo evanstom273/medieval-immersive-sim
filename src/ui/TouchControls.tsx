@@ -20,7 +20,7 @@ const TAP_MAX_MS = 300;
 /** Held still this long without dragging: becomes hold-to-follow. */
 const HOLD_MS = 250;
 
-type Role = 'pending' | 'stick' | 'pinch' | 'follow' | 'ignored';
+type Role = 'pending' | 'stick' | 'pinch' | 'follow' | 'pan' | 'ignored';
 
 interface Track {
   id: number;
@@ -48,11 +48,13 @@ export function TouchControls() {
   // Kept in a ref too so the stick handler sees it without re-rendering.
   const crouched = useRef(false);
   const sprinting = useRef(false);
+  const onMap = useRef(false);
   useEffect(
     () =>
       hudChannel.on((h) => {
         crouched.current = h.crouched;
         sprinting.current = h.sprinting;
+        onMap.current = h.onMap;
         setHud(h);
       }),
     [],
@@ -145,7 +147,14 @@ export function TouchControls() {
       const stickTaken = [...tracks.current.values()].some((o) => o.role === 'stick');
       clearTimeout(t.holdTimer);
       const followTaken = [...tracks.current.values()].some((o) => o.role === 'follow');
-      if (t.startX < width / 2 && !stickTaken) {
+      if (onMap.current) {
+        // Zoomed out on the map: dragging moves the map.
+        t.role = 'pan';
+        send({ kind: 'pan', dx: t.x - t.startX, dy: t.y - t.startY });
+        t.startX = t.x;
+        t.startY = t.y;
+        return;
+      } else if (t.startX < width / 2 && !stickTaken) {
         t.role = 'stick';
         stickOrigin.current = { x: t.startX, y: t.startY };
         showStick(true);
@@ -158,6 +167,13 @@ export function TouchControls() {
 
     if (t.role === 'follow') {
       send({ kind: 'hold', x: t.x, y: t.y });
+      return;
+    }
+
+    if (t.role === 'pan') {
+      send({ kind: 'pan', dx: t.x - t.startX, dy: t.y - t.startY });
+      t.startX = t.x;
+      t.startY = t.y;
       return;
     }
 

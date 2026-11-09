@@ -68,8 +68,6 @@ export function villageSvg(features: MapFeature[], wM: number, hM: number): { sv
 </defs>
 <rect width="${W.toFixed(0)}" height="${H.toFixed(0)}" fill="${PAPER}"/>
 <rect width="${W.toFixed(0)}" height="${H.toFixed(0)}" filter="url(#paper)"/>
-<rect width="${W.toFixed(0)}" height="${H.toFixed(0)}" fill="url(#age)"/>
-<rect x="30" y="30" width="${(W - 60).toFixed(0)}" height="${(H - 60).toFixed(0)}" fill="none" stroke="${INK}" stroke-width="22"/>
 ${parts.join('\n')}
 </svg>`;
   return { svg, w: W, h: H };

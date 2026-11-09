@@ -60,6 +60,7 @@ import { pack, sheetSvg, type Placed } from '../art/atlas';
 import { BuildingView, bandOf, type ViewLevel } from '../view/BuildingView';
 import type { MapFeature, MapState, Waypoint } from '../map/worldMap';
 import type { MapScene, Token } from './MapScene';
+import { generateRegion } from '../map/region';
 
 /**
  * PLACEHOLDER sandbox: a field, a small house with a door, a chest, a sign,
@@ -277,6 +278,12 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
   /** Who household orders go to in the village view (by id); defaults to the person you control. */
   private selectedId: string | null = null;
   private floorsHidden = false;
+  /** Dragging the map: how far it's been panned from the person you control (ground px). */
+  private mapPan = { x: 0, y: 0 };
+  /** A mouse press on the map, waiting to see if it's a tap or a drag. */
+  private mapDrag: { x: number; y: number; moved: boolean } | null = null;
+  /** The world camera's bounds (dropped while on the map, which reaches past the village). */
+  private worldBounds: Phaser.Geom.Rectangle | null = null;
 
   constructor(key = 'sandbox') {
     super(key);
@@ -389,6 +396,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     const mapScene = this.scene.get('map') as MapScene;
     mapScene.events.once(Phaser.Scenes.Events.CREATE, () => {
       this.mapScene = mapScene;
+      mapScene.buildRegion(generateRegion({ villageW: this.size.w / M, villageH: this.size.h / M }));
       mapScene.buildPlan(this.mapFeatures, this.size.w / M, this.size.h / M);
     });
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.scene.stop('map'));
@@ -864,6 +872,22 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     this.game.canvas.addEventListener('pointerdown', onCanvasDown);
     this.input.mouse?.disableContextMenu();
     this.input.on(Phaser.Input.Events.POINTER_DOWN, (p: Phaser.Input.Pointer) => this.onPointerDown(p));
+    this.input.on(Phaser.Input.Events.POINTER_MOVE, (p: Phaser.Input.Pointer) => {
+      const d = this.mapDrag;
+      if (!d || p.wasTouch) return;
+      if (!d.moved && Math.hypot(p.x - d.x, p.y - d.y) < 6 * this.dpr()) return;
+      if (!d.moved) d.moved = true;
+      this.panMap((p.x - d.x) / this.dpr(), (p.y - d.y) / this.dpr());
+      d.x = p.x;
+      d.y = p.y;
+    });
+    this.input.on(Phaser.Input.Events.POINTER_UP, (p: Phaser.Input.Pointer) => {
+      const d = this.mapDrag;
+      this.mapDrag = null;
+      if (!d || d.moved || p.wasTouch) return;
+      const world = p.positionToCamera(this.cameras.main) as Phaser.Math.Vector2;
+      this.pressAt(world.x, world.y, false, false);
+    });
 
     const canvas = this.game.canvas;
     const onWheel = (e: WheelEvent) => {
@@ -909,6 +933,11 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
       return;
     }
     if (!p.leftButtonDown()) return;
+    if (this.rig.villageMix > 0.5) {
+      // On the map: a tap acts on release; a drag pans.
+      this.mapDrag = { x: p.x, y: p.y, moved: false };
+      return;
+    }
     const world = p.positionToCamera(this.cameras.main) as Phaser.Math.Vector2;
     this.pressAt(world.x, world.y, true, false);
   }
@@ -939,8 +968,12 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
       case 'punch':
         this.punch(a, c.hand);
         break;
+      case 'pan':
+        this.panMap(c.dx, c.dy);
+        break;
       case 'tap':
       case 'press': {
+        if (c.kind === 'press' && this.rig.villageMix > 0.5) break;
         if (a.mode === 'combat' || a.status === 'ko') return;
         const w = this.cssToWorld(c.x, c.y);
         this.pressAt(w.x, w.y, c.kind === 'press', true);
@@ -1262,7 +1295,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
 
   /** How fast time runs for where you're looking: faster as you zoom out ("gentle": village 2×). */
   private viewSpeed(): number {
-    return this.rig.villageMix > 0.5 ? 2 : 1;
+    return this.rig.layer === 'region' ? 8 : this.rig.villageMix > 0.5 ? 2 : 1;
   }
 
   /** The token under a camera-space point in the village view, if any. */
@@ -1315,6 +1348,13 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     else this.say(`${c.name} can't find a way there.`);
   }
 
+  /** Drag the map by this many CSS px. */
+  private panMap(dx: number, dy: number): void {
+    const z = this.cameras.main.zoom / this.dpr();
+    this.mapPan.x -= dx / z;
+    this.mapPan.y -= dy / z / 0.72;
+  }
+
   /** Everyone as a portrait token for the village plan. */
   private tokens(): Token[] {
     const sel = this.selectedId ?? this.active.id;
@@ -1346,7 +1386,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
       if (onMap) floorChannel.emit(null);
       else if (this.buildingView) this.setViewLevel(this.viewLevel);
     }
-    this.mapScene?.sync(cam, mix, mix > 0.001 ? this.tokens() : [], this.dpr() / cam.zoom);
+    this.mapScene?.sync(cam, mix, mix > 0.001 ? this.tokens() : [], this.dpr() / cam.zoom, this.rig.span);
   }
 
   /** The sprint button. Sprinting stands you up out of a sneak. */
@@ -2812,6 +2852,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
         gait: a.motor.gait,
         crouched: a.motor.crouched,
         sprinting: this.sprintOn,
+        onMap: this.rig.villageMix > 0.5,
         speed: speedOf(a.motor) / M,
         span: this.rig.span,
         locked: a.lockTarget !== null,
@@ -2965,7 +3006,22 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     this.drawSensesOverlay(time);
     this.drawCollisionView();
 
-    const focus = switchFocus ?? this.followFocus(a, dt);
+    // On the map, drags pan away from the person you control; coming back in, the view drifts back to them.
+    const onMap = this.rig.villageMix > 0.5;
+    if (!onMap) {
+      const k = Math.exp(-6 * dt);
+      this.mapPan.x *= k;
+      this.mapPan.y *= k;
+    }
+    if (onMap && cam.useBounds) {
+      this.worldBounds = cam.getBounds();
+      cam.removeBounds();
+    } else if (!onMap && !cam.useBounds && this.worldBounds) {
+      const b = this.worldBounds;
+      cam.setBounds(b.x, b.y, b.width, b.height);
+    }
+    const follow = switchFocus ?? this.followFocus(a, dt);
+    const focus = { x: follow.x + this.mapPan.x, y: follow.y + this.mapPan.y };
     const s = p.toScreen(focus.x, focus.y, p.upright ? 0.8 * M : 0);
     cam.centerOn(s.x, s.y);
   }

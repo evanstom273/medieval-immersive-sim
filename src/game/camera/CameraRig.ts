@@ -41,7 +41,7 @@ export const DEFAULT_CAMERA_CONFIG: CameraRigConfig = {
     { layer: 'region', minSpan: 260, maxSpan: 4000 },
     { layer: 'overview', minSpan: 4000, maxSpan: 40000 },
   ],
-  enabledLayers: ['direct', 'village'],
+  enabledLayers: ['direct', 'village', 'region'],
   initialSpan: 8,
   smoothing: 14,
 };

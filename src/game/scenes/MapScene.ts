@@ -1,6 +1,9 @@
 import Phaser from 'phaser';
+import { crossfade } from '../camera/CameraRig';
 import { villageSvg } from '../map/villageSvg';
 import type { MapFeature } from '../map/worldMap';
+import type { Region } from '../map/region';
+import { RegionLayer } from '../map/RegionLayer';
 
 /**
  * The map layers of the zoom, drawn over the live world by their own scene (so the world can fade out
@@ -38,6 +41,7 @@ interface TokenView {
 
 export class MapScene extends Phaser.Scene {
   private plan: Phaser.GameObjects.Image | null = null;
+  private region: RegionLayer | null = null;
   private tokens = new Map<string, TokenView>();
   private ready = false;
   private alpha = 0;
@@ -50,6 +54,11 @@ export class MapScene extends Phaser.Scene {
     this.cameras.main.setBackgroundColor('rgba(0,0,0,0)');
     this.cameras.main.transparent = true;
     this.ready = true;
+  }
+
+  /** The region around the village, drawn under the village plan. */
+  buildRegion(region: Region): void {
+    this.region = new RegionLayer(this, region);
   }
 
   /** Bake and lay down the village plan (once the sandbox has built its world). */
@@ -71,7 +80,7 @@ export class MapScene extends Phaser.Scene {
    * Follow the world's camera, fade in as it fades out, and place everyone's tokens (a fixed size on
    * screen, whatever the zoom). `screenScale` is device px per CSS px divided by the zoom.
    */
-  sync(cam: Phaser.Cameras.Scene2D.Camera, alpha: number, tokens: Token[], screenScale: number): void {
+  sync(cam: Phaser.Cameras.Scene2D.Camera, alpha: number, tokens: Token[], screenScale: number, span: number): void {
     if (!this.ready) return;
     const c = this.cameras.main;
     c.setZoom(cam.zoom);
@@ -79,11 +88,13 @@ export class MapScene extends Phaser.Scene {
     if (cam.useBounds) {
       const b = cam.getBounds();
       if (!c.useBounds || c.getBounds().width !== b.width || c.getBounds().height !== b.height) c.setBounds(b.x, b.y, b.width, b.height);
-    }
+    } else if (c.useBounds) c.removeBounds();
     c.setScroll(cam.scrollX, cam.scrollY);
     this.alpha = alpha;
-    const shown = alpha > 0.001;
-    this.plan?.setAlpha(alpha).setVisible(shown);
+    // Out at region scale the village plan and the household fade, leaving the region and you.
+    const local = alpha * (1 - crossfade(span, 220, 420));
+    this.plan?.setAlpha(local).setVisible(local > 0.001);
+    this.region?.update(alpha, screenScale);
     const seen = new Set<string>();
     for (const t of tokens) {
       seen.add(t.id);
@@ -97,7 +108,8 @@ export class MapScene extends Phaser.Scene {
         v.key = key;
         this.drawToken(v, t);
       }
-      v.root.setPosition(t.x, t.y * FORE).setScale(screenScale).setAlpha(alpha).setVisible(shown).setDepth(10 + t.y / 1000 + (t.selected ? 1 : 0));
+      const a = t.you ? alpha : local;
+      v.root.setPosition(t.x, t.y * FORE).setScale(screenScale).setAlpha(a).setVisible(a > 0.001).setDepth(10 + t.y / 1000 + (t.selected ? 1 : 0));
     }
     for (const [id, v] of this.tokens) {
       if (!seen.has(id)) {

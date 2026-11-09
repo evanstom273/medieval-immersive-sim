@@ -20,6 +20,8 @@ export type TouchCommand =
   | { kind: 'hold'; x: number; y: number }
   | { kind: 'release' }
   | { kind: 'zoom'; factor: number }
+  /** Drag the map (zoomed out): by this many CSS px. */
+  | { kind: 'pan'; dx: number; dy: number }
   | { kind: 'toggleCrouch' }
   | { kind: 'toggleSprint' }
   | { kind: 'toggleCombat' }

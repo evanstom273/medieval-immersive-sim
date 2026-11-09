@@ -33,6 +33,8 @@ export interface HudState {
   locked: boolean;
   /** Sprint switched on (the sprint button). */
   sprinting: boolean;
+  /** Zoomed out onto the map (village plan or region): drags pan it. */
+  onMap: boolean;
 }
 
 export const hudChannel = new Channel<HudState>();
