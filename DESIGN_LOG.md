@@ -260,6 +260,26 @@ When an item changes status, move it and add a dated note rather than silently r
 - The clock runs, using the decided calendar. The bar shows the time (☀️/🌙) and "Day · Month · Year". Month and weekday names are undecided, so they're numbers for now.
 - PLACEHOLDERS: a full day lasts **30 real minutes** (one constant, `DAY_REAL_MINUTES`; day length is still undecided), day runs 06:00–18:00, and the game starts at 07:00 on day 1. No lighting change at night yet.
 
+### Ages and life stages
+*2026-11-09 01:10 UTC*
+
+- **Everyone has a real age in whole years** (0 to about 100) and a **birthday**: the day of the year they were born on (1–336), so birthdays are spread across the year. Age goes up by one on each birthday.
+- **Life stages are labels over age ranges**, Sims-style but with a preteen stage. Deliberately modern rather than historically accurate (creative liberty):
+
+  | Stage | Ages |
+  |---|---|
+  | Baby | 0 |
+  | Toddler | 1–3 |
+  | Child | 4–9 |
+  | Preteen | 10–12 |
+  | Teenager | 13–17 |
+  | Young adult | 18–29 |
+  | Adult | 30–64 |
+  | Elder | 65+ |
+
+- *Supersedes the idea of brackets without ages* (each person spending a random 3–5 years in a bracket): the sim needs a number anyway, and real ages are simpler.
+- **Who can fight whom** (decided earlier, recorded now): young adults, adults and elders can attack each other. **Teenagers can only attack teenagers.** **Children (preteens and younger) can't attack or be attacked at all**, not even by other children. This is a hard rule.
+
 ---
 
 ## Undecided
@@ -272,6 +292,7 @@ When an item changes status, move it and add a dated note rather than silently r
 - Overall time scale of a playthrough (years? generations?).
 - *2026-11-08 22:14 UTC: the calendar is decided (see Calendar). Still open: real-time length of a day, speeds, and how the clocks of the two views relate.*
 - *Note:* the two-layer presentation largely addresses the conflict between real-time play and life-scale simulation, but the specifics remain open.
+- *2026-11-09 01:10 UTC:* generational play (skipping years and generations) happens in the zoomed-out view, so a game year can stay a full 336-day year; direct control doesn't need to squash a lifetime.
 
 ### Line extinction and player continuity
 *2026-11-08 18:52 UTC*
