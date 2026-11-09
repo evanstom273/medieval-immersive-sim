@@ -368,6 +368,14 @@ When an item changes status, move it and add a dated note rather than silently r
 - **2026-11-09 15:27 UTC — Lyra:** the coffee house bay's front wall now stops under its own little gable (like its sides), so the gable sits on it. North–south walls show their end on every 1 m piece, so they read as solid walls down to the floor rather than floating beams (in ¾ their long sides are edge-on to the camera).
 - PLACEHOLDERS: NPCs don't use stairs; senses ignore storeys; building windows don't open; furniture other than hearths isn't in yet; art is one texel per world pixel (soft when zoomed right in).
 
+### Sprint button, a stick that stays put, waiting on the move
+*2026-11-09 17:38 UTC — Lyra*
+
+- Sprint is its own button: on touch, a **Sprint** toggle by the other action buttons; on desktop, a **Sprint** toggle in the bottom bar (holding Ctrl still sprints). It applies to walking with the stick or keys and to routes you've clicked. Sprinting stands you up out of a sneak; sneaking switches sprint off.
+- Sprint speed is **2.5× walking** (3.5 m/s against 1.4 m/s).
+- ~~The touch stick floats: pushing it to the rim sprints, and if your thumb drifts past the rim the stick follows it.~~ The stick appears where your thumb first lands and **stays put**; it only walks (a gentle push slowly, a firm one at full pace).
+- Waiting (the hourglass) no longer stops you: if you're on your way somewhere you keep walking while time runs faster. Sleeping still stops you.
+
 ## Undecided
 
 ### Time model

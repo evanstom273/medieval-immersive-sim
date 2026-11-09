@@ -28,7 +28,8 @@ export interface MovementTuning {
 export const DEFAULT_TUNING: Readonly<MovementTuning> = {
   crouchSpeed: 0.8,
   walkSpeed: 1.4,
-  sprintSpeed: 3.6,
+  // 2.5× walking (Lyra: sprint should be 2–2.5× walking, on its own button).
+  sprintSpeed: 3.5,
   acceleration: 14,
   deceleration: 18,
   turnRateExplore: 600,

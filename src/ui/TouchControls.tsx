@@ -6,7 +6,8 @@ import { inputSourceChannel, touchCommands, touchStick, type TouchCommand } from
  * Touch controls. Active on touch devices; hands back to the mouse the moment a
  * mouse is used (touchscreen laptops).
  *
- * - Drag starting on the left half: floating movement stick. Push to the rim to sprint.
+ * - Drag starting on the left half: movement stick, centred where your thumb first lands; it stays put while you
+ *   steer (it doesn't follow your thumb). It walks; the Sprint button runs.
  * - Tap: walk to the spot, or use the thing under your finger (out of combat).
  * - Press and hold (or drag on the right half): walk there and keep following your finger.
  * - Two fingers: pinch to zoom.
@@ -46,10 +47,12 @@ export function TouchControls() {
 
   // Kept in a ref too so the stick handler sees it without re-rendering.
   const crouched = useRef(false);
+  const sprinting = useRef(false);
   useEffect(
     () =>
       hudChannel.on((h) => {
         crouched.current = h.crouched;
+        sprinting.current = h.sprinting;
         setHud(h);
       }),
     [],
@@ -162,30 +165,19 @@ export function TouchControls() {
       const o = stickOrigin.current;
       let dx = t.x - o.x;
       let dy = t.y - o.y;
-      let len = Math.hypot(dx, dy);
-      // Floating stick: if the thumb drifts past the rim, drag the base along behind it.
-      if (len > STICK_RADIUS * 1.25) {
-        const pull = len - STICK_RADIUS * 1.25;
-        o.x += (dx / len) * pull;
-        o.y += (dy / len) * pull;
-        dx = t.x - o.x;
-        dy = t.y - o.y;
-        len = Math.hypot(dx, dy);
-      }
+      const len = Math.hypot(dx, dy);
       const n = Math.min(len / STICK_RADIUS, 1);
-      const sprint = len >= STICK_RADIUS * 0.95;
-      // Small deadzone, then a gentle push walks slowly and a firm one walks at full pace.
-      const walk = Math.min(1, Math.max(0, (n - 0.15) / (0.8 - 0.15)));
-      const mag = sprint ? 1 : walk;
+      // Small deadzone, then a gentle push walks slowly and a firm one at full pace (the Sprint button runs).
+      const mag = Math.min(1, Math.max(0, (n - 0.15) / (0.8 - 0.15)));
       touchStick.move = len > 0 ? { x: (dx / len) * mag, y: (dy / len) * mag } : { x: 0, y: 0 };
-      touchStick.sprint = sprint;
+      touchStick.sprint = false;
 
       const kx = (dx / (len || 1)) * Math.min(len, STICK_RADIUS);
       const ky = (dy / (len || 1)) * Math.min(len, STICK_RADIUS);
       if (base.current) base.current.style.transform = `translate(${o.x - STICK_RADIUS}px, ${o.y - STICK_RADIUS}px)`;
       if (knob.current) {
         knob.current.style.transform = `translate(${o.x + kx - 26}px, ${o.y + ky - 26}px)`;
-        knob.current.style.background = sprint && !crouched.current ? 'rgba(240, 200, 120, 0.85)' : 'rgba(255, 255, 255, 0.55)';
+        knob.current.style.background = sprinting.current && !crouched.current ? 'rgba(240, 200, 120, 0.85)' : 'rgba(255, 255, 255, 0.55)';
       }
     }
   };
@@ -247,6 +239,11 @@ export function TouchControls() {
         <Btn size={52} right={164} bottom={8} on={hud?.crouched} onPress={() => send({ kind: 'toggleCrouch' })}>
           Sneak
         </Btn>
+        {!combat && (
+          <Btn size={52} right={96} bottom={8} on={hud?.sprinting} onPress={() => send({ kind: 'toggleSprint' })}>
+            Sprint
+          </Btn>
+        )}
         <Btn size={52} right={164} bottom={92} onPress={() => send({ kind: 'talk' })}>
           Talk
         </Btn>

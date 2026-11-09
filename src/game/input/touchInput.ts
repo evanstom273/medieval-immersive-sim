@@ -9,7 +9,7 @@ import type { Hand } from '../world/CharacterView';
 export const touchStick = {
   /** Analogue direction, length 0..1 after deadzone remapping. */
   move: { x: 0, y: 0 },
-  /** Stick pushed to the rim. */
+  /** Unused: sprint is its own button now (the stick only walks). */
   sprint: false,
 };
 
@@ -21,6 +21,7 @@ export type TouchCommand =
   | { kind: 'release' }
   | { kind: 'zoom'; factor: number }
   | { kind: 'toggleCrouch' }
+  | { kind: 'toggleSprint' }
   | { kind: 'toggleCombat' }
   | { kind: 'toggleLock' }
   | { kind: 'talk' }

@@ -99,6 +99,8 @@ export function BottomBar() {
           <div className={`flex items-center self-center ${touch ? 'gap-1' : 'gap-2'}`}>
             <TimeControls paused={paused} touch={touch} resting={/^(Waiting|Sleeping)/.test(active.activity)} />
             <WallsButton touch={touch} />
+            {/* Touch has its own Sprint button by the thumb. */}
+            {!touch && <SprintButton on={!!hud?.sprinting} />}
           </div>
 
           {/* ---- right: panel tabs (panel pops up above on desktop) */}
@@ -309,6 +311,23 @@ function WallsButton({ touch }: { touch: boolean }) {
     >
       <WallIcon mode={mode} />
       {!touch && <span>{WALL_LABEL[mode]}</span>}
+    </button>
+  );
+}
+
+/** Sprint on / off (desktop; holding Ctrl sprints too). */
+function SprintButton({ on }: { on: boolean }) {
+  return (
+    <button
+      className={`flex h-11 items-center justify-center gap-1.5 rounded-full px-3 text-sm ring-1 ${on ? 'bg-white/90 text-neutral-900 ring-white' : 'bg-white/5 text-white ring-white/10 hover:bg-white/10'}`}
+      title="Sprint on / off (or hold Ctrl)"
+      onClick={(e) => {
+        uiCommands.emit({ kind: 'toggleSprint' });
+        e.currentTarget.blur();
+      }}
+    >
+      <span aria-hidden>»</span>
+      <span>Sprint</span>
     </button>
   );
 }

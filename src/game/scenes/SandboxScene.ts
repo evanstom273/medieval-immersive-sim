@@ -259,6 +259,8 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
   /** Which storey is shown, and the one the game last chose itself (entering or leaving a building, or a stair). */
   private viewLevel: ViewLevel = 'roof';
   private autoView: ViewLevel | null = null;
+  /** The sprint button is on: the person you control runs (walking with the stick or keys, and on routes). */
+  private sprintOn = false;
 
   constructor(key = 'sandbox') {
     super(key);
@@ -886,6 +888,10 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
         break;
       case 'toggleCrouch':
         a.motor = toggleCrouch(a.motor);
+        if (a.motor.crouched) this.sprintOn = false;
+        break;
+      case 'toggleSprint':
+        this.toggleSprint();
         break;
       case 'toggleCombat':
         this.toggleCombat();
@@ -935,6 +941,9 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
         break;
       case 'cycleWalls':
         this.cycleWalls();
+        break;
+      case 'toggleSprint':
+        this.toggleSprint();
         break;
       case 'floor':
         this.stepViewLevel(c.dir);
@@ -1090,6 +1099,13 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     this.viewLevel = v;
     this.buildingView?.setView(v);
     floorChannel.emit({ label: floorLabel(v), canUp: v !== 'roof', canDown: v === 'roof' || v > 0 });
+  }
+
+  /** The sprint button. Sprinting stands you up out of a sneak. */
+  private toggleSprint(): void {
+    this.sprintOn = !this.sprintOn;
+    const a = this.active;
+    if (this.sprintOn && a.motor.crouched) a.motor = toggleCrouch(a.motor);
   }
 
   /** One storey up (to the roofs at the top) or down. */
@@ -1393,7 +1409,10 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
       case 'self':
         if (optionId === 'yield') this.yieldTo(a, null);
         else if (optionId === 'stand') this.standUp(a);
-        else if (optionId === 'sneak') a.motor = toggleCrouch(a.motor);
+        else if (optionId === 'sneak') {
+          a.motor = toggleCrouch(a.motor);
+          if (a.motor.crouched) this.sprintOn = false;
+        }
         else if (optionId === 'wait') this.askRest('wait', null);
         break;
     }
@@ -1913,6 +1932,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     if (Phaser.Input.Keyboard.JustDown(k.crouch) && a.status === 'ok') {
       this.endRest();
       a.motor = toggleCrouch(a.motor);
+      if (a.motor.crouched) this.sprintOn = false;
     }
     if (Phaser.Input.Keyboard.JustDown(k.debug)) this.toggleDebug();
     if (Phaser.Input.Keyboard.JustDown(k.senses)) this.sensesOverlay = !this.sensesOverlay;
@@ -2057,7 +2077,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
       // Locked on (in or out of combat): keep facing them. Combat without a lock: face the mouse.
       if (c.lockTarget) aimAngle = c.angleTo(c.lockTarget);
       else if (c.mode === 'combat' && c.controlled && this.inputSource === 'mouse') aimAngle = c.angleTo(pointer);
-      const sprintKey = c.controlled && (k.sprint.isDown || (touchStick.sprint && !c.motor.crouched));
+      const sprintKey = c.controlled && !c.motor.crouched && (k.sprint.isDown || this.sprintOn || touchStick.sprint);
       const input = this.motorInput;
       input.move = move;
       // Long point-and-click trips run too, unless sneaking. Only the sprint key breaks a sneak.
@@ -2187,7 +2207,8 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
   private startRest(kind: RestKind, hours: number, bed: Offering | null): void {
     const a = this.active;
     if (a.status !== 'ok') return;
-    a.cancelOrder();
+    // Waiting on the way somewhere: keep going (time just runs faster). Sleeping stops you.
+    if (kind === 'sleep') a.cancelOrder();
     a.social = null;
     a.lockTarget = null;
     this.press = null;
@@ -2539,6 +2560,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
         mode: a.mode,
         gait: a.motor.gait,
         crouched: a.motor.crouched,
+        sprinting: this.sprintOn,
         speed: speedOf(a.motor) / M,
         span: this.rig.span,
         locked: a.lockTarget !== null,

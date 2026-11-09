@@ -30,6 +30,8 @@ export interface HudState {
   span: number;
   /** Touch lock-on active. */
   locked: boolean;
+  /** Sprint switched on (the sprint button). */
+  sprinting: boolean;
 }
 
 export const hudChannel = new Channel<HudState>();
@@ -116,6 +118,8 @@ export type UiCommand =
   | { kind: 'setPaused'; paused: boolean }
   | { kind: 'setWalls'; mode: 'up' | 'cutaway' | 'down' }
   | { kind: 'cycleWalls' }
+  /** The sprint button: run everywhere until switched off. */
+  | { kind: 'toggleSprint' }
   /** Show the storey above (1) or below (−1); above the top storey are the roofs. */
   | { kind: 'floor'; dir: 1 | -1 }
   | { kind: 'cancelAction' }
