@@ -308,7 +308,7 @@ When an item changes status, move it and add a dated note rather than silently r
 *2026-11-09 02:40 UTC*
 
 - **The game's art is now being made in the art-style document's style** (detailed, layered, cel-shaded SVG; elevated ¾; 1 SVG unit = 1 world pixel).
-- **Setting: invented but grounded** in real medieval Europe, not one region. **For now: temperate and green** (mild wet summers, cold winters, oak woods, fields, hedges, a river). Kept open: if there's a wider world outside the town, it could have **biomes, each with towns whose building styles match**, so materials and styles should be easy to swap per region.
+- **Setting: invented but grounded** in real ~~medieval~~ Europe, not one region. *(Period changed 2026-11-09 03:58 UTC: Stuart era, see "Period" below.)* **For now: temperate and green** (mild wet summers, cold winters, oak woods, fields, hedges, a river). Kept open: if there's a wider world outside the town, it could have **biomes, each with towns whose building styles match**, so materials and styles should be easy to swap per region.
 - **Method: a catalogue first**, on design boards (one board per category, approved and tweaked before anything goes into the game), the same way as the character mock-ups.
 - **Variety: quality tiers (poor / ordinary / fine) and a few looks within each tier.**
   - *2026-11-09 03:20 UTC:* **tiers describe each piece, not matched sets.** Walls, floors, roofs and furniture are independent: any wall with any floor (cheap walls with a fine floor is fine), in preset buildings and in a future build mode alike.
@@ -325,6 +325,15 @@ When an item changes status, move it and add a dated note rather than silently r
   - **Details:** dirt and wear, bodies and graves, fire and smoke at several sizes, weather overlays.
 - **Not in this pass:** weapons (later); clothing (its own pass afterwards).
 - **First board: buildings and structure.**
+
+### Period: the Stuart era
+*2026-11-09 03:58 UTC*
+
+- **~~Medieval~~ → the Stuart era (roughly 1603–1714).** "Medieval" was a first thought, not a commitment; none of the systems built so far depend on it. The setting stays invented but grounded, so this pins down technology, look and society, not a real place or real history.
+- **It can borrow from either side:** Tudor buildings still standing and in use (timber-framed houses, old halls), and early Georgian things just arriving (sash windows, brick terraces) where they fit.
+- **Knock-on effects to work through as they come up:** firearms exist (matters when weapons are designed); print, newspapers, pamphlets and contracts make Letters a bigger skill and spread gossip and news; chimneys and glazing are normal in ordinary homes; coffee houses alongside alehouses; post-Reformation church (services, not Mass). Money is unchanged (pounds, shillings, pence).
+- **The art so far mostly survives:** wattle and daub, timber frame, rubble, dressed stone, planks, earth floors, boards and flagstones were all still in use. The glazed floor tiles are a medieval style and may want a period update.
+- The repository keeps its name.
 
 ---
 
@@ -367,6 +376,7 @@ When an item changes status, move it and add a dated note rather than silently r
 ### Historical setting and legal structure
 *2026-11-08 18:52 UTC*
 
+- *2026-11-09 03:58 UTC: the place is decided (invented but grounded) and so is the period (Stuart era; see "Period" under Agreed). Still open: the legal structure (courts, punishments, inheritance law, how much trades are regulated beyond "loosely").*
 - Real place and period (e.g. medieval England, Bohemia) vs. an invented but historically grounded setting.
 - Affects which emergent stories are possible, e.g. fixed bread prices (Assize of Bread and Ale), guild control of trades, inheritance law, punishments.
 
