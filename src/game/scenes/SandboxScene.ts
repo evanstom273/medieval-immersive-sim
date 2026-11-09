@@ -244,7 +244,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
   /** Reused for every person's needs tick (no garbage). */
   private readonly needsTick: TickInput = { dt: 0, asleep: false, ambientWarmth: 0, gains: null };
   /** The "how long?" dialog is open (the game is paused behind it). */
-  private restAsk: { kind: 'wait' | 'sleep'; bed: Offering | null; wasPaused: boolean } | null = null;
+  private restAsk: { kind: RestKind; bed: Offering | null; wasPaused: boolean } | null = null;
   /** How many times normal speed the last frame actually ran. */
   private speedNow = 1;
   /** The preset buildings, laid out, and their art. */
@@ -1150,7 +1150,8 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
 
   /**
    * A waypoint from the map: one to walk to yourself (a flag on the ground, an arrow at the edge of the
-   * screen), or auto-walk: the person you control sets off for it and time runs fast until they arrive.
+   * screen), or auto-walk: the person you control walks there on their own, in real time (the wait button
+   * speeds the journey up, as it does any walk).
    */
   private setWaypoint(x: number, y: number, auto: boolean): void {
     const a = this.active;
@@ -1166,7 +1167,6 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
       this.waypoint.auto = false;
       return;
     }
-    this.endRest();
     this.endDoing(a, false);
     a.social = null;
     if (!this.orderTo(a, at, 0)) {
@@ -1174,30 +1174,25 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
       this.waypoint.auto = false;
       return;
     }
-    this.rest = { kind: 'travel', untilS: Infinity, bed: null, startS: this.clock.seconds };
-    for (const o of this.characters) if (o !== a && o.social?.target === a) o.social = null;
     this.say('You set off.');
   }
 
   private clearWaypoint(): void {
+    if (this.waypoint?.auto) this.active.cancelOrder();
     this.waypoint = null;
-    if (this.rest?.kind === 'travel') this.endRest('You stop.');
   }
 
-  /** Reaching the waypoint clears it (and ends an auto-walk); an auto-walk that's lost its route stops. */
+  /** Reaching the waypoint clears it; an auto-walk that's been stopped (you took over) leaves a normal waypoint. */
   private checkWaypoint(): void {
     const w = this.waypoint;
     const a = this.active;
-    if (w && a.level === 0 && Math.hypot(a.x - w.x, a.y - w.y) < 1.2 * M) {
+    if (!w) return;
+    if (a.level === 0 && Math.hypot(a.x - w.x, a.y - w.y) < 1.2 * M) {
       this.waypoint = null;
-      if (this.rest?.kind === 'travel') this.endRest('You arrive.');
-      else this.say("You've reached your waypoint.");
+      this.say(w.auto ? 'You arrive.' : "You've reached your waypoint.");
       return;
     }
-    if (this.rest?.kind === 'travel' && !a.order && !a.climb) {
-      if (this.waypoint) this.waypoint.auto = false;
-      this.endRest('You stop.');
-    }
+    if (w.auto && !a.order && !a.climb) w.auto = false;
   }
 
   /** A flag on the ground at the waypoint, with a slow pulse (blue for auto-walk, red otherwise). */
@@ -1331,7 +1326,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
   /** Stop whatever the active character is doing (walking somewhere, talking, squaring up). */
   private cancelAction(): void {
     if (this.rest) {
-      this.endRest(this.rest.kind === 'sleep' ? 'You get up.' : this.rest.kind === 'travel' ? 'You stop.' : 'You stop waiting.');
+      this.endRest(this.rest.kind === 'sleep' ? 'You get up.' : 'You stop waiting.');
       return;
     }
     if (this.active.doing) {
@@ -2325,7 +2320,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
   // ---------------------------------------------------------------- waiting & sleeping
 
   /** Open the TES-style "how long?" dialog (pauses the game behind it). */
-  private askRest(kind: 'wait' | 'sleep', bed: Offering | null, explain = false): void {
+  private askRest(kind: RestKind, bed: Offering | null, explain = false): void {
     const a = this.active;
     if (this.rest || this.restAsk) return;
     if (a.status !== 'ok' || a.mode === 'combat' || this.switching) {
@@ -2649,7 +2644,6 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
   // ================================================================ UI feed
 
   private activityOf(c: Character): string {
-    if (c === this.active && this.rest?.kind === 'travel') return 'Travelling to the waypoint';
     if (c === this.active && this.rest) return `${this.rest.kind === 'sleep' ? 'Sleeping' : 'Waiting'} · ${formatDuration(this.rest.untilS - this.clock.seconds)} left`;
     if (c.status === 'ko') return 'Out cold';
     if (c.status === 'yielded') return 'Yielding';

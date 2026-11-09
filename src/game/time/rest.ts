@@ -8,8 +8,7 @@
  */
 import type { NoiseKind } from '../perception/senseRules';
 
-/** Waiting, sleeping, or auto-walking to a waypoint (time sped up until you get there). */
-export type RestKind = 'wait' | 'sleep' | 'travel';
+export type RestKind = 'wait' | 'sleep';
 
 /** How many times faster than normal time runs while resting. */
 export const REST_SPEED = 60;
@@ -32,15 +31,12 @@ export type RestStimulus =
 export const INTERRUPT_AUDIBILITY: Record<RestKind, Partial<Record<NoiseKind, number>>> = {
   wait: { shout: 0, quarrel: 0.2, thud: 0.2, door: 0.7 },
   sleep: { shout: 0.3, quarrel: 0.5, thud: 0.5, door: 0.8 },
-  // Auto-walking only stops when you arrive.
-  travel: {},
 };
 
 const NOISE_WORD: Partial<Record<NoiseKind, string>> = { shout: 'a shout', quarrel: 'raised voices', thud: 'a thud', door: 'a door bang' };
 
 /** Does this cut the rest short? Returns what to tell the player, or null. */
 export function interruptsRest(kind: RestKind, s: RestStimulus): string | null {
-  if (kind === 'travel') return null;
   const woken = kind === 'sleep';
   switch (s.kind) {
     case 'hit':

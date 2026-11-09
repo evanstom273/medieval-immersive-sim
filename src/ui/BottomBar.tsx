@@ -97,7 +97,7 @@ export function BottomBar() {
 
           {/* ---- centre: time, and walls up / cutaway / down */}
           <div className={`flex items-center self-center ${touch ? 'gap-1' : 'gap-2'}`}>
-            <TimeControls paused={paused} touch={touch} resting={/^(Waiting|Sleeping|Travelling)/.test(active.activity)} />
+            <TimeControls paused={paused} touch={touch} resting={/^(Waiting|Sleeping)/.test(active.activity)} />
             <WallsButton touch={touch} />
             <MapButton touch={touch} />
             {/* Touch has its own Sprint button by the thumb. */}
