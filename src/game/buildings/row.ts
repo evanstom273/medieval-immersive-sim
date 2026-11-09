@@ -28,18 +28,25 @@ export const COFFEE_HOUSE: Building = {
       height: 3,
       walls: [
         ext([0, 0.15], [6.5, 0.15], 'timber', [win('leaded', 1.0, 1.1, 1.0, 1.0), door('plank', 4.8, 0.9, 1.9)]),
-        ext([0, 9.85], [6.5, 9.85], 'timber', [win('mullion', 0.5, 1.9, 1.5, 0.85), door('panel', 2.95, 1.0, 2.05), win('mullion', 4.3, 1.8, 1.5, 0.85)]),
+        // The door is set back in a porch, under the projecting bay of the floor above.
+        ext([0, 9.85], [2.4, 9.85], 'timber', [win('mullion', 0.45, 1.6, 1.5, 0.85)]),
+        ext([4.1, 9.85], [6.5, 9.85], 'timber', [win('mullion', 0.35, 1.6, 1.5, 0.85)]),
+        ext([2.4, 8.85], [4.1, 8.85], 'timber', [door('panel', 0.35, 1.0, 2.05)]),
+        ext([2.55, 8.85], [2.55, 10], 'timber'),
+        ext([3.95, 8.85], [3.95, 10], 'timber'),
         party(0.1, D, 'timber'),
         party(6.4, D, 'timber'),
         part([0.2, 6.0], [6.3, 6.0], [door('plank', 2.4, 0.9, 1.9)]),
       ],
       rooms: [
-        { name: 'Coffee room', use: 'trade: coffee, news, talk', outline: box(0.2, 6.075, 6.3, 9.7), floor: 'boards' },
+        { name: 'Coffee room', use: 'trade: coffee, news, talk', outline: [[0.2, 6.075], [6.3, 6.075], [6.3, 9.7], [4.1, 9.7], [4.1, 8.7], [2.4, 8.7], [2.4, 9.7], [0.2, 9.7]], floor: 'boards' },
         { name: 'Kitchen', use: 'work: brewing, cooking', outline: box(0.2, 0.3, 6.3, 5.925), floor: 'quarry' },
       ],
       fixtures: [
         { kind: 'hearth', x: 0.2, y: 2.0, w: 1.2, d: 1.6 },
         { kind: 'stair', x: 5.2, y: 1.0, w: 1.0, d: 3.0, heading: 'n', toLevel: 1 },
+        { kind: 'column', x: 2.55, y: 10.85, w: 0.26, d: 0.26, material: 'ashlar' },
+        { kind: 'column', x: 3.95, y: 10.85, w: 0.26, d: 0.26, material: 'ashlar' },
       ],
     },
     {
@@ -48,13 +55,18 @@ export const COFFEE_HOUSE: Building = {
       height: 2.8,
       walls: [
         ext([0, 0.15], [6.5, 0.15], 'timber', [win('leaded', 1.5, 1.1, 1.1, 0.8)]),
-        ext([0, 9.85], [6.5, 9.85], 'timber', [win('leaded', 0.6, 1.1, 1.2, 0.8), win('leaded', 2.7, 1.1, 1.2, 0.8), win('leaded', 4.8, 1.1, 1.2, 0.8)]),
+        // The middle is pulled out over the porch as a bay with its own gable, on columns.
+        ext([0, 9.85], [2.4, 9.85], 'timber', [win('leaded', 0.6, 1.1, 1.2, 0.8)]),
+        ext([4.1, 9.85], [6.5, 9.85], 'timber', [win('leaded', 0.7, 1.1, 1.2, 0.8)]),
+        ext([2.4, 10.85], [4.1, 10.85], 'timber', [win('leaded', 0.3, 1.1, 1.2, 0.8)], 0.3),
+        { ...ext([2.55, 9.85], [2.55, 11], 'timber'), top: 2.3 },
+        { ...ext([3.95, 9.85], [3.95, 11], 'timber'), top: 2.3 },
         party(0.1, D, 'timber'),
         party(6.4, D, 'timber'),
         part([0.2, 5.0], [6.3, 5.0], [door('plank', 3.8, 0.85, 1.9)]),
       ],
       rooms: [
-        { name: 'Long room', use: 'trade: meetings, clubs, auctions', outline: box(0.2, 5.075, 6.3, 9.7), floor: 'boards' },
+        { name: 'Long room', use: 'trade: meetings, clubs, auctions', outline: [[0.2, 5.075], [6.3, 5.075], [6.3, 9.7], [3.8, 9.7], [3.8, 10.7], [2.7, 10.7], [2.7, 9.7], [0.2, 9.7]], floor: 'boards' },
         { name: "Keeper's chamber", use: 'sleeping', outline: box(0.2, 0.3, 6.3, 4.925), floor: 'boards' },
       ],
       fixtures: [{ kind: 'stairwell', x: 5.2, y: 1.0, w: 1.0, d: 3.0 }],
@@ -62,7 +74,9 @@ export const COFFEE_HOUSE: Building = {
   ],
   roof: { shape: 'gable', ridge: 'ns', covering: 'tile', pitch: 50, overhang: 0.3, eaves: 5.8 },
   chimneys: [{ x: 0.2, y: 2.2, w: 0.8, d: 0.8, material: 'brick', aboveRidge: 0.6 }],
+  gablets: [{ x: 2.4, w: 1.7, from: 9.85, to: 11, eaves: 5.3, covering: 'tile', pitch: 50, overhang: 0.25, material: 'timber' }],
   sign: { text: 'COFFEE', at: 5.6 },
+  notes: 'The door is set back in a porch; above it the middle of the upper floor projects as a bay with its own gable, carried on two columns.',
 };
 
 export const BUTCHERS: Building = {

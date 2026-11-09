@@ -13,9 +13,10 @@ function problems(b: Building): string[] {
       const dy = Math.abs(w.to[1] - w.from[1]);
       if (dx > 1e-6 && dy > 1e-6 && Math.abs(dx - dy) > 1e-6) out.push(`level ${s.level}: a wall isn't east–west, north–south or at 45°`);
       for (const o of w.openings) if (o.at < 0 || o.at + o.width > len + 1e-6) out.push(`level ${s.level}: an opening runs off the end of its wall`);
-      for (const [x, y] of [w.from, w.to]) if (x < 0 || y < 0 || x > b.size.w || y > b.size.d) out.push(`level ${s.level}: a wall leaves the footprint`);
+      // Bays and porches may stand up to 1.5 m out over the street.
+      for (const [x, y] of [w.from, w.to]) if (x < 0 || y < 0 || x > b.size.w || y > b.size.d + 1.5) out.push(`level ${s.level}: a wall leaves the footprint`);
     }
-    for (const r of s.rooms) for (const [x, y] of r.outline) if (x < 0 || y < 0 || x > b.size.w || y > b.size.d) out.push(`${r.name} leaves the footprint`);
+    for (const r of s.rooms) for (const [x, y] of r.outline) if (x < 0 || y < 0 || x > b.size.w || y > b.size.d + 1.5) out.push(`${r.name} leaves the footprint`);
     for (const f of s.fixtures) if ((f.kind === 'ladder' || f.kind === 'stair') && !b.storeys.some((o) => o.level === f.toLevel)) out.push(`a ${f.kind} goes to a storey that doesn't exist`);
   }
   return out;

@@ -45,6 +45,8 @@ export interface Wall {
   /** Outside wall (vs. an inside partition): outside walls take the weather and the roof. */
   exterior: boolean;
   openings: Opening[];
+  /** Where the wall stops, above its storey's floor, if short of the full storey (e.g. a projecting bay under its own roof). */
+  top?: number;
 }
 
 /** A room: an outline on the floor, a name, a floor covering and what it's for. */
@@ -100,6 +102,23 @@ export interface Chimney {
   aboveRidge: number;
 }
 
+/**
+ * A small gabled roof of its own, ridge north–south, over part of the front (a projecting bay, a porch):
+ * from where it meets the main wall (`from`, y) out to its own gable at `to` (y), across x … x + w.
+ */
+export interface Gablet {
+  x: number;
+  w: number;
+  from: number;
+  to: number;
+  eaves: number;
+  covering: RoofCovering;
+  pitch: number;
+  overhang: number;
+  /** The material of its gable end. */
+  material: WallMaterial;
+}
+
 /** A sign hung over the street (shops and taverns had them). */
 export interface Sign {
   text: string;
@@ -117,6 +136,7 @@ export interface Building {
   storeys: Storey[];
   roof: Roof;
   chimneys: Chimney[];
+  gablets?: Gablet[];
   sign?: Sign;
   notes?: string;
 }
