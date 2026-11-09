@@ -338,6 +338,16 @@ When an item changes status, move it and add a dated note rather than silently r
 - **The art so far mostly survives:** wattle and daub, timber frame, rubble, dressed stone, planks, earth floors, boards and flagstones were all still in use. The glazed floor tiles are a medieval style and may want a period update.
 - The repository keeps its name.
 
+### Buildings: a format, then preset buildings
+*2026-11-09 05:45 UTC*
+
+- **Preset buildings are hand-designed, not procedurally generated,** and designed as **plans made of catalogue pieces, not pictures**: walls (runs with material, thickness, doors and windows), rooms (outline, name, use, floor), fixtures (hearth, stairs, ladders, hatches), storeys by level (−1 cellar, 0 ground, 1 above…), roof (shape, ridge direction, covering, pitch, eaves) and chimneys. The game will assemble buildings from the pieces, so walls cut away, doors open, roofs lift and materials can be swapped (per region, for variants) without redrawing. Build mode will use the same format.
+- **The format is `src/game/buildings/format.ts`** (metres; x east, y south, origin at the north-west outer corner), with sanity tests. The game doesn't load buildings yet.
+- **Multiple storeys are a requirement** (cellars, upper floors, rooms to let), which is why stairs and ladders are in the catalogue.
+- **Variety comes from a solid set of designs per building type, multiplied** by material swaps, mirroring, furnishing and wear.
+- **First building: a cottage** (`src/game/buildings/cottage.ts`): hall round a hearth, buttery, chamber, loft up a ladder; timber frame on a stone plinth, a rubble gable with a brick chimney, thatch. Drawn from its plan on the art catalogue: outside as the game sees it, inside with walls cut down, and top-down plans of each storey. Rooms are labelled with text until there's furniture.
+- An **inn** is the right word for the period (alehouse, tavern, inn and coffee house each meant something different).
+
 ---
 
 ## Undecided
