@@ -2020,6 +2020,89 @@ export function makeKit() {
     groundShadow(cellX, groundY, W * M);
   }
 
+
+  /** Just the roof of a building (gables above the eaves, slopes, ridges, little gables, chimneys): its walls are pieces of their own. */
+  function roofOf(b, cellX, groundY) {
+    const W = b.size.w;
+    const D = b.size.d;
+    const E = b.roof.eaves;
+    const t = Math.tan((b.roof.pitch * Math.PI) / 180);
+    at(cellX, groundY, D);
+    if (b.roof.ridge === 'ew') {
+      const o = b.roof.overhang;
+      const zE = E - o * t;
+      const Hr = E + (D / 2) * t;
+      eave(b.roof.covering, [-o, D + o, zE], [W + o, D + o, zE], true);
+      slope(b.roof.covering, [[-o, D + o, zE], [W + o, D + o, zE], [W + o, D / 2, Hr], [-o, D / 2, Hr]], [-o, D + o, zE], [1, 0, 0], norm3([0, -1, t]), W + 2 * o, Math.hypot(D / 2 + o, Hr - zE));
+      ridge(b.roof.covering, [-o, D / 2, Hr], [W + o, D / 2, Hr]);
+      for (const c of b.chimneys) chimney(c.x, c.y, c.w, c.d, Hr - Math.max(0, c.y + c.d - D / 2) * t, Hr + c.aboveRidge);
+      flush();
+      return;
+    }
+    const levels = b.storeys.filter((s) => s.level >= 0).sort((p, q) => p.level - q.level);
+    const topMat = frontWall(levels[levels.length - 1], b).material;
+    const Hr = E + (W / 2) * t;
+    if (b.roof.shape === 'dutchGable') {
+      // The shaped gable is drawn from the ground: keep only what's above the eaves.
+      const e = P(0, D, E);
+      mask(`M${f(e[0] - 2000)} ${f(e[1])}h${f(W * M + 4000)}v4000h${f(-W * M - 4000)}Z`);
+      dutchGable(b.roof.covering, topMat, W, D, E, b.roof.pitch);
+      mask(null);
+      flush();
+    } else {
+      wallFace(topMat, [[0, D, E], [W, D, E], [W / 2, D, Hr]]);
+      const fr = b.roof.overhang;
+      const lv = Math.hypot(W / 2, Hr - E);
+      slope(b.roof.covering, [[0, 0, E], [0, D + fr, E], [W / 2, D + fr, Hr], [W / 2, 0, Hr]], [0, D + fr, E], [0, -1, 0], norm3([1, 0, t]), D + fr, lv);
+      slope(b.roof.covering, [[W, 0, E], [W, D + fr, E], [W / 2, D + fr, Hr], [W / 2, 0, Hr]], [W, D + fr, E], [0, -1, 0], norm3([-1, 0, t]), D + fr, lv);
+      ridge(b.roof.covering, [W / 2, 0, Hr], [W / 2, D + fr, Hr]);
+      layer();
+      add({ fill: 'none', stroke: '#3a2a1c', sw: 2.4 }, line([P(0, D + fr, E), P(W / 2, D + fr, Hr), P(W, D + fr, E)]));
+      add({ fill: 'none', stroke: '#8a6a48', sw: 1 }, line([P(0, D + fr, E), P(W / 2, D + fr, Hr), P(W, D + fr, E)]));
+      flush();
+      for (const g of b.gablets ?? []) {
+        const gt = Math.tan((g.pitch * Math.PI) / 180);
+        const xc = g.x + g.w / 2;
+        const gH = g.eaves + (g.w / 2) * gt;
+        wallFace(g.material, [[g.x, g.to, g.eaves], [g.x + g.w, g.to, g.eaves], [xc, g.to, gH]]);
+        const o2 = 0.1;
+        const zE = g.eaves - o2 * gt;
+        const glv = Math.hypot(g.w / 2 + o2, gH - zE);
+        const ylen = g.to + g.overhang - g.from;
+        slope(g.covering, [[g.x - o2, g.from, zE], [g.x - o2, g.to + g.overhang, zE], [xc, g.to + g.overhang, gH], [xc, g.from, gH]], [g.x - o2, g.to + g.overhang, zE], [0, -1, 0], norm3([1, 0, gt]), ylen, glv);
+        slope(g.covering, [[g.x + g.w + o2, g.from, zE], [g.x + g.w + o2, g.to + g.overhang, zE], [xc, g.to + g.overhang, gH], [xc, g.from, gH]], [g.x + g.w + o2, g.to + g.overhang, zE], [0, -1, 0], norm3([-1, 0, gt]), ylen, glv);
+        ridge(g.covering, [xc, g.from, gH], [xc, g.to + g.overhang, gH]);
+        layer();
+        add({ fill: 'none', stroke: '#3a2a1c', sw: 2.2 }, line([P(g.x - o2, g.to + g.overhang, zE), P(xc, g.to + g.overhang, gH), P(g.x + g.w + o2, g.to + g.overhang, zE)]));
+        add({ fill: 'none', stroke: '#8a6a48', sw: 0.9 }, line([P(g.x - o2, g.to + g.overhang, zE), P(xc, g.to + g.overhang, gH), P(g.x + g.w + o2, g.to + g.overhang, zE)]));
+        flush();
+      }
+    }
+    for (const c of b.chimneys) {
+      const cx = c.x + c.w / 2;
+      const zBase = E + Math.min(cx, W - cx) * t - 0.25;
+      chimney(c.x, c.y, c.w, c.d, zBase, Math.max(Hr + c.aboveRidge, zBase + 1.2));
+    }
+    flush();
+  }
+
+  /** A shop's painted board, hung on the front between `z0` and `z1`. */
+  function signOf(b, cellX, groundY, z0, z1) {
+    const W = b.size.w;
+    const D = b.size.d;
+    at(cellX, groundY, D);
+    const bw = Math.min(W - 0.4, 0.55 + b.sign.text.length * 0.2);
+    const x0 = Math.max(0.15, Math.min(W - 0.15 - bw, b.sign.at - bw / 2));
+    const a = P(x0, D + 0.05, z1);
+    const c = P(x0 + bw, D + 0.05, z0);
+    layer();
+    add({ fill: '#1f3a2e' }, rect(a[0], a[1], c[0] - a[0], c[1] - a[1]));
+    add({ fill: 'none', stroke: '#c9a24a', sw: 1.2 }, rect(a[0] + 2, a[1] + 2, c[0] - a[0] - 4, c[1] - a[1] - 4));
+    add({ fill: 'none', stroke: OUT, sw: 1 }, rect(a[0], a[1], c[0] - a[0], c[1] - a[1]));
+    flush();
+    label((a[0] + c[0]) / 2, (a[1] + c[1]) / 2 + 4, b.sign.text, 11, 700, '#e8c56a', 'middle');
+    return [a, c];
+  }
   return {
     M, RISE, FORE, OUT,
     begin(s) {
@@ -2047,6 +2130,6 @@ export function makeKit() {
     P, add, layer, flush, rect, poly, line, clip, clipD, mask, tf, label, rnd, pick,
     face, topOf, floor, wallFace, slope, ridge, eave, chimney, box, ladder, leaf, surround, column,
     openingOn, windowOn, mullionOn, sashOn, shopOn, cottageWindowOn, timber, norm3,
-    exteriorOf, exteriorEW,
+    exteriorOf, exteriorEW, roofOf, signOf,
   };
 }

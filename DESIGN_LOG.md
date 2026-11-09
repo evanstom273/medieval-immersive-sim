@@ -352,6 +352,18 @@ When an item changes status, move it and add a dated note rather than silently r
 
 ---
 
+### Buildings in the game: storeys, floors view, scale
+*2026-11-09 04:49 UTC — Lyra*
+
+- The cottage and the terrace are in the sandbox, drawn with the catalogue art (the same drawing code as the boards), not placeholder colours.
+- Buildings are assembled from pieces, outside as well as in: walls are cut-able ~1 m pieces with real doors in the doorways; only the roof (gables, slopes, chimneys, little gables) is a separate piece laid over them. You walk *through* a doorway and see the door swing; the view only changes once you're in the room.
+- Storeys: everyone has a level and a height. Stairs and ladders lift you as you climb; halfway up you're on the floor above. Collisions and route-finding are per storey; clicking somewhere on another floor walks you there by the nearest stair.
+- Sims-style floor buttons at the top of the screen (▼ floor ▲, also PageDown / PageUp): a storey and everything below it, or the roofs. The view follows the person you control (into a building, up a stair, back out to the roofs); the buttons override it until the next of those.
+- From outside, walls and roofs fade only when you're behind a building, not in its porch or doorway.
+- **Scale:** at real-world sizes the interiors were far too small for furniture. Rooms get bigger (2.5×–5×, chosen in testing) and storeys somewhat taller; doors, windows, hearths, wall thickness and stair widths stay human-sized (stairs get longer to climb the taller storeys). For now this is a pair of test sliders in the Tuning panel (room size, default 3×; storey height, default 1.5×), applied by rebuilding the world, until a number is settled.
+- Layout fixes so doors never swing into stairs (at any scale): the coffee house's back door moved west; the townhouse's back door opens into the kitchen, its stair has a landing, the kitchen door is at the north end of the passage, and upstairs the dining room opens off the bedchamber; the cottage ladder moved away from the buttery door; a few stairs moved further into their rooms. (The catalogue boards still show the old positions.)
+- PLACEHOLDERS: NPCs don't use stairs; senses ignore storeys; building windows don't open; furniture other than hearths isn't in yet; art is one texel per world pixel (soft when zoomed right in).
+
 ## Undecided
 
 ### Time model

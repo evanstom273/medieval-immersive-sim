@@ -346,7 +346,7 @@ export class CharacterView {
 
     // Which way they face on screen, in 45° steps.
     const base = p.toScreen(x, y, lying ? pose.floor : pose.floor + pose.lift);
-    const ahead = p.toScreen(x + Math.cos(facing) * 10, y + Math.sin(facing) * 10);
+    const ahead = p.toScreen(x + Math.cos(facing) * 10, y + Math.sin(facing) * 10, lying ? pose.floor : pose.floor + pose.lift);
     const kRaw = lying ? 2 : Math.round(Math.atan2(ahead.y - base.y, ahead.x - base.x) / (Math.PI / 4));
     const { k, flip } = canonical(kRaw);
     const vi = viewIndex(k);
@@ -386,7 +386,7 @@ export class CharacterView {
       const h = handOffset(hand, pose);
       const ly0 = h.y * wide;
       const gp = { x: x + h.x * cf - ly0 * sf, y: y + h.x * sf + ly0 * cf };
-      const s = p.toScreen(gp.x, gp.y, hz);
+      const s = p.toScreen(gp.x, gp.y, pose.floor + hz);
       const behind = p.depth(gp.x, gp.y) < p.depth(x, y) - 1;
       const lx = (s.x - base.x) * (flip ? -1 : 1);
       const ly = s.y - base.y;

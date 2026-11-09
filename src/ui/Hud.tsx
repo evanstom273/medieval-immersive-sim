@@ -24,13 +24,10 @@ export function Hud() {
 
   const [floor, setFloor] = useState<FloorState | null>(() => floorChannel.last ?? null);
   useEffect(() => floorChannel.on(setFloor), []);
-  // Narrow screens: drop below the action chip / Tuning button row.
-  const narrow = window.innerWidth < 640;
-  const top = narrow ? 'calc(env(safe-area-inset-top) + 60px)' : 'max(16px, calc(env(safe-area-inset-top) + 12px))';
+  const top = hudTop();
 
   return (
     <div className="pointer-events-none absolute inset-0 text-white">
-      {floor && <FloorButtons floor={floor} top={top} />}
       <div
         className="absolute left-1/2 flex w-max max-w-[min(36rem,calc(100vw-2rem))] -translate-x-1/2 flex-col items-center gap-1"
         style={{ top: floor ? `calc(${top} + 46px)` : top }}
@@ -45,8 +42,17 @@ export function Hud() {
   );
 }
 
+/** Where the top-of-screen HUD row starts. Narrow screens: below the action chip / Tuning button row. */
+function hudTop(): string {
+  return window.innerWidth < 640 ? 'calc(env(safe-area-inset-top) + 60px)' : 'max(16px, calc(env(safe-area-inset-top) + 12px))';
+}
+
 /** Sims-style floor buttons: show the storey below or above (above the top one are the roofs). PageDown / PageUp too. */
-function FloorButtons({ floor, top }: { floor: FloorState; top: string }) {
+export function FloorButtons() {
+  const [floor, setFloor] = useState<FloorState | null>(() => floorChannel.last ?? null);
+  useEffect(() => floorChannel.on(setFloor), []);
+  if (!floor) return null;
+  const top = hudTop();
   const btn = 'flex h-9 w-9 items-center justify-center rounded-full text-lg transition-colors enabled:hover:bg-white/15 disabled:opacity-30';
   return (
     <div className="pointer-events-auto absolute left-1/2 flex -translate-x-1/2 items-center gap-1 rounded-full bg-neutral-900/75 p-0.5 shadow ring-1 ring-white/10 backdrop-blur-sm" style={{ top }}>

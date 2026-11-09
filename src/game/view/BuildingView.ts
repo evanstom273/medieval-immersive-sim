@@ -59,6 +59,8 @@ interface Flat {
   roof: boolean;
   depth: number;
   exterior?: boolean;
+  /** A roof: the screen line of its front eaves (nothing below it is roof). */
+  eaveY?: number;
 }
 
 /** Which storey is shown: a level, or the roofs (everything from outside). */
@@ -74,6 +76,7 @@ export class BuildingView {
   private readonly flats: Flat[] = [];
   private readonly doorQuads = new Map<Door, { quad: Quad; job: Placed }>();
   view: ViewLevel = 'roof';
+  private behind = true;
   mode: WallMode = 'cutaway';
 
   constructor(
@@ -119,10 +122,15 @@ export class BuildingView {
       const job = jobs.get(jobKey.fixture(i));
       if (job) this.flat(job, null, null, fx.level, false, bandOf(fx.level) + fx.rect.y / 1000);
     });
+    // From outside: the walls are the pieces (full height), with each roof laid over them.
     for (const b of town.buildings) {
-      const job = jobs.get(jobKey.exterior(b.index))!;
-      const f = this.flat(job, null, null, 0, true, 10 + (b.rect.y + b.rect.h) / 1000);
+      const front = b.rect.y + b.rect.h;
+      const f = this.flat(jobs.get(jobKey.roof(b.index))!, null, null, 0, true, 10 + front / 1000 + 0.0006);
       f.exterior = true;
+      const roof = b.plot.building.roof;
+      f.eaveY = S(0, front + roof.overhang * M, (roof.eaves - roof.overhang * Math.tan((roof.pitch * Math.PI) / 180)) * M)[1];
+      const sign = jobs.get(jobKey.sign(b.index));
+      if (sign) this.flat(sign, null, null, 0, true, 10 + (front + 0.3 * M) / 1000);
     }
     this.applyView();
   }
@@ -157,9 +165,13 @@ export class BuildingView {
   }
 
   private applyView(): void {
+    const roof = this.view === 'roof';
     for (const pv of this.pieces) {
-      pv.visible = this.levelShown(pv.level);
+      pv.visible = roof || this.levelShown(pv.level);
+      // From outside, every storey's walls sort together with the people in the street.
+      pv.depth = roof ? 10 + pv.piece.south / 1000 : bandOf(pv.level) + pv.piece.south / 1000;
       if (!pv.visible) this.setPieceVisible(pv, false);
+      else this.drawPiece(pv);
     }
     for (const f of this.flats) f.quad.mesh.setVisible(f.roof ? this.view === 'roof' : this.levelShown(f.level));
   }
@@ -170,6 +182,8 @@ export class BuildingView {
    */
   update(dt: number, focus: P2, focusLevel: number, focusScreen: Bounds | null, view: Bounds): void {
     const key = focus.y;
+    // From outside, walls only fade when you're behind a building, not in its porch or doorway.
+    this.behind = !this.town.buildings.some((b) => focus.x > b.rect.x && focus.x < b.rect.x + b.rect.w && focus.y > b.rect.y && focus.y < b.rect.y + b.rect.h);
     for (const pv of this.pieces) {
       if (!pv.visible) continue;
       const on = intersects(pv.bounds, view);
@@ -177,7 +191,7 @@ export class BuildingView {
         this.setPieceVisible(pv, false);
         continue;
       }
-      const hides = pv.level === focusLevel && !!focusScreen && pv.piece.south > key && intersects(pv.bounds, focusScreen, 6);
+      const hides = (pv.level === focusLevel || this.view === 'roof') && !!focusScreen && pv.piece.south > key && intersects(pv.bounds, focusScreen, 6);
       const target = this.targetHeight(pv, hides);
       if (Math.abs(pv.shown - target) > 0.5) {
         const step = WALL_SPEED * dt;
@@ -185,7 +199,7 @@ export class BuildingView {
         this.drawPiece(pv);
       }
       this.setPieceVisible(pv, pv.shown > pv.piece.wall.base + pv.piece.over + 0.5);
-      const alpha = this.mode === 'up' && hides && pv.level === this.view ? 0.28 : 1;
+      const alpha = this.view === 'roof' ? (this.behind && (hides || this.hidesOutside(pv, focus, focusScreen)) ? 0.35 : 1) : this.mode === 'up' && hides && pv.level === this.view ? 0.28 : 1;
       for (const q of [pv.face, pv.top, pv.cap]) if (q) q.mesh.setAlpha(q.mesh.alpha + (alpha - q.mesh.alpha) * 0.25);
     }
     for (const f of this.flats) {
@@ -193,18 +207,23 @@ export class BuildingView {
       f.quad.mesh.setVisible(shown && intersects(f.bounds, view));
       if (f.exterior && shown) {
         // From outside, a building in front of the person you control fades so you can see them.
-        const hides = !!focusScreen && f.depth > 10 + focus.y / 1000 && intersects(f.bounds, focusScreen) && overExterior(f, focusScreen);
+        const hides = !!focusScreen && this.behind && f.depth > 10 + focus.y / 1000 && intersects(f.bounds, focusScreen) && focusScreen.y0 < (f.eaveY ?? Infinity) && overExterior(f, focusScreen);
         const a = hides ? 0.35 : 1;
         f.quad.mesh.setAlpha(f.quad.mesh.alpha + (a - f.quad.mesh.alpha) * 0.2);
       }
     }
   }
 
+  /** From outside: a wall in front of (south of) the person you control, over them on screen. */
+  private hidesOutside(pv: PieceView, focus: P2, focusScreen: Bounds | null): boolean {
+    return !!focusScreen && pv.piece.south > focus.y && intersects(pv.bounds, focusScreen);
+  }
+
   /** Doors: drawn with their storey, cut down with their wall; the art laid on the leaf's face towards you. */
   updateDoors(doors: Door[]): void {
     for (const d of doors) {
       const dq = this.doorQuads.get(d);
-      const shown = this.levelShown(d.level);
+      const shown = this.view === 'roof' ? d.level === 0 : this.levelShown(d.level);
       d.hidden = !shown;
       if (!dq) continue;
       const m = dq.quad.mesh;

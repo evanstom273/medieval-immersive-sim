@@ -52,7 +52,8 @@ export const jobKey = {
   stair: (i: number) => `st:${i}`,
   fixture: (i: number) => `fx:${i}`,
   door: (i: number) => `dr:${i}`,
-  exterior: (i: number) => `ex:${i}`,
+  roof: (i: number) => `rf:${i}`,
+  sign: (i: number) => `sg:${i}`,
 };
 
 export function townArt(town: Town): ArtJob[] {
@@ -220,20 +221,28 @@ export function townArt(town: Town): ArtJob[] {
     });
   });
 
-  // ---- each building whole, from outside
+  // ---- roofs (the walls under them are the pieces above), and shop signs
   for (const b of town.buildings) {
     const bd = b.plot.building;
     const W = bd.size.w;
     const D = bd.size.d;
     const t = Math.tan((bd.roof.pitch * Math.PI) / 180);
-    const ridge = bd.roof.eaves + (bd.roof.ridge === 'ns' ? W : D) * 0.5 * t + 2.2;
-    const pts = [S(b.rect.x - M, b.rect.y - M, ridge * M), S(b.rect.x + b.rect.w + M, b.rect.y + b.rect.h + 1.6 * M, 0)];
-    job(jobKey.exterior(b.index), bounds(pts, 0), (k) => {
-      const groundY = (b.rect.y + b.rect.h) * FORE;
-      if (bd.roof.ridge === 'ew') k.exteriorEW(bd, b.rect.x, groundY);
-      else k.exteriorOf(bd, b.rect.x, groundY);
+    const ridge = bd.roof.eaves + (bd.roof.ridge === 'ns' ? W : D) * 0.5 * t + 3;
+    const groundY = (b.rect.y + b.rect.h) * FORE;
+    const pts = [S(b.rect.x - 1.5 * M, b.rect.y - M, ridge * M), S(b.rect.x + b.rect.w + 1.5 * M, b.rect.y + b.rect.h + 2 * M, bd.roof.eaves * M * 0.5)];
+    job(jobKey.roof(b.index), bounds(pts, 0), (k) => {
+      k.roofOf(bd, b.rect.x, groundY);
       k.flush();
     });
+    if (bd.sign) {
+      // Hung just under the first floor.
+      const up = bd.storeys.find((s) => s.level === 1);
+      const z1 = up ? up.floorZ - 0.15 : bd.roof.eaves - 0.3;
+      const sp = [S(b.rect.x, b.rect.y + b.rect.h, (z1 + 0.2) * M), S(b.rect.x + b.rect.w, b.rect.y + b.rect.h + 0.3 * M, (z1 - 0.6) * M)];
+      job(jobKey.sign(b.index), bounds(sp, 4), (k) => {
+        k.signOf(bd, b.rect.x, groundY, z1 - 0.4, z1);
+      });
+    }
   }
   return jobs;
 }

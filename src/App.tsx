@@ -10,6 +10,8 @@ import { TuningPanel } from './ui/TuningPanel';
 import { PerfHud } from './ui/PerfHud';
 import { CharacterCreator } from './ui/CharacterCreator';
 import { loadNewPerson, saveNewPerson, type NewPerson } from './game/characters/newPerson';
+import { gameRestart } from './game/bridge';
+import { FloorButtons } from './ui/Hud';
 
 export function App() {
   const scene = sceneFromUrl();
@@ -17,6 +19,9 @@ export function App() {
   // The sandbox starts with character creation; the perf test doesn't.
   const [newPerson, setNewPerson] = useState<NewPerson | null>(null);
   const ready = scene === 'perf' || newPerson !== null;
+  // Bumped to rebuild the game (same person, fresh world).
+  const [generation, setGeneration] = useState(0);
+  useEffect(() => gameRestart.on(() => setGeneration((g) => g + 1)), []);
 
   useEffect(() => {
     if (!ready) return;
@@ -24,7 +29,7 @@ export function App() {
     // Dev-only handle for poking at the game from the console or automated checks.
     if (import.meta.env.DEV) (window as unknown as { __game?: unknown }).__game = game;
     return () => game.destroy(true);
-  }, [scene, ready, newPerson]);
+  }, [scene, ready, newPerson, generation]);
 
   if (!ready) {
     return (
@@ -43,6 +48,8 @@ export function App() {
       <div ref={gameRef} className="absolute inset-0" />
       <Hud />
       <TouchControls />
+      {/* Above the touch layer (which covers the whole screen), like the bottom bar. */}
+      <FloorButtons />
       {/* The perf scene has its own HUD instead of the household bar (which isn't built for hundreds of people). */}
       {scene === 'perf' ? <PerfHud /> : <BottomBar />}
       <TuningPanel perf={scene === 'perf'} />

@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { DEFAULT_TUNING, tuning, type MovementTuning } from '../game/movement/tuning';
+import { loadScale, saveScale, type BuildingScale } from '../game/buildings/scale';
 import { DEFAULT_DOOR_TUNING, doorTuning, type DoorTuning } from '../game/world/doorPhysics';
-import { uiCommands } from '../game/bridge';
+import { gameRestart, uiCommands } from '../game/bridge';
 
 /** Debug panel for live-tuning movement feel. Writes straight into the shared tuning object. */
 
@@ -25,6 +26,10 @@ export function TuningPanel({ perf = false }: { perf?: boolean }) {
   const [open, setOpen] = useState(false);
   const [values, setValues] = useState<MovementTuning>({ ...tuning });
   const [doorValues, setDoorValues] = useState<DoorTuning>({ ...doorTuning });
+  // Building scale: saved, and applied by rebuilding the game (same person, fresh world).
+  const [built, setBuilt] = useState<BuildingScale>(() => loadScale());
+  const [scale, setScale] = useState<BuildingScale>(built);
+  const scaleChanged = scale.size !== built.size || scale.height !== built.height;
 
   const setDoor = (key: keyof DoorTuning, value: number) => {
     doorTuning[key] = value;
@@ -45,7 +50,7 @@ export function TuningPanel({ perf = false }: { perf?: boolean }) {
 
   return (
     <div
-      className={`absolute rounded bg-black/70 font-mono text-xs text-stone-200 ${open ? 'w-72 max-w-[calc(100vw-2rem)]' : 'w-fit'}`}
+      className={`absolute overflow-y-auto rounded bg-black/70 font-mono text-xs text-stone-200 ${open ? 'max-h-[calc(100vh-8rem)] w-72 max-w-[calc(100vw-2rem)]' : 'w-fit'}`}
       style={{ top: 'max(1rem, env(safe-area-inset-top))', right: 'max(1rem, env(safe-area-inset-right))' }}
     >
       <button
@@ -59,6 +64,44 @@ export function TuningPanel({ perf = false }: { perf?: boolean }) {
       </button>
       {open && (
         <div className="flex flex-col gap-2 px-3 pb-3">
+          {!perf && (
+            <div className="flex flex-col gap-2 rounded bg-white/5 p-2">
+              <span className="text-stone-300">Buildings (test)</span>
+              {(
+                [
+                  { key: 'size', label: 'Room size', min: 1, max: 5, step: 0.25 },
+                  { key: 'height', label: 'Storey height', min: 1, max: 2, step: 0.1 },
+                ] as const
+              ).map((f) => (
+                <label key={f.key} className="flex flex-col gap-0.5">
+                  <span className="flex justify-between">
+                    <span>{f.label}</span>
+                    <span className="text-stone-400">{scale[f.key].toFixed(2)}×</span>
+                  </span>
+                  <input
+                    type="range"
+                    min={f.min}
+                    max={f.max}
+                    step={f.step}
+                    value={scale[f.key]}
+                    onChange={(e) => setScale({ ...scale, [f.key]: Number(e.target.value) })}
+                    onPointerUp={(e) => e.currentTarget.blur()}
+                  />
+                </label>
+              ))}
+              <button
+                className="rounded bg-white/10 px-2 py-1 enabled:hover:bg-white/20 disabled:opacity-40"
+                disabled={!scaleChanged}
+                onClick={() => {
+                  saveScale(scale);
+                  setBuilt(scale);
+                  gameRestart.emit(null);
+                }}
+              >
+                {scaleChanged ? 'Rebuild with these (restarts the world)' : 'Change a slider to rebuild'}
+              </button>
+            </div>
+          )}
           {FIELDS.map((f) => (
             <label key={f.key} className="flex flex-col gap-0.5">
               <span className="flex justify-between">

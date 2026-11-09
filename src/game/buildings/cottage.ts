@@ -69,7 +69,7 @@ export const COTTAGE: Building = {
       ],
       fixtures: [
         { kind: 'hearth', x: 0.3, y: 1.7, w: 1.1, d: 2.0 },
-        { kind: 'ladder', x: 4.35, y: 1.2, w: 0.5, d: 1.0, heading: 'n', toLevel: 1 },
+        { kind: 'ladder', x: 3.6, y: 1.2, w: 0.5, d: 1.0, heading: 'n', toLevel: 1 },
       ],
     },
     {
@@ -88,7 +88,7 @@ export const COTTAGE: Building = {
         },
       ],
       rooms: [{ name: 'Loft', use: 'sleeping, storage', outline: [[0.3, 0.3], [8.7, 0.3], [8.7, 5.1], [0.3, 5.1]], floor: 'boards' }],
-      fixtures: [{ kind: 'hatch', x: 4.25, y: 1.1, w: 0.7, d: 0.9 }],
+      fixtures: [{ kind: 'hatch', x: 3.5, y: 1.1, w: 0.7, d: 0.9 }],
     },
   ],
   roof: { shape: 'gable', ridge: 'ew', covering: 'thatch', pitch: 50, overhang: 0.4, eaves: 2.6 },

@@ -10,9 +10,12 @@ import type { KitOutput } from './kit';
  * cut down, or a door swung open, still shows the right bit of the art.
  */
 
-/** Sheet size in world px (the texture is SHEET × SCALE pixels square). */
-export const SHEET = 2048;
-export const SCALE = 2;
+/**
+ * Sheet size in world px (the texture is SHEET × SCALE pixels square). One texel per world px:
+ * scaled-up buildings are big, and four 4096² sheets is already a lot of memory on a phone.
+ */
+export const SHEET = 4096;
+export const SCALE = 1;
 const GUTTER = 3;
 
 export interface ArtRect {

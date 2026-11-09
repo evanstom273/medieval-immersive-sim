@@ -27,7 +27,7 @@ export const COFFEE_HOUSE: Building = {
       floorZ: 0,
       height: 3,
       walls: [
-        ext([0, 0.15], [6.5, 0.15], 'timber', [win('leaded', 1.0, 1.1, 1.0, 1.0), door('plank', 4.8, 0.9, 1.9)]),
+        ext([0, 0.15], [6.5, 0.15], 'timber', [win('leaded', 1.0, 1.1, 1.0, 1.0), door('plank', 3.6, 0.9, 1.9)]),
         // The door is set back in a porch, under the projecting bay of the floor above.
         ext([0, 9.85], [2.4, 9.85], 'timber', [win('mullion', 0.45, 1.6, 1.5, 0.85)]),
         ext([4.1, 9.85], [6.5, 9.85], 'timber', [win('mullion', 0.35, 1.6, 1.5, 0.85)]),
@@ -139,11 +139,11 @@ export const TOWNHOUSE: Building = {
       floorZ: 0,
       height: 3,
       walls: [
-        ext([0, 0.15], [4.5, 0.15], 'brick', [door('plank', 0.35, 0.8, 1.9), win('sash', 2.5, 1.0, 1.5, 0.8)]),
+        ext([0, 0.15], [4.5, 0.15], 'brick', [door('plank', 1.9, 0.8, 1.9), win('sash', 3.1, 1.0, 1.5, 0.8)]),
         ext([0, 9.85], [4.5, 9.85], 'brick', [door('panel', 0.45, 0.9, 1.85), win('sash', 2.55, 1.05, 1.75, 0.7)]),
         party(0.1, D, 'brick'),
         party(4.4, D, 'brick'),
-        part([1.55, 0.3], [1.55, 9.7], [door('plank', 2.4, 0.8, 1.9), door('panel', 6.4, 0.8, 1.9)]),
+        part([1.55, 0.3], [1.55, 9.7], [door('plank', 0.05, 0.8, 1.9), door('panel', 6.4, 0.8, 1.9)]),
         part([1.625, 5.2], [4.3, 5.2]),
       ],
       rooms: [
@@ -152,7 +152,7 @@ export const TOWNHOUSE: Building = {
         { name: 'Parlour', use: 'living, receiving', outline: box(1.625, 5.275, 4.3, 9.7), floor: 'boards' },
       ],
       fixtures: [
-        { kind: 'stair', x: 0.3, y: 1.0, w: 1.0, d: 3.0, heading: 'n', toLevel: 1 },
+        { kind: 'stair', x: 0.3, y: 1.4, w: 1.0, d: 3.0, heading: 'n', toLevel: 1 },
         { kind: 'hearth', x: 3.2, y: 1.8, w: 1.1, d: 1.4 },
       ],
     },
@@ -165,15 +165,15 @@ export const TOWNHOUSE: Building = {
         ext([0, 9.85], [4.5, 9.85], 'brick', [win('sash', 0.5, 1.05, 1.75, 0.6), win('sash', 2.55, 1.05, 1.75, 0.6)]),
         party(0.1, D, 'brick'),
         party(4.4, D, 'brick'),
-        part([1.55, 0.3], [1.55, 4.425], [door('plank', 2.4, 0.8, 1.9)]),
-        part([0.2, 4.5], [4.3, 4.5], [door('panel', 0.4, 0.8, 1.9)]),
+        part([1.55, 0.3], [1.55, 4.425], [door('plank', 0.05, 0.8, 1.9)]),
+        part([0.2, 4.5], [4.3, 4.5], [door('panel', 2.3, 0.8, 1.9)]),
       ],
       rooms: [
         { name: 'Landing', use: 'stair', outline: box(0.2, 0.3, 1.475, 4.425), floor: 'boards' },
         { name: 'Bedchamber', use: 'sleeping', outline: box(1.625, 0.3, 4.3, 4.425), floor: 'boards' },
         { name: 'Dining room', use: 'dining, receiving', outline: box(0.2, 4.575, 4.3, 9.7), floor: 'turkey' },
       ],
-      fixtures: [{ kind: 'stairwell', x: 0.3, y: 1.0, w: 1.0, d: 3.0 }],
+      fixtures: [{ kind: 'stairwell', x: 0.3, y: 1.4, w: 1.0, d: 3.0 }],
     },
   ],
   roof: { shape: 'dutchGable', ridge: 'ns', covering: 'tile', pitch: 50, overhang: 0.3, eaves: 6.0 },

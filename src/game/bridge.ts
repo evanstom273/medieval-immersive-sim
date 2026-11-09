@@ -145,6 +145,9 @@ export interface FloorState {
 }
 export const floorChannel = new Channel<FloorState>();
 
+/** UI → app: rebuild the game from scratch (e.g. after changing the building scale). Same person, fresh world. */
+export const gameRestart = new Channel<null>();
+
 /** Game → UI: is the simulation paused? */
 export const pausedChannel = new Channel<boolean>();
 export const uiCommands = new Channel<UiCommand>();

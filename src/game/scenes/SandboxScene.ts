@@ -51,6 +51,7 @@ import { interruptsRest, MAX_REST_HOURS, REST_SPEED, type RestKind, type RestSti
 import type { Plot } from '../buildings/format';
 import { COTTAGE } from '../buildings/cottage';
 import { TERRACE } from '../buildings/row';
+import { loadScale, scaleBuilding, scalePlots } from '../buildings/scale';
 import { floorAt, inRect, placeTown, stairEnds, stairProgress, type Town } from '../buildings/place';
 import { townArt } from '../art/buildingArt';
 import { pack, sheetSvg, type Placed } from '../art/atlas';
@@ -117,6 +118,9 @@ interface Dummy extends Targetable {
 }
 
 const WALLS_STORAGE_KEY = 'mis.wallMode';
+/** Where the preset buildings start (metres): the terrace's north-west corner, far enough south for its roofs. */
+const TOWN_X = 36;
+const townY = (k: number) => 8 + 5 * k;
 
 /** What the floor buttons call each storey. */
 function floorLabel(v: ViewLevel): string {
@@ -151,7 +155,11 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
   private solids!: Phaser.Physics.Arcade.StaticGroup;
   /** How big this scene's world is (overridden by e.g. the performance test). */
   protected world(): WorldSize {
-    return { w: WORLD_W, h: WORLD_H, cell: 8 };
+    // Big enough for the preset buildings at the chosen building scale.
+    const k = loadScale().size;
+    const w = Math.max(WORLD_W, (TOWN_X + 22 * k + 10) * M);
+    const h = Math.max(WORLD_H, (townY(k) + 11 * k + 6 + 5.4 * k + 8) * M);
+    return { w: Math.ceil(w / 64) * 64, h: Math.ceil(h / 64) * 64, cell: 8 };
   }
   protected readonly size: WorldSize = this.world();
   private nav = new NavGrid(this.size.w, this.size.h, this.size.cell);
@@ -269,7 +277,11 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
 
   /** The preset buildings and where they stand (metres). */
   protected plots(): Plot[] {
-    return [...TERRACE.map((p) => ({ ...p, x: p.x + 30, y: p.y + 9 })), { building: COTTAGE, x: 40, y: 27 }];
+    const s = loadScale();
+    const k = s.size;
+    const y0 = townY(k);
+    const terrace = scalePlots(TERRACE, s).map((p) => ({ ...p, x: p.x + TOWN_X, y: p.y + y0 }));
+    return [...terrace, { building: scaleBuilding(COTTAGE, s), x: TOWN_X + 5 * k, y: y0 + 11 * k + 6 }];
   }
 
   preload(): void {
@@ -895,7 +907,11 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
         break;
       }
       case 'hold':
-        if (this.press?.touch) this.press.point = this.ground(this.cssToWorld(c.x, c.y));
+        if (this.press?.touch) {
+          const w = this.cssToWorld(c.x, c.y);
+          const g = this.groundAt(w.x, w.y);
+          if (g.level === this.active.level) this.press.point = { x: g.x, y: g.y };
+        }
         break;
       case 'release':
         if (this.press?.touch) this.press = null;
@@ -1902,7 +1918,8 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     });
 
     const pointerScreen = this.input.activePointer.positionToCamera(this.cameras.main) as Phaser.Math.Vector2;
-    const pointer = this.ground(pointerScreen);
+    // The floor under the pointer, on the storey shown (for following a held press, and aiming).
+    const pointer = this.groundAt(pointerScreen.x, pointerScreen.y);
 
     // ---- the active character's input
     let manual = { x: (k.right.isDown ? 1 : 0) - (k.left.isDown ? 1 : 0), y: (k.down.isDown ? 1 : 0) - (k.up.isDown ? 1 : 0) };
@@ -1923,7 +1940,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     if (this.press) {
       if (!this.press.touch) {
         if (!this.input.activePointer.leftButtonDown()) this.press = null;
-        else this.press.point = { x: pointer.x, y: pointer.y };
+        else if (pointer.level === a.level) this.press.point = { x: pointer.x, y: pointer.y };
       }
       if (this.press && this.now - this.press.since >= HOLD_TO_FOLLOW_MS) this.follow(this.now);
     }
