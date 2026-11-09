@@ -128,6 +128,10 @@ export type UiCommand =
   /** Set a waypoint (world metres): one you walk to yourself, or auto-walk (time sped up until you arrive). */
   | { kind: 'waypoint'; x: number; y: number; auto: boolean }
   | { kind: 'clearWaypoint' }
+  /** The overview's speed: 0 pauses, 1–5. */
+  | { kind: 'overviewSpeed'; speed: number }
+  | { kind: 'nameBaby'; id: string; name: string }
+  | { kind: 'chooseHeir'; id: string }
   /** Show the storey above (1) or below (−1); above the top storey are the roofs. */
   | { kind: 'floor'; dir: 1 | -1 }
   | { kind: 'cancelAction' }
@@ -168,6 +172,43 @@ export interface WaypointScreen {
   auto: boolean;
 }
 export const waypointChannel = new Channel<WaypointScreen | null>();
+
+/** Game → UI: the overview (the generational fast-forward), or null when you're not zoomed out to it. */
+export interface FamilyMember {
+  id: string;
+  name: string;
+  age: number;
+  /** How they stand to you ("Son", "Wife", "Household"…). */
+  tie: string;
+  stage: string;
+  you: boolean;
+}
+export interface OverviewState {
+  date: string;
+  /** 0 = paused, 1–5 = CKIII-style speeds. */
+  speed: number;
+  family: FamilyMember[];
+  /** People alive across the region. */
+  population: number;
+}
+export const overviewChannel = new Channel<OverviewState | null>();
+
+/** Game → UI: something that happened in the fast-forward (a birth, a death, a marriage…). */
+export interface LifeNotice {
+  id: number;
+  icon: string;
+  text: string;
+  date: string;
+  /** About your family (shown more prominently). */
+  family: boolean;
+}
+export const noticeChannel = new Channel<LifeNotice>();
+
+/** Game → UI: the fast-forward has stopped to ask you something, or null. */
+export type LifeAsk =
+  | { kind: 'name'; id: string; sex: 'm' | 'f'; parents: string; suggestion: string }
+  | { kind: 'heir'; died: string; options: FamilyMember[]; family: boolean };
+export const askChannel = new Channel<LifeAsk | null>();
 
 /** UI → app: rebuild the game from scratch (e.g. after changing the building scale). Same person, fresh world. */
 export const gameRestart = new Channel<null>();

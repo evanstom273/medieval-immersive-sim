@@ -37,10 +37,10 @@ export class RegionLayer {
   }
 
   /** Follow the zoom (redraw if it's changed much), and fade. `px` = world px per CSS px. */
-  update(alpha: number, px: number): void {
+  update(alpha: number, px: number, labelAlpha = alpha): void {
     const shown = alpha > 0.001;
     this.g.setVisible(shown).setAlpha(alpha);
-    for (const l of this.labels) l.t.setVisible(shown).setAlpha(alpha).setScale(px).setPosition(l.x, l.y + 10 * px);
+    for (const l of this.labels) l.t.setVisible(labelAlpha > 0.001).setAlpha(labelAlpha).setScale(px).setPosition(l.x, l.y + 10 * px);
     if (!shown) return;
     if (this.drawnFor === 0 || Math.abs(Math.log(px / this.drawnFor)) > 0.15) {
       this.drawnFor = px;

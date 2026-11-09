@@ -64,10 +64,10 @@ export class Character implements Targetable {
   readonly temperament: Temperament;
   readonly palette: Palette;
   /** What they look like: sex, age, body sliders, skin and hair. */
-  readonly figure: Body;
+  figure: Body;
   readonly obj: Phaser.GameObjects.Arc;
   readonly body: Phaser.Physics.Arcade.Body;
-  readonly view: CharacterView;
+  view: CharacterView;
   readonly overhead: Overhead;
   readonly brain = new Brain();
 
@@ -135,6 +135,13 @@ export class Character implements Targetable {
     this.body.setCollideWorldBounds(true);
     this.view = new CharacterView(scene, def.x, def.y, def.palette, this.figure);
     this.overhead = new Overhead(scene);
+  }
+
+  /** A new body (e.g. years older after a long skip): redraws them. */
+  setFigure(scene: Phaser.Scene, body: Body): void {
+    this.figure = body;
+    this.view.destroy();
+    this.view = new CharacterView(scene, this.x, this.y, this.palette, body);
   }
 
   get x(): number {

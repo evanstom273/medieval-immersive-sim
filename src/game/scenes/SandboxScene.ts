@@ -13,6 +13,11 @@ import {
   restDialogChannel,
   mapChannel,
   waypointChannel,
+  overviewChannel,
+  noticeChannel,
+  askChannel,
+  type FamilyMember,
+  type LifeAsk,
   type MenuState,
   type RosterMember,
   type UiCommand,
@@ -60,7 +65,10 @@ import { pack, sheetSvg, type Placed } from '../art/atlas';
 import { BuildingView, bandOf, type ViewLevel } from '../view/BuildingView';
 import type { MapFeature, MapState, Waypoint } from '../map/worldMap';
 import type { MapScene, Token } from './MapScene';
-import { generateRegion } from '../map/region';
+import { generateRegion, type Region } from '../map/region';
+import { ageOf, alive, describeTie, Population, type LifeEvent, type Person } from '../sim/people';
+import { stageOf, defaultBody } from '../characters/body';
+import { freshNeeds } from '../life/needs';
 
 /**
  * PLACEHOLDER sandbox: a field, a small house with a door, a chest, a sign,
@@ -123,6 +131,8 @@ interface Dummy extends Targetable {
 }
 
 const WALLS_STORAGE_KEY = 'mis.wallMode';
+/** The overview's speeds (CKIII-style 1–5): game days per real second. */
+const OVERVIEW_DAYS_PER_SECOND = [0, 1, 3, 7, 14, 30];
 /** Where the preset buildings start (metres): the terrace's north-west corner, far enough south for its roofs. */
 const TOWN_X = 36;
 const townY = (k: number) => 8 + 5 * k;
@@ -284,6 +294,23 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
   private mapDrag: { x: number; y: number; moved: boolean } | null = null;
   /** The world camera's bounds (dropped while on the map, which reaches past the village). */
   private worldBounds: Phaser.Geom.Rectangle | null = null;
+  /** The region round the village (generated). */
+  private region: Region | null = null;
+  /** Everyone, as records, for the generational fast-forward. */
+  private population: Population | null = null;
+  /** Who you are in the long view (the person the family line follows). */
+  private youId: string | null = null;
+  /** The overview's speed (0 paused, 1–5), days not yet run, and whether any time has passed since you went out to it. */
+  private overviewSpeed = 0;
+  private overviewDays = 0;
+  private overviewRan = false;
+  private overviewTimer = 0;
+  /** The fast-forward is waiting on you (a name, an heir). */
+  private lifeAsk: LifeAsk | null = null;
+  private lifeAsks: LifeAsk[] = [];
+  private noticeId = 0;
+  private overviewLast = 1;
+  private overviewDaysRun = 0;
 
   constructor(key = 'sandbox') {
     super(key);
@@ -369,6 +396,10 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
 
     this.active = this.characters[0];
     this.active.controlled = true;
+    if (this.plots().length) {
+      this.region = generateRegion({ villageW: this.size.w / M, villageH: this.size.h / M });
+      this.population = this.makePopulation(this.region);
+    }
     for (const c of this.characters) c.brain.reset(this.now + this.rng() * 1500);
 
     this.sightGrid.build(this.sightBlockers, 0);
@@ -396,7 +427,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     const mapScene = this.scene.get('map') as MapScene;
     mapScene.events.once(Phaser.Scenes.Events.CREATE, () => {
       this.mapScene = mapScene;
-      mapScene.buildRegion(generateRegion({ villageW: this.size.w / M, villageH: this.size.h / M }));
+      if (this.region) mapScene.buildRegion(this.region);
       mapScene.buildPlan(this.mapFeatures, this.size.w / M, this.size.h / M);
     });
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.scene.stop('map'));
@@ -1024,6 +1055,15 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
       case 'clearWaypoint':
         this.clearWaypoint();
         break;
+      case 'overviewSpeed':
+        this.overviewSpeed = Math.max(0, Math.min(5, c.speed));
+        break;
+      case 'nameBaby':
+        this.nameBaby(c.id, c.name);
+        break;
+      case 'chooseHeir':
+        this.chooseHeir(c.id);
+        break;
       case 'setWalls':
         this.setWalls(c.mode);
         break;
@@ -1295,7 +1335,8 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
 
   /** How fast time runs for where you're looking: faster as you zoom out ("gentle": village 2×). */
   private viewSpeed(): number {
-    return this.rig.layer === 'region' ? 8 : this.rig.villageMix > 0.5 ? 2 : 1;
+    // (In the overview the live world stands still; the fast-forward has its own speeds.)
+    return this.rig.layer === 'overview' ? 1 : this.rig.layer === 'region' ? 8 : this.rig.villageMix > 0.5 ? 2 : 1;
   }
 
   /** The token under a camera-space point in the village view, if any. */
@@ -1387,6 +1428,248 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
       else if (this.buildingView) this.setViewLevel(this.viewLevel);
     }
     this.mapScene?.sync(cam, mix, mix > 0.001 ? this.tokens() : [], this.dpr() / cam.zoom, this.rig.span);
+  }
+
+  // ---------------------------------------------------------------- the overview: generations
+
+  /** Today, as a game day number. */
+  private today(): number {
+    return Math.floor(this.clock.seconds / 86400);
+  }
+
+  /**
+   * Everyone as records: the people in the village (PLACEHOLDER: all of them your family line, until
+   * real family ties are decided), and households for every other settlement in the region.
+   */
+  private makePopulation(region: Region): Population {
+    const pop = new Population(region.seed);
+    const today = this.today();
+    for (const c of this.characters) {
+      pop.add({ id: c.id, name: c.name, surname: '', sex: c.figure.sex, born: today - Math.round((c.figure.age + 0.5) * 365), home: 0, family: true, live: true });
+    }
+    const size: Record<string, number> = { village: 45, town: 160, manor: 10, castle: 20, home: 0 };
+    region.settlements.forEach((s, i) => {
+      if (i > 0) pop.populate(i, size[s.kind], today);
+    });
+    return pop;
+  }
+
+  private fullName(p: Person): string {
+    return p.surname ? `${p.name} ${p.surname}` : p.name;
+  }
+
+  /**
+   * A frame in the overview: the live world stands still; the clock runs a day at a time at the
+   * chosen speed (CKIII-style, 1–5, Space pauses) and everyone's lives run abstractly.
+   */
+  private overviewFrame(dt: number): void {
+    const k = this.keys;
+    const pop = this.population!;
+    if (!this.overviewRan) {
+      this.overviewRan = true;
+      this.overviewSpeed = 0;
+      const me = pop.get(this.active.id);
+      if (me && alive(me)) this.youId = me.id;
+    }
+    if (Phaser.Input.Keyboard.JustDown(k.pause)) this.overviewSpeed = this.overviewSpeed ? 0 : this.overviewLast;
+    (['one', 'two', 'three', 'four', 'five'] as const).forEach((key, i) => {
+      if (Phaser.Input.Keyboard.JustDown(k[key])) this.overviewSpeed = i + 1;
+    });
+    if (this.overviewSpeed) this.overviewLast = this.overviewSpeed;
+    if (!this.lifeAsk && this.overviewSpeed > 0) {
+      this.overviewDays += OVERVIEW_DAYS_PER_SECOND[this.overviewSpeed] * dt;
+      let steps = 0;
+      while (this.overviewDays >= 1 && !this.lifeAsk && steps++ < 40) {
+        this.overviewDays -= 1;
+        this.clock.seconds += 86400;
+        this.overviewDaysRun++;
+        this.lifeEvents(pop.day(this.today(), this.youId));
+      }
+    } else this.overviewDays = 0;
+    this.emitUi(dt);
+  }
+
+  /** What happened today, as notices (and stops for the things only you can decide). */
+  private lifeEvents(events: LifeEvent[]): void {
+    const pop = this.population!;
+    const name = (id: string) => this.fullName(pop.get(id)!);
+    const local = (id: string) => pop.get(id)!.home === 0;
+    for (const e of events) {
+      switch (e.kind) {
+        case 'birth': {
+          const p = pop.get(e.person)!;
+          if (e.needsName) {
+            const parents = p.parents.map((id) => pop.get(id)!.name).join(' and ');
+            this.askLife({ kind: 'name', id: p.id, sex: p.sex, parents, suggestion: p.name });
+          } else if (local(e.person)) this.notice('👶', `A child is born in the village: ${name(e.person)}.`, false);
+          break;
+        }
+        case 'death':
+          if (e.you) this.askHeir(e.person);
+          else if (e.family) this.notice('🕯️', `${name(e.person)} has died, aged ${e.age}.`, true);
+          else if (local(e.person)) this.notice('🕯️', `${name(e.person)} of the village has died, aged ${e.age}.`, false);
+          break;
+        case 'marriage':
+          if (e.family || local(e.a) || local(e.b)) this.notice('💍', `${name(e.a)} and ${name(e.b)} are married.`, e.family);
+          break;
+        case 'cameOfAge':
+          this.notice('🌱', `${name(e.person)} is now ${e.stage}.`, true);
+          break;
+        case 'newcomer':
+          this.notice('🧳', `${name(e.person)} comes to live in the village.`, true);
+          break;
+      }
+    }
+  }
+
+  private notice(icon: string, text: string, family: boolean): void {
+    noticeChannel.emit({ id: ++this.noticeId, icon, text, date: formatDate(this.clock.parts()), family });
+  }
+
+  /** Stop and ask (one thing at a time). */
+  private askLife(a: LifeAsk): void {
+    this.lifeAsks.push(a);
+    if (!this.lifeAsk) this.nextAsk();
+  }
+
+  private nextAsk(): void {
+    this.lifeAsk = this.lifeAsks.shift() ?? null;
+    askChannel.emit(this.lifeAsk);
+  }
+
+  /** You've died: who carries the family on? (Anyone in the village, if the family's gone.) */
+  private askHeir(diedId: string): void {
+    const pop = this.population!;
+    const died = pop.get(diedId)!;
+    const today = this.today();
+    let options = pop.living().filter((p) => p.family);
+    const family = options.length > 0;
+    if (!family) options = pop.living().filter((p) => p.home === 0 && ageOf(p, today) >= 16);
+    if (!options.length) options = pop.living().filter((p) => ageOf(p, today) >= 16).slice(0, 12);
+    const members = options
+      .sort((a, b) => a.born - b.born)
+      .map((p) => this.member(p, died));
+    this.askLife({ kind: 'heir', died: `${this.fullName(died)}, aged ${Math.floor(ageOf(died, today))}`, options: members, family });
+  }
+
+  private member(p: Person, you: Person | undefined): FamilyMember {
+    const age = Math.floor(ageOf(p, this.today()));
+    return { id: p.id, name: this.fullName(p), age, tie: you ? describeTie(this.population!, you, p) : '', stage: stageOf(age), you: !!you && p.id === you.id };
+  }
+
+  private nameBaby(id: string, name: string): void {
+    const p = this.population?.get(id);
+    if (p && name.trim()) p.name = name.trim().slice(0, 24);
+    if (p) this.notice('👶', `${this.fullName(p)} is born.`, true);
+    this.nextAsk();
+  }
+
+  private chooseHeir(id: string): void {
+    const p = this.population?.get(id);
+    if (!p) return;
+    this.youId = p.id;
+    // Taking someone outside the family on makes them the family now.
+    if (!p.family) {
+      p.family = true;
+      p.home = 0;
+      p.live = true;
+    }
+    this.notice('👑', `You carry on as ${this.fullName(p)}.`, true);
+    this.nextAsk();
+  }
+
+  /** The family panel's state, while in the overview. */
+  private emitOverview(dt: number): void {
+    const pop = this.population;
+    if (!pop || this.rig.layer !== 'overview') {
+      if (overviewChannel.last) overviewChannel.emit(null);
+      return;
+    }
+    this.overviewTimer -= dt;
+    if (this.overviewTimer > 0) return;
+    this.overviewTimer = 0.25;
+    const you = this.youId ? pop.get(this.youId) : undefined;
+    const family = pop
+      .living()
+      .filter((p) => p.family)
+      .sort((a, b) => (a.id === this.youId ? -1 : b.id === this.youId ? 1 : a.born - b.born))
+      .map((p) => this.member(p, you));
+    overviewChannel.emit({ date: formatDate(this.clock.parts()), speed: this.overviewSpeed, family, population: pop.living().length });
+  }
+
+  /**
+   * Back in from the overview: the fast-forward stops, and if time has passed the village is rebuilt
+   * from the records: whoever's alive and at home is there (older), the dead are gone, newborns and
+   * newcomers appear, you're whoever the family follows now, and everyone starts the day fresh.
+   */
+  private leaveOverview(): void {
+    this.overviewRan = false;
+    this.overviewSpeed = 0;
+    overviewChannel.emit(null);
+    if (this.overviewDaysRun === 0) return;
+    this.overviewDaysRun = 0;
+    const pop = this.population!;
+    const today = this.today();
+    for (const p of pop.living()) {
+      if (p.live && p.home === 0 && !this.characters.some((c) => c.id === p.id)) this.spawnPerson(this.defFor(p, today));
+    }
+    const heir = this.youId ? this.characters.find((c) => c.id === this.youId) : undefined;
+    if (heir && heir !== this.active) this.takeControl(heir);
+    for (const c of [...this.characters]) {
+      const p = pop.get(c.id);
+      if (p && (!alive(p) || p.home !== 0)) {
+        this.removePerson(c);
+        continue;
+      }
+      if (p) {
+        const age = Math.floor(ageOf(p, today));
+        if (age !== Math.floor(c.figure.age)) c.setFigure(this, { ...c.figure, age });
+      }
+      this.endDoing(c, false);
+      c.cancelOrder();
+      c.social = null;
+      c.asleep = false;
+      c.lieHeight = 0;
+      c.needs = freshNeeds();
+      c.moodlets = [];
+      c.brain.reset(this.now + this.rng() * 1500);
+    }
+    this.say(`It is ${formatDate(this.clock.parts())}.`);
+  }
+
+  /** Take control of someone at once (no camera flight): the heir, after a long skip. */
+  private takeControl(next: Character): void {
+    const prev = this.active;
+    prev.controlled = false;
+    prev.cancelOrder();
+    prev.brain.reset(this.now);
+    this.cameraFocus = { x: next.x, y: next.y };
+    next.controlled = true;
+    next.cancelOrder();
+    next.social = null;
+    next.heldUntil = 0;
+    next.mode = 'explore';
+    next.lockTarget = null;
+    this.active = next;
+    this.selectedId = null;
+  }
+
+  /** A body for someone who's joined the village (born, or married in) since you were last here. */
+  private defFor(p: Person, today: number): CharacterDef {
+    const r = this.rng;
+    const tunics = [0x7a4a2e, 0x4a5f3a, 0x5a4a6a, 0x8a6a3a, 0x3e5f6a, 0x6a3a3a];
+    const hairs = [0x3b2416, 0x8a5a2b, 0x1f1a17, 0xb5a07a, 0x6a3a1a];
+    const near = this.ensureNav(0).nearestFree({ x: this.active.x + (r() - 0.5) * 3 * M, y: this.active.y + (r() - 0.5) * 3 * M }, 3 * M) ?? { x: this.active.x, y: this.active.y };
+    const hair = hairs[Math.floor(r() * hairs.length)];
+    return {
+      id: p.id,
+      name: p.name,
+      temperament: (['bold', 'wary', 'meek'] as const)[Math.floor(r() * 3)],
+      palette: { tunic: tunics[Math.floor(r() * tunics.length)], hair },
+      body: { ...defaultBody(p.sex), age: Math.floor(ageOf(p, today)), hair: `#${hair.toString(16).padStart(6, '0')}` },
+      x: near.x,
+      y: near.y,
+    };
   }
 
   /** The sprint button. Sprinting stands you up out of a sneak. */
@@ -1790,6 +2073,8 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
   }
 
   perceive(c: Character, p: Perception): void {
+    // Gone from the world (e.g. died in a long skip) with a perception still on its way.
+    if (!this.characters.includes(c)) return;
     if (c === this.active && this.rest) {
       const why = interruptsRest(this.rest.kind, toStimulus(p));
       if (why) this.endRest(why);
@@ -2196,6 +2481,12 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     const k = this.keys;
     const a = this.active;
 
+    // Out in the overview: the live world stands still while the years run (see overviewFrame).
+    if (this.rig.layer === 'overview' && this.population) {
+      this.overviewFrame(dt);
+      return;
+    }
+    if (this.overviewRan) this.leaveOverview();
     // The rest dialog keeps the game paused until it's answered.
     if (Phaser.Input.Keyboard.JustDown(k.pause) && !this.restAsk) this.setPaused(!this.paused);
     if (Phaser.Input.Keyboard.JustDown(k.walls)) this.cycleWalls();
@@ -2837,6 +3128,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
 
   private emitUi(dt: number): void {
     this.emitMap(dt);
+    this.emitOverview(dt);
     const a = this.active;
     this.clockTimer -= dt;
     if (this.clockTimer <= 0) {

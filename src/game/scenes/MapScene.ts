@@ -4,6 +4,7 @@ import { villageSvg } from '../map/villageSvg';
 import type { MapFeature } from '../map/worldMap';
 import type { Region } from '../map/region';
 import { RegionLayer } from '../map/RegionLayer';
+import { paintedSvg } from '../map/paintedSvg';
 
 /**
  * The map layers of the zoom, drawn over the live world by their own scene (so the world can fade out
@@ -42,6 +43,7 @@ interface TokenView {
 export class MapScene extends Phaser.Scene {
   private plan: Phaser.GameObjects.Image | null = null;
   private region: RegionLayer | null = null;
+  private painted: Phaser.GameObjects.Image | null = null;
   private tokens = new Map<string, TokenView>();
   private ready = false;
   private alpha = 0;
@@ -59,6 +61,17 @@ export class MapScene extends Phaser.Scene {
   /** The region around the village, drawn under the village plan. */
   buildRegion(region: Region): void {
     this.region = new RegionLayer(this, region);
+    // The overview's painted map, baked once.
+    const { svg, x, y, w, h } = paintedSvg(region);
+    const key = 'region-painted';
+    if (this.textures.exists(key)) this.textures.remove(key);
+    const url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }));
+    this.load.svg(key, url);
+    this.load.once(Phaser.Loader.Events.COMPLETE, () => {
+      URL.revokeObjectURL(url);
+      this.painted = this.add.image(x, y, key).setOrigin(0, 0).setDisplaySize(w, h).setDepth(-8).setAlpha(0).setVisible(false);
+    });
+    this.load.start();
   }
 
   /** Bake and lay down the village plan (once the sandbox has built its world). */
@@ -94,7 +107,10 @@ export class MapScene extends Phaser.Scene {
     // Out at region scale the village plan and the household fade, leaving the region and you.
     const local = alpha * (1 - crossfade(span, 220, 420));
     this.plan?.setAlpha(local).setVisible(local > 0.001);
-    this.region?.update(alpha, screenScale);
+    // Out in the overview the ink map turns into the painted one (labels stay).
+    const paint = alpha * crossfade(span, 3200, 6500);
+    this.painted?.setAlpha(paint).setVisible(paint > 0.001);
+    this.region?.update(alpha * (1 - crossfade(span, 3200, 6500)), screenScale, alpha);
     const seen = new Set<string>();
     for (const t of tokens) {
       seen.add(t.id);

@@ -47,6 +47,10 @@ export interface Region {
   woods: [number, number, number][];
   /** Hills: where to draw a hill mark (x, y, size). */
   hills: [number, number, number][];
+  /** Ground height (0..1) on a grid, for shading the painted map: rows of `heightCols`, every `heightStep` metres from (x0, y0). */
+  heights: number[];
+  heightCols: number;
+  heightStep: number;
 }
 
 export interface RegionOptions {
@@ -291,7 +295,12 @@ export function generateRegion(o: RegionOptions): Region {
     }
   }
 
-  return { seed, x0, y0, x1, y1, settlements, roads, river, fields, commons, woods, hills };
+  const heightStep = 250;
+  const heightCols = Math.ceil((x1 - x0) / heightStep) + 1;
+  const heights: number[] = [];
+  const heightRows = Math.ceil((y1 - y0) / heightStep) + 1;
+  for (let j = 0; j < heightRows; j++) for (let i = 0; i < heightCols; i++) heights.push(h(x0 + i * heightStep, y0 + j * heightStep));
+  return { seed, x0, y0, x1, y1, settlements, roads, river, fields, commons, woods, hills, heights, heightCols, heightStep };
 }
 
 function sameEnds(r: Road, a: { x: number; y: number }, b: { x: number; y: number }): boolean {

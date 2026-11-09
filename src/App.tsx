@@ -13,6 +13,7 @@ import { loadNewPerson, saveNewPerson, type NewPerson } from './game/characters/
 import { gameRestart } from './game/bridge';
 import { FloorButtons } from './ui/Hud';
 import { WaypointArrow, WorldMap } from './ui/WorldMap';
+import { LifeAskDialog, LifeNotices, OverviewPanel } from './ui/Overview';
 
 export function App() {
   const scene = sceneFromUrl();
@@ -59,6 +60,9 @@ export function App() {
       <SwitchCard />
       <RestDialog />
       <WorldMap />
+      <OverviewPanel />
+      <LifeNotices />
+      <LifeAskDialog />
     </div>
   );
 }
