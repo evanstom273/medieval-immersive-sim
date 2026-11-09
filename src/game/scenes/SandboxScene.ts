@@ -1074,7 +1074,11 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     const town = this.town;
     if (!town) return;
     const a = this.active;
-    const inside = a.stair >= 0 || !!floorAt(town, a.x, a.y, a.level);
+    // Inside once you're in a room; and you stay inside (doorways between rooms, the threshold on the
+    // way out) until you've left the building's footprint.
+    const inRoom = a.stair >= 0 || !!floorAt(town, a.x, a.y, a.level);
+    const inFootprint = town.buildings.some((b) => a.x > b.rect.x && a.x < b.rect.x + b.rect.w && a.y > b.rect.y && a.y < b.rect.y + b.rect.h);
+    const inside = inRoom || (this.autoView !== null && this.autoView !== 'roof' && inFootprint);
     const want: ViewLevel = inside ? a.level : 'roof';
     if (want !== this.autoView) {
       this.autoView = want;

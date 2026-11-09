@@ -36,11 +36,11 @@ export const COFFEE_HOUSE: Building = {
         ext([3.95, 8.85], [3.95, 10], 'timber'),
         party(0.1, D, 'timber'),
         party(6.4, D, 'timber'),
-        part([0.2, 6.0], [6.3, 6.0], [door('plank', 2.4, 0.9, 1.9)]),
+        part([0.2, 4.6], [6.3, 4.6], [door('plank', 2.4, 0.9, 1.9)]),
       ],
       rooms: [
-        { name: 'Coffee room', use: 'trade: coffee, news, talk', outline: [[0.2, 6.075], [6.3, 6.075], [6.3, 9.7], [4.1, 9.7], [4.1, 8.7], [2.4, 8.7], [2.4, 9.7], [0.2, 9.7]], floor: 'boards' },
-        { name: 'Kitchen', use: 'work: brewing, cooking', outline: box(0.2, 0.3, 6.3, 5.925), floor: 'quarry' },
+        { name: 'Coffee room', use: 'trade: coffee, news, talk', outline: [[0.2, 4.675], [6.3, 4.675], [6.3, 9.7], [4.1, 9.7], [4.1, 8.7], [2.4, 8.7], [2.4, 9.7], [0.2, 9.7]], floor: 'boards' },
+        { name: 'Kitchen', use: 'work: brewing, cooking', outline: box(0.2, 0.3, 6.3, 4.525), floor: 'quarry' },
       ],
       fixtures: [
         { kind: 'hearth', x: 0.2, y: 2.0, w: 1.2, d: 1.6 },

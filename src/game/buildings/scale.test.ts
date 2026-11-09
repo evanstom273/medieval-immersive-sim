@@ -9,6 +9,7 @@ describe('building scale', () => {
   for (const [size, height] of [
     [1, 1],
     [2.5, 1],
+    [1.75, 1.5],
     [3, 1.5],
     [5, 2],
   ]) {

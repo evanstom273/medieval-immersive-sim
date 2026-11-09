@@ -2,9 +2,9 @@ import type { Building, Fixture, Plot, Storey, Wall } from './format';
 
 /**
  * Building scale (a test setting, from the Tuning panel): rooms spread out by
- * `size`, storeys taller by `height`, while the parts people use stay human:
- * walls keep their thickness, doors and windows their size, hearths theirs,
- * stairs their width (they get longer, to climb the taller storeys).
+ * `size`, storeys taller by `height`. Doors and windows grow with the storeys
+ * (so they sit in proportion on the taller walls); walls keep their thickness,
+ * hearths their size, stairs their width (they get longer, to climb the taller storeys).
  */
 export interface BuildingScale {
   /** Floor plans × this. */
@@ -13,7 +13,7 @@ export interface BuildingScale {
   height: number;
 }
 
-export const DEFAULT_SCALE: BuildingScale = { size: 3, height: 1.5 };
+export const DEFAULT_SCALE: BuildingScale = { size: 1.75, height: 1.5 };
 const KEY = 'mis.buildingScale';
 
 export function loadScale(): BuildingScale {
@@ -84,8 +84,12 @@ export function scaleBuilding(b: Building, { size: k, height: hk }: BuildingScal
       from,
       to,
       top: w.top === undefined ? undefined : w.top * hk,
-      // Openings keep their size; their middles move with the wall.
-      openings: w.openings.map((o) => ({ ...o, at: Math.max(0, Math.min(len2 - o.width, ((o.at + o.width / 2) * len2) / len - o.width / 2)) })),
+      // Openings grow with the storeys; their middles move with the wall.
+      openings: w.openings.map((o) => {
+        const width = Math.min(o.width * hk, len2);
+        const at = Math.max(0, Math.min(len2 - width, ((o.at + o.width / 2) * len2) / len - width / 2));
+        return { ...o, at, width, height: o.height * hk, sill: o.sill === undefined ? undefined : o.sill * hk };
+      }),
     };
   };
   const fixture = (f: Fixture): Fixture => {
