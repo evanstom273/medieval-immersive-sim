@@ -84,6 +84,9 @@ export class Character implements Targetable {
   linkBusy = false;
   /** Asleep: eyes shut (sees nothing), lying down. */
   asleep = false;
+  /** Position at the previous movement step (drawing smooths between it and the current one). */
+  prevX: number;
+  prevY: number;
 
   constructor(scene: Phaser.Scene, def: CharacterDef) {
     this.id = def.id;
@@ -91,6 +94,8 @@ export class Character implements Targetable {
     this.temperament = def.temperament;
     this.palette = def.palette;
     this.motor = createMotorState(def.facing ?? 0);
+    this.prevX = def.x;
+    this.prevY = def.y;
     this.obj = scene.add.circle(def.x, def.y, BODY_RADIUS).setVisible(false);
     scene.physics.add.existing(this.obj);
     this.body = this.obj.body as Phaser.Physics.Arcade.Body;

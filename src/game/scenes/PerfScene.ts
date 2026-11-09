@@ -58,18 +58,6 @@ export class PerfScene extends SandboxScene {
     super.create();
     profiler.enabled = true;
 
-    // Time Arcade's physics step. (Arcade registered world.update as a scene UPDATE listener
-    // before create(), so swap that listener for a timed one. The small post-step sync isn't timed.)
-    const world = this.physics.world;
-    const timedUpdate = (t: number, d: number) => {
-      profiler.begin('physics');
-      world.update(t, d);
-      profiler.end('physics');
-    };
-    this.sys.events.off(Phaser.Scenes.Events.UPDATE, world.update, world);
-    this.sys.events.on(Phaser.Scenes.Events.UPDATE, timedUpdate);
-    this.unsubs.push(() => this.sys.events.off(Phaser.Scenes.Events.UPDATE, timedUpdate));
-
     const pre = () => profiler.begin('render');
     const post = () => {
       profiler.end('render');

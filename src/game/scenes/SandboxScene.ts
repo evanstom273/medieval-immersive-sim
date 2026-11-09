@@ -95,6 +95,14 @@ interface Dummy extends Targetable {
 }
 
 const WALLS_STORAGE_KEY = 'mis.wallMode';
+/** Movement and physics run in fixed steps of this size (60 a second). */
+const MOVE_DT = 1 / 60;
+/** A world tick (brains, senses, conversations, footsteps) every this many movement steps: 20 a second. */
+const WORLD_EVERY = 3;
+/** Fallen behind: catch up with at most this many extra steps a frame, then let time slip. */
+const MAX_CATCH_UP_STEPS = 8;
+/** ...and spend at most this long (real ms) on it in one frame: past that, time slips rather than the screen freezing. */
+const CATCH_UP_BUDGET_MS = 40;
 /** While resting, spend at most this long (real ms) per frame simulating; slow machines rest a little slower. */
 const REST_FRAME_BUDGET_MS = 10;
 
@@ -173,6 +181,11 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
   private bumpNear: Character[] = [];
   /** Reused every frame for every person's motor input (no garbage). */
   private readonly motorInput: MotorInput = { move: { x: 0, y: 0 }, sprint: false, aimAngle: null, lookAngle: null };
+  /** Scratch point for drawPos (read immediately; never kept). */
+  private readonly drawAt = { x: 0, y: 0, set(x: number, y: number) { this.x = x; this.y = y; return this; } };
+  /** Real time not yet spent on movement steps (seconds); also how far between steps to draw. */
+  private moveAcc = 0;
+  private stepCount = 0;
   /** Simulation time (ms). Runs with the simulation: stops when paused, speeds up while resting. */
   private simMs = 0;
   readonly clock = new GameClock();
@@ -204,6 +217,10 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     // Arcade rebuilds a tree of all moving bodies every frame for body-vs-body collisions; people
     // don't collide through Arcade (see separatePeople), so skip it. (Walls use the static tree.)
     this.physics.world.useTree = false;
+    // We step Arcade ourselves, in fixed movement steps (see physicsStep), not once per rendered frame.
+    const world = this.physics.world;
+    this.sys.events.off(Phaser.Scenes.Events.UPDATE, world.update, world);
+    this.sys.events.off(Phaser.Scenes.Events.POST_UPDATE, world.postUpdate, world);
     this.cameras.main.setBackgroundColor('#1c1b19');
 
     this.scenery = new Scenery(this, this.size.w, this.size.h);
@@ -1350,7 +1367,8 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
   }
 
   private frameUpdate(_time: number, deltaMs: number): void {
-    const dt = Math.min(deltaMs / 1000, 0.05);
+    // Real time since the last frame (capped: after a long stall, don't try to simulate it all).
+    const dt = Math.min(deltaMs / 1000, 0.25);
     this.updateDetailBox();
     // Wall collisions for people in full detail only (refilled in place: no new array).
     this.peopleObjs.length = 0;
@@ -1415,12 +1433,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
       if (this.press && this.now - this.press.since >= HOLD_TO_FOLLOW_MS) this.follow(this.now);
     }
 
-    if (this.rest) {
-      this.restFrames(dt, manual, hasManual, pointer);
-    } else {
-      this.speedNow = 1;
-      this.simulate(dt, manual, hasManual, pointer);
-    }
+    this.advance(dt, manual, hasManual, pointer);
     this.updateHover(pointerScreen.x, pointerScreen.y);
     profiler.begin('ui');
     this.emitUi(dt);
@@ -1428,12 +1441,34 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
   }
 
   /**
-   * One step of the world: doors, everyone, footsteps, senses, the clock.
-   * Normally once a frame; several times a frame while resting (time sped up).
+   * A world tick (20 a second, like Minecraft's): decisions and perception. Brains, conversations,
+   * footstep noise and senses. Movement runs separately, faster (see moveStep).
    */
-  private simulate(dt: number, manual: Point, hasManual: boolean, pointer: Point): void {
-    const k = this.keys;
+  private worldTick(dt: number): void {
     profiler.tick();
+    profiler.begin('brains');
+    for (const c of this.characters) {
+      if (c.status === 'ko' || c.climb || c.asleep) continue;
+      if (!c.controlled) c.brain.update(c, this);
+      this.updateSocial(c);
+    }
+    profiler.end('brains');
+    this.updateFootsteps(dt);
+    profiler.begin('senses');
+    this.senses.update(dt);
+    profiler.end('senses');
+  }
+
+  /**
+   * A movement step (60 a second): routes, motors, doors, climbing, poses, knockback, then physics.
+   * Fixed size, so it behaves the same whatever the screen's frame rate.
+   */
+  private moveStep(dt: number, manual: Point, hasManual: boolean, pointer: Point): void {
+    const k = this.keys;
+    for (const c of this.characters) {
+      c.prevX = c.x;
+      c.prevY = c.y;
+    }
     this.simMs += dt * 1000;
     this.clock.advance(dt);
     profiler.begin('separation');
@@ -1471,14 +1506,6 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
       }
       this.pushDoors(c, dt, this.now);
 
-      if (!c.controlled) {
-        profiler.end('movement');
-        profiler.begin('brains');
-        c.brain.update(c, this);
-        profiler.end('brains');
-        profiler.begin('movement');
-      }
-      this.updateSocial(c);
 
       let move: Point = ZERO;
       let run = false;
@@ -1523,36 +1550,52 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     }
 
     profiler.end('movement');
-    this.updateFootsteps(dt);
-    profiler.begin('senses');
-    this.senses.update(dt);
-    profiler.end('senses');
+    this.physicsStep(dt);
   }
 
-  // ---------------------------------------------------------------- waiting & sleeping
-
-  /** Time sped up: run the world several steps this frame (physics included), within a time budget. */
-  private restFrames(dt: number, manual: Point, hasManual: boolean, pointer: Point): void {
-    const started = performance.now();
+  /** Arcade's physics, stepped by us at the movement rate (not once per rendered frame). */
+  private physicsStep(dt: number): void {
     const world = this.physics.world;
+    profiler.begin('physics');
+    world.update(0, dt * 1000);
+    world.postUpdate();
+    profiler.end('physics');
+  }
+
+  /**
+   * Run the simulation for this frame: fixed 60 Hz movement steps, with a world tick every third
+   * one (20 Hz). Real time is accumulated and spent in whole steps; whatever's left over is used to
+   * smooth drawing between steps. If the device falls behind, it catches up with extra steps (up to a
+   * limit, then it lets time slip rather than grind to a halt). Waiting / sleeping runs many steps a
+   * frame, within a time budget.
+   */
+  private advance(realDt: number, manual: Point, hasManual: boolean, pointer: Point): void {
+    const started = performance.now();
+    const speed = this.rest ? REST_SPEED : 1;
+    this.time.timeScale = speed;
+    this.moveAcc += realDt * speed;
     let steps = 0;
-    this.time.timeScale = REST_SPEED;
-    while (this.rest && steps < REST_SPEED) {
-      if (steps > 0) {
-        // Phaser already stepped physics once this frame; each extra world step needs its own physics step.
-        world.postUpdate();
-        world.update(0, dt * 1000);
+    while (this.moveAcc >= MOVE_DT) {
+      const spent = performance.now() - started;
+      if (this.rest ? spent > REST_FRAME_BUDGET_MS : steps >= MAX_CATCH_UP_STEPS || (steps > 0 && spent > CATCH_UP_BUDGET_MS)) {
+        this.moveAcc = Math.min(this.moveAcc, MOVE_DT * 0.999); // drop the backlog
+        break;
       }
-      this.simulate(dt, manual, hasManual, pointer);
+      this.moveAcc -= MOVE_DT;
+      if (++this.stepCount % WORLD_EVERY === 0) this.worldTick(MOVE_DT * WORLD_EVERY);
+      this.moveStep(MOVE_DT, manual, hasManual, pointer);
       steps++;
       if (this.rest && this.clock.seconds >= this.rest.untilS) {
         this.endRest(this.rest.kind === 'sleep' ? 'You wake up.' : 'You finish waiting.');
+        this.moveAcc = 0;
         break;
       }
-      if (performance.now() - started > REST_FRAME_BUDGET_MS) break;
     }
-    this.speedNow = Math.max(1, steps);
+    if (this.rest) this.moveAcc = Math.min(this.moveAcc, MOVE_DT * 0.999);
+    this.speedNow = realDt > 0 && speed > 1 ? Math.max(1, Math.round((steps * MOVE_DT) / realDt)) : 1;
   }
+
+  // ---------------------------------------------------------------- waiting & sleeping
 
   /** Open the TES-style "how long?" dialog (pauses the game behind it). */
   private askRest(kind: RestKind, bed: Bed | null, explain = false): void {
@@ -2007,7 +2050,8 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
         const sp = bed.sortPoint(p);
         c.view.depthOverride = 10 + p.depth(sp.x, sp.y) / 1000 + 0.0004;
       } else c.view.depthOverride = null;
-      const r = c.view.update(c.x, c.y, c.motor.facing, c.pose, p);
+      const dp = this.drawPos(c);
+      const r = c.view.update(dp.x, dp.y, c.motor.facing, c.pose, p);
       this.charScreen.set(c, r);
       const showBar = c.health < MAX_HEALTH - 0.5 || c.mode === 'combat';
       c.overhead.setIndicator(this.awarenessIndicator(c));
@@ -2059,11 +2103,25 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
 
   /** Ground point the camera follows (smoothed, frame-rate independent). */
   private followFocus(a: Character, dt: number): Point {
-    if (!this.cameraFocus) this.cameraFocus = { x: a.x, y: a.y };
+    const at = this.drawPos(a);
+    if (!this.cameraFocus) this.cameraFocus = { x: at.x, y: at.y };
     const k = 1 - Math.exp(-CAMERA_FOLLOW * dt);
-    this.cameraFocus.x += (a.x - this.cameraFocus.x) * k;
-    this.cameraFocus.y += (a.y - this.cameraFocus.y) * k;
+    this.cameraFocus.x += (at.x - this.cameraFocus.x) * k;
+    this.cameraFocus.y += (at.y - this.cameraFocus.y) * k;
     return this.cameraFocus;
+  }
+
+  /**
+   * Where to draw someone this frame: between their last two movement steps, by how far through
+   * the current step real time has got (so a 120 Hz screen stays smooth with 60 Hz movement).
+   * Big jumps (teleports, climbing, getting into bed) aren't smoothed.
+   */
+  private drawPos(c: Character): Point {
+    const t = this.rest ? 1 : Math.min(1, this.moveAcc / MOVE_DT);
+    const dx = c.x - c.prevX;
+    const dy = c.y - c.prevY;
+    if (dx * dx + dy * dy > M * M) return this.drawAt.set(c.x, c.y);
+    return this.drawAt.set(c.prevX + dx * t, c.prevY + dy * t);
   }
 
   private depthAt(x: number, y: number, topdownDepth: number): number {

@@ -477,3 +477,14 @@ When an item changes status, move it and add a dated note rather than silently r
   - **Drawing:** only the ground near the camera is drawn; the "controlled" ring is only created for people who are ever controlled.
   - Checked: nobody ends up inside a crate; the sandbox's waiting, sleeping, waking and senses checks pass.
 - *Pre-existing quirk, noted (not changed):* if you can already see whoever made a noise, you don't "hear" it as news. So a shout from someone you're watching won't interrupt a wait.
+
+### Fixed simulation rates (Minecraft-style ticks)
+*2026-11-09 00:15 UTC*
+
+**Agreed:** the world at **20 ticks a second**, movement at **60**.
+- **World ticks (20/s, every 50 ms):** brains, conversations, footstep noise, senses.
+- **Movement steps (60/s):** routes, motors, doors, climbing, poses, knockback, and Arcade's physics, which the game now steps itself instead of once per rendered frame.
+- **Drawing** happens every frame, with people's positions smoothed between movement steps, so 120 Hz screens stay fluid. Big jumps (teleports, climbing, getting into bed) aren't smoothed.
+- **Falling behind:** the game runs extra steps to stay on real time, up to 8 a frame or 40 ms of work; past that, time slips instead of the screen freezing. This replaces the old "below 20 fps everything goes into slow motion".
+- **Waiting and sleeping** are now simply "run many steps per frame" (within a 10 ms budget). This made a 3-hour wait about twice as quick to sit through in the test browser.
+- The perf HUD's **ticks/s** now means world ticks (about 20). Per-frame timings can include more than one step on slow frames (the CSV's `ticks` column shows world ticks per frame).
