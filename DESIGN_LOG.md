@@ -326,6 +326,7 @@ When an item changes status, move it and add a dated note rather than silently r
 - **Not in this pass:** weapons (later); clothing (its own pass afterwards).
 - **First board: buildings and structure.**
 - *2026-11-09 04:10 UTC (after the Stuart-era decision):* walls are wattle and daub, timber frame, rubble, **brick (Flemish bond)**, dressed stone and planks. Floors are earth and rushes, boards, flagstones, **plain red quarry tiles**, the red-and-yellow glazed chequer (kept because it looks good, though it's an older style) and **black-and-white marble on the diagonal**. ~~Undecided: carpets and rugs … and rush matting.~~ *Decided 2026-11-09 04:25 UTC:* **carpets are table coverings** (drawn with the furniture), and two carpet-like floors are added: **rush matting** (poor to ordinary, plaited strips laid wall to wall) and **Turkey work** (fine and rare, patterned knotted wool laid over the floor).
+- *2026-11-09 04:50 UTC:* **roofs.** Coverings: thatch, wooden shingles, clay tiles, slate, lead (flat). Shapes: gable (ridge across and end-on), hipped, lean-to, flat behind a parapet, battlements, round tower with a cone, square tower with a pyramid, Dutch gable. Coverings and shapes are independent. **Castles are in**: in the Stuart era they're old (lived in, ruined, or wrecked after the Civil War), not newly built.
 
 ### Period: the Stuart era
 *2026-11-09 03:58 UTC*
