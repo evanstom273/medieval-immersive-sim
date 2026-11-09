@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { perfCommands, perfResultChannel, perfStatsChannel, type PerfCommand } from '../bridge';
 import type { CharacterDef } from '../characters/Character';
+import { randomBody, type Body } from '../characters/body';
 import type { Temperament } from '../combat/combat';
 import { PX_PER_METRE } from '../movement/tuning';
 import { profiler, SECTIONS, summarise, toCsv } from '../perf/profiler';
@@ -13,7 +14,16 @@ const TEMPERAMENTS: Temperament[] = ['bold', 'wary', 'meek'];
 /** The test field: village-sized, so most people can be off screen. */
 const FIELD_W = 240 * M;
 const FIELD_H = 160 * M;
-const HAIR = [0x3b2416, 0x8a5a2b, 0x1f1a17, 0xb5a07a, 0x6b3b1f, 0x2a2a2a, 0xa8742f];
+/**
+ * A fixed set of looks (body + clothes colour) that spawned people are drawn from. Each look is drawn into its
+ * own texture once and shared, so thousands of people don't mean thousands of textures.
+ */
+const LOOK_COUNT = 16;
+const LOOKS: { body: Body; tunic: number }[] = (() => {
+  let seed = 7;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  return Array.from({ length: LOOK_COUNT }, () => ({ body: randomBody(rnd, { minAge: 16, maxAge: 75 }), tunic: Phaser.Display.Color.HSLToColor(rnd(), 0.35 + rnd() * 0.3, 0.3 + rnd() * 0.2).color }));
+})();
 
 /**
  * Performance test: an open field, you, and as many people as you spawn, all
@@ -111,12 +121,13 @@ export class PerfScene extends SandboxScene {
       let at = null;
       for (let tries = 0; tries < 10 && !at; tries++) at = nav.nearestFree({ x: (0.02 + rng() * 0.96) * FIELD_W, y: (0.02 + rng() * 0.96) * FIELD_H }, 2 * M);
       if (!at) continue;
-      const tunic = Phaser.Display.Color.HSLToColor(rng(), 0.35 + rng() * 0.3, 0.3 + rng() * 0.2).color;
+      const look = LOOKS[Math.floor(rng() * LOOKS.length)];
       this.spawnPerson({
         id: `p${n}`,
         name: `Person ${n}`,
         temperament: TEMPERAMENTS[Math.floor(rng() * TEMPERAMENTS.length)],
-        palette: { tunic, hair: HAIR[Math.floor(rng() * HAIR.length)] },
+        palette: { tunic: look.tunic, hair: parseInt(look.body.hair.slice(1), 16) },
+        body: look.body,
         x: at.x,
         y: at.y,
         facing: rng() * Math.PI * 2,

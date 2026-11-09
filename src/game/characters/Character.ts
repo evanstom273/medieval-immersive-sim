@@ -6,6 +6,7 @@ import type { MoveOrder } from '../navigation/MoveOrder';
 import type { Point } from '../navigation/NavGrid';
 import type { SocialActionId } from '../social/socialActions';
 import { CharacterView, createPose, type BodyState, type CharacterPose, type Palette } from '../world/CharacterView';
+import { defaultBody, type Body } from './body';
 import { Brain } from './Brain';
 import { Overhead } from './Overhead';
 
@@ -25,6 +26,8 @@ export interface CharacterDef {
   name: string;
   temperament: Temperament;
   palette: Palette;
+  /** Their body (sex, age, sliders, skin, hair). Defaults to an average man with the palette's hair. */
+  body?: Body;
   x: number;
   y: number;
   facing?: number;
@@ -50,6 +53,8 @@ export class Character implements Targetable {
   readonly name: string;
   readonly temperament: Temperament;
   readonly palette: Palette;
+  /** What they look like: sex, age, body sliders, skin and hair. */
+  readonly figure: Body;
   readonly obj: Phaser.GameObjects.Arc;
   readonly body: Phaser.Physics.Arcade.Body;
   readonly view: CharacterView;
@@ -93,6 +98,7 @@ export class Character implements Targetable {
     this.name = def.name;
     this.temperament = def.temperament;
     this.palette = def.palette;
+    this.figure = def.body ?? { ...defaultBody('m'), hair: '#' + def.palette.hair.toString(16).padStart(6, '0') };
     this.motor = createMotorState(def.facing ?? 0);
     this.prevX = def.x;
     this.prevY = def.y;
@@ -101,7 +107,7 @@ export class Character implements Targetable {
     this.body = this.obj.body as Phaser.Physics.Arcade.Body;
     this.body.setCircle(BODY_RADIUS);
     this.body.setCollideWorldBounds(true);
-    this.view = new CharacterView(scene, def.x, def.y, def.palette);
+    this.view = new CharacterView(scene, def.x, def.y, def.palette, this.figure);
     this.overhead = new Overhead(scene);
   }
 
@@ -111,6 +117,10 @@ export class Character implements Targetable {
 
   get y(): number {
     return this.obj.y;
+  }
+
+  get age(): number {
+    return this.figure.age;
   }
 
   get radius(): number {

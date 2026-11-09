@@ -3,26 +3,25 @@ import type { ControlMode } from '../bridge';
 import { PX_PER_METRE } from '../movement/tuning';
 import { ringOnGround, type Bounds } from '../view/draw';
 import type { Projection, Pt } from '../view/projection';
+import { bodyKey, type Body } from '../characters/body';
+import { ART_BOX, buildView, drawFigure, drawGlow, VIEW_DEGREES, type FigureView } from '../characters/bodyArt';
 
 /**
- * PLACEHOLDER characters in the simple, readable style of RimWorld / Prison
- * Architect: a body, a head and floating hands, no limbs or animation.
+ * People, drawn in the style of the character mock-ups: an upper body (no
+ * legs), a head with a face and hair, and floating hands. The figure itself
+ * comes from characters/bodyArt.ts, worked out from each person's body
+ * (sex, age, fat, muscle, height, frame, bust, waist, hips, skin, hair).
  *
- An upright figure facing one of 8 screen directions (the game is drawn in
+ * An upright figure faces one of 8 screen directions (the game is drawn in
  * ¾). Hands are placed at their exact positions on the ground plane (so aim
  * and punches stay precise) and drawn in front of or behind the body
  * depending on which side of it they're on.
  *
- * Layer order is body → head → hair → face, with hands slotted before or
- * after; held items and worn equipment would hang off the same anchors
- * (`handGround` for anything held, the head/body for anything worn).
- *
- * Drawing: each body part (legs, tunic, outline, belt, head, eyes, hair) is
- * drawn ONCE per facing into shared texture sheets, in white, and each person
- * is a handful of sprites tinted with their own colours. That's how sprite
- * art behaves, and it's far cheaper than redrawing vector shapes every frame
- * (which Phaser re-triangulates on the CPU every frame). Eight facings come
- * from five drawings plus mirroring.
+ * Drawing: each body is drawn ONCE per angle into a texture (five angles,
+ * mirrored for the other three facings; plus the highlight outline and a
+ * sleeping face). People with identical bodies and clothes share it. Moving
+ * someone then only moves a few sprites, which is much cheaper than redrawing
+ * vector art every frame.
  */
 
 const M = PX_PER_METRE;
@@ -34,7 +33,6 @@ export const PUNCH_EXTEND = 0.09; // s to full extension
 export const PUNCH_RETRACT = 0.17; // s back to guard
 export const PUNCH_TOTAL = PUNCH_EXTEND + PUNCH_RETRACT;
 
-const SKIN = 0xd9ab84;
 const OUTLINE = 0x231a12;
 const HIGHLIGHT = 0xf3e3b5;
 
@@ -102,11 +100,11 @@ export function handGround(x: number, y: number, facing: number, hand: Hand, pos
   return { x: x + h.x * Math.cos(facing) - h.y * Math.sin(facing), y: y + h.x * Math.sin(facing) + h.y * Math.cos(facing) };
 }
 
-/** Height of the hands above the ground (world px), for upright figures. */
-function handHeight(pose: CharacterPose): number {
-  if (pose.state === 'yielded') return 1.25 * M;
-  if (pose.mode === 'combat') return 1.0 * M;
-  return (pose.crouched ? 0.5 : 0.7) * M;
+/** Height of the hands above the hem (mock-up art units, for an adult; scaled by the body's height). */
+function handArtHeight(pose: CharacterPose): number {
+  if (pose.state === 'yielded') return 74;
+  if (pose.mode === 'combat') return 52;
+  return pose.crouched ? 30 : 33.5;
 }
 
 export function shade(colour: number, f: number): number {
@@ -134,40 +132,7 @@ export interface ViewResult {
   headTop: Pt;
 }
 
-// ------------------------------------------------------------------ figure geometry (shared by baking and placing)
-
-interface Geom {
-  bodyW: number;
-  headR: number;
-  hx: number;
-  hy: number;
-  beltY: number;
-  bodyTop: number;
-  bodyBottom: number;
-  tunicBottom: number;
-  hoseTop: number;
-  r: number;
-}
-
-function geom(fx: number, fy: number, up: number, across: number, lowered: number): Geom {
-  const sy = (z: number) => -z * up;
-  const bodyW = (0.3 + 0.22 * Math.abs(fy)) * M * across;
-  return {
-    bodyW,
-    headR: 0.21 * M * across,
-    hx: fx * 0.04 * M * across,
-    hy: sy(1.36 * M * lowered),
-    beltY: sy(0.6 * M * lowered),
-    bodyTop: sy(1.12 * M * lowered),
-    bodyBottom: sy(0.04 * M),
-    tunicBottom: sy(0.3 * M * lowered),
-    hoseTop: sy(0.42 * M * lowered),
-    r: Math.min(bodyW / 2, 0.16 * M),
-  };
-}
-
-const LAYERS = ['hose', 'tunic', 'bodyLine', 'belt', 'head', 'eyes', 'hair', 'headLine'] as const;
-type Layer = (typeof LAYERS)[number];
+// ------------------------------------------------------------------ baked figures
 
 /** Facing index k (0 = right, 2 = towards you, −2 = away; 45° steps) → the drawn facing and whether to mirror it. */
 function canonical(k: number): { k: number; flip: boolean } {
@@ -180,173 +145,83 @@ function canonical(k: number): { k: number; flip: boolean } {
   return { k: n > 4 ? n - 8 : n, flip: false };
 }
 
-/** Texture resolution: texture pixels per world pixel (enough to stay sharp close up on a phone). */
+/** Drawn facing k (2 = towards you … −2 = away) → index into VIEW_DEGREES (front, ¾ front, side, ¾ back, back). */
+const viewIndex = (k: number) => 2 - k;
+
+/** Texture resolution: texture pixels per screen pixel at zoom 1 (enough to stay sharp close up on a phone). */
 const RES = 3;
-const PAGE = 2048;
+/** Art units → screen px: an average adult's head top (about 96 units) stands this tall in world metres. */
+const ADULT_HEIGHT_M = 1.7;
+const artScale = (p: Projection) => (ADULT_HEIGHT_M * M * p.up) / 96.3;
 
-/**
- * The shared sheets of baked body parts, one set per projection. Everything's drawn white so it can be tinted.
- */
-class FigureBank {
-  private static banks = new Map<string, FigureBank>();
+interface Baked {
+  key: string;
+  tex: string;
+  refs: number;
+  /** Frame names: 0–4 the five angles, 5–9 their highlight outlines, 10 the front with eyes shut. */
+  frames: string[];
+  /** Feet position inside each frame, as an origin (0–1). */
+  ox: number;
+  oy: number;
+  views: FigureView[];
+  /** Art units → screen px. */
+  u: number;
+}
 
-  static for(scene: Phaser.Scene, p: Projection): FigureBank {
-    const key = `${p.mode}`;
-    let b = FigureBank.banks.get(key);
-    if (!b || !scene.textures.exists(b.pageKey(0))) {
-      b = new FigureBank(scene, p);
-      FigureBank.banks.set(key, b);
+/** Baked figures, shared between people with the same body and clothes. */
+class FigureCache {
+  private static all = new Map<string, Baked>();
+  private static n = 0;
+
+  static acquire(scene: Phaser.Scene, p: Projection, body: Body, clothes: number): Baked {
+    const key = `${p.mode}|${bodyKey(body)}|${clothes}`;
+    let b = FigureCache.all.get(key);
+    if (!b || !scene.textures.exists(b.tex)) {
+      b = FigureCache.bake(scene, p, body, clothes, key);
+      FigureCache.all.set(key, b);
     }
+    b.refs++;
     return b;
   }
 
-  /** Slot box in local figure coordinates (feet at the origin). */
-  readonly left: number;
-  readonly top: number;
-  readonly w: number;
-  readonly h: number;
-  private pages: Phaser.Textures.CanvasTexture[] = [];
-  private slot = 0;
-  private readonly perRow: number;
-  private readonly perPage: number;
-  private readonly frames = new Map<string, { page: string; frame: string }>();
-  private readonly g: Phaser.GameObjects.Graphics;
-
-  private constructor(
-    private readonly scene: Phaser.Scene,
-    private readonly p: Projection,
-  ) {
-    const pad = 8;
-    this.left = -(0.45 * M * p.across + pad);
-    this.top = -(1.36 * M * p.up + 0.21 * M * p.across + pad);
-    this.w = Math.ceil((-this.left * 2) * RES);
-    this.h = Math.ceil((-this.top + pad) * RES);
-    this.perRow = Math.floor(PAGE / this.w);
-    this.perPage = this.perRow * Math.floor(PAGE / this.h);
-    this.g = scene.make.graphics({}, false);
-    this.bake();
+  static release(scene: Phaser.Scene, b: Baked): void {
+    if (--b.refs > 0) return;
+    FigureCache.all.delete(b.key);
+    if (scene.textures.exists(b.tex)) scene.textures.remove(b.tex);
   }
 
-  pageKey(i: number): string {
-    return `figures-${this.p.mode}-${i}`;
-  }
-
-  /** Bake every part for every drawn facing up front, so the first frames don't stutter. */
-  private bake(): void {
-    for (const k of [0, 1, 2, -1, -2]) {
-      for (const lowered of [false, true]) {
-        for (const layer of LAYERS) {
-          const variants = layer === 'bodyLine' || layer === 'headLine' ? [false, true] : layer === 'eyes' ? [false, true] : [false];
-          for (const v of variants) this.make(layer, k, lowered, v);
-        }
-      }
-    }
-    for (const page of this.pages) page.refresh();
-  }
-
-  private name(layer: Layer, k: number, lowered: boolean, variant: boolean): string {
-    return `${layer}:${k}:${lowered ? 1 : 0}:${variant ? 1 : 0}`;
-  }
-
-  /** Where a part lives: texture key and frame. `variant` = thick outline (outlines) or eyes shut (eyes). */
-  frame(layer: Layer, k: number, lowered: boolean, variant = false): { page: string; frame: string } {
-    return this.frames.get(this.name(layer, k, lowered, variant))!;
-  }
-
-  private make(layer: Layer, k: number, lowered: boolean, variant: boolean): void {
-    const i = this.slot++;
-    const pi = Math.floor(i / this.perPage);
-    if (!this.pages[pi]) this.pages[pi] = this.scene.textures.createCanvas(this.pageKey(pi), PAGE, PAGE)!;
-    const page = this.pages[pi];
-    const j = i % this.perPage;
-    const sx = (j % this.perRow) * this.w;
-    const sy = Math.floor(j / this.perRow) * this.h;
-    const g = this.g;
-    g.clear();
-    g.save();
-    g.translateCanvas(sx - this.left * RES, sy - this.top * RES);
-    g.scaleCanvas(RES, RES);
-    drawPart(g, layer, k, lowered ? 0.74 : 1, variant, this.p);
-    g.restore();
-    g.generateTexture(page.getSourceImage() as HTMLCanvasElement);
-    const name = this.name(layer, k, lowered, variant);
-    page.add(name, 0, sx, sy, this.w, this.h);
-    this.frames.set(name, { page: this.pageKey(pi), frame: name });
-  }
-}
-
-/** Draw one part, in white, in local figure coordinates (feet at the origin, up = −y). */
-function drawPart(g: Phaser.GameObjects.Graphics, layer: Layer, k: number, lowered: number, variant: boolean, p: Projection): void {
-  const fx = Math.cos((k * Math.PI) / 4);
-  const fy = Math.sin((k * Math.PI) / 4);
-  const o = geom(fx, fy, p.up, p.across, lowered);
-  const W = 0xffffff;
-  const seenFace = fy > -0.4;
-  switch (layer) {
-    case 'hose':
-      g.fillStyle(W, 1);
-      g.fillRoundedRect(-o.bodyW * 0.38, o.hoseTop, o.bodyW * 0.76, o.bodyBottom - o.hoseTop, 4);
-      break;
-    case 'tunic':
-      g.fillStyle(W, 1);
-      g.fillRoundedRect(-o.bodyW / 2, o.bodyTop, o.bodyW, o.tunicBottom - o.bodyTop, o.r);
-      break;
-    case 'bodyLine':
-      g.lineStyle(variant ? 3 : 1.5, W, 1);
-      g.strokeRoundedRect(-o.bodyW / 2, o.bodyTop, o.bodyW, o.tunicBottom - o.bodyTop, o.r);
-      break;
-    case 'belt':
-      g.lineStyle(2, W, 1);
-      g.lineBetween(-o.bodyW / 2 + 2, o.beltY, o.bodyW / 2 - 2, o.beltY);
-      break;
-    case 'head':
-      // Skin from the front, hair from behind: the same disc, tinted.
-      g.fillStyle(W, 1);
-      g.fillCircle(o.hx, o.hy, o.headR);
-      break;
-    case 'eyes': {
-      if (!seenFace) break;
-      const spread = o.headR * 0.32 * Math.max(0, fy);
-      const ex = o.hx + fx * o.headR * 0.45;
-      const ey = o.hy + o.headR * 0.12;
-      if (variant) {
-        g.lineStyle(1.4, W, 1);
-        for (const dx of spread > 1.2 ? [-spread, spread] : [fx * o.headR * 0.15]) g.lineBetween(ex + dx - 2, ey, ex + dx + 2, ey);
-      } else {
-        g.fillStyle(W, 1);
-        if (spread > 1.2) {
-          g.fillCircle(ex - spread, ey, 1.6);
-          g.fillCircle(ex + spread, ey, 1.6);
-        } else g.fillCircle(ex + fx * o.headR * 0.15, ey, 1.6);
-      }
-      break;
-    }
-    case 'hair': {
-      if (!seenFace) break;
-      // Arc from low on the back of the head, over the top, to the hairline above the brow
-      // (canvas angles: 0 = right, 90° = down); then straight back across the brow to just
-      // behind the ear and down to the nape.
-      const side = Math.abs(fx);
-      const back = (Math.PI / 180) * (190 - 60 * side);
-      const front = (Math.PI / 180) * (350 - 30 * side);
-      const mirror = fx < 0 ? -1 : 1;
-      const pts: Pt[] = [];
-      const n = 24;
-      for (let i = 0; i <= n; i++) {
-        const a = back + ((front - back) * i) / n;
-        pts.push({ x: o.hx + Math.cos(a) * o.headR * mirror, y: o.hy + Math.sin(a) * o.headR });
-      }
-      const browY = pts[pts.length - 1].y;
-      const earX = o.hx - 0.15 * o.headR * side * mirror;
-      pts.push({ x: earX, y: browY }, { x: earX, y: pts[0].y });
-      g.fillStyle(W, 1);
-      g.fillPoints(pts as Phaser.Math.Vector2[], true);
-      break;
-    }
-    case 'headLine':
-      g.lineStyle(variant ? 3 : 1.5, W, 1);
-      g.strokeCircle(o.hx, o.hy, o.headR);
-      break;
+  private static bake(scene: Phaser.Scene, p: Projection, body: Body, clothes: number, key: string): Baked {
+    const u = artScale(p);
+    const k = u * RES;
+    const fw = Math.ceil((ART_BOX.right - ART_BOX.left) * k);
+    const fh = Math.ceil((ART_BOX.bottom - ART_BOX.top) * k);
+    const cols = 6;
+    const tex = `figure-${++FigureCache.n}`;
+    const canvas = scene.textures.createCanvas(tex, fw * cols, fh * 2)!;
+    const ctx = canvas.context;
+    const css = '#' + clothes.toString(16).padStart(6, '0');
+    const views = VIEW_DEGREES.map((d) => buildView(body, d));
+    const frames: string[] = [];
+    const slot = (i: number, draw: () => void) => {
+      const x = (i % cols) * fw;
+      const y = Math.floor(i / cols) * fh;
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(x, y, fw, fh);
+      ctx.clip();
+      ctx.translate(x - ART_BOX.left * k, y - ART_BOX.top * k);
+      ctx.scale(k, k);
+      draw();
+      ctx.restore();
+      const name = String(i);
+      canvas.add(name, 0, x, y, fw, fh);
+      frames.push(name);
+    };
+    views.forEach((v) => slot(frames.length, () => drawFigure(ctx, v, { clothes: css })));
+    views.forEach((v) => slot(frames.length, () => drawGlow(ctx, v, 5)));
+    slot(frames.length, () => drawFigure(ctx, views[0], { clothes: css, eyesShut: true }));
+    canvas.refresh();
+    return { key, tex, refs: 0, frames, ox: (-ART_BOX.left * k) / fw, oy: (-ART_BOX.top * k) / fh, views, u };
   }
 }
 
@@ -361,7 +236,7 @@ function smallTextures(scene: Phaser.Scene, p: Projection): { hand: string; shad
     g.save();
     g.translateCanvas(size / 2, size / 2);
     g.scaleCanvas(RES, RES);
-    g.fillStyle(SKIN, 1);
+    g.fillStyle(0xffffff, 1);
     g.lineStyle(1.2, OUTLINE, 1);
     g.fillCircle(0, 0, r);
     g.strokeCircle(0, 0, r);
@@ -399,38 +274,43 @@ export class CharacterView {
   private ringShown = false;
   private readonly root: Phaser.GameObjects.Container;
   private readonly shadow: Phaser.GameObjects.Image;
-  private readonly parts: Record<Layer, Phaser.GameObjects.Image>;
+  private readonly glow: Phaser.GameObjects.Image;
+  private readonly figure: Phaser.GameObjects.Image;
   /** Hands drawn behind the body / in front of it (only one of each pair is visible). */
   private readonly handsBack: Phaser.GameObjects.Image[];
   private readonly handsFront: Phaser.GameObjects.Image[];
-  private bank: FigureBank | null = null;
-  private bankFor: Projection | null = null;
+  private baked: Baked | null = null;
+  private bakedFor: Projection | null = null;
+  private readonly skin: number;
 
   constructor(
     private readonly scene: Phaser.Scene,
     _x: number,
     _y: number,
     private readonly palette: Palette,
+    private readonly body: Body,
   ) {
     const img = () => new Phaser.GameObjects.Image(scene, 0, 0, '__WHITE');
     this.shadow = img();
-    this.parts = Object.fromEntries(LAYERS.map((l) => [l, img()])) as Record<Layer, Phaser.GameObjects.Image>;
+    this.glow = img();
+    this.figure = img();
     this.handsBack = [img(), img()];
     this.handsFront = [img(), img()];
-    this.root = scene.add.container(0, 0, [this.shadow, ...this.handsBack, ...LAYERS.map((l) => this.parts[l]), ...this.handsFront]).setDepth(20);
+    this.skin = Phaser.Display.Color.HexStringToColor(body.skin).color;
+    this.root = scene.add.container(0, 0, [this.shadow, ...this.handsBack, this.glow, this.figure, ...this.handsFront]).setDepth(20);
   }
 
-  private setup(p: Projection): FigureBank {
-    if (this.bank && this.bankFor === p) return this.bank;
-    this.bank = FigureBank.for(this.scene, p);
-    this.bankFor = p;
+  private setup(p: Projection): Baked {
+    if (this.baked && this.bakedFor === p) return this.baked;
+    if (this.baked) FigureCache.release(this.scene, this.baked);
+    const b = (this.baked = FigureCache.acquire(this.scene, p, this.body, this.palette.tunic));
+    this.bakedFor = p;
     const small = smallTextures(this.scene, p);
     this.shadow.setTexture(small.shadow);
-    for (const h of [...this.handsBack, ...this.handsFront]) h.setTexture(small.hand);
-    const b = this.bank;
-    // Every part's frame shares the same box, with the feet at local (0, 0).
-    for (const l of LAYERS) this.parts[l].setOrigin((-b.left * RES) / b.w, (-b.top * RES) / b.h).setScale(1 / RES);
-    for (const h of [...this.handsBack, ...this.handsFront]) h.setScale(1 / RES);
+    // Hands sized to the person (a child's are small), against the shared hand texture's radius.
+    const handScale = (b.views[0].handR * b.u) / (0.075 * M * p.across) / RES;
+    for (const h of [...this.handsBack, ...this.handsFront]) h.setTexture(small.hand).setScale(handScale);
+    for (const im of [this.figure, this.glow]) im.setTexture(b.tex, b.frames[0]).setOrigin(b.ox, b.oy).setScale(1 / RES);
     this.shadow.setScale(1 / RES);
     return b;
   }
@@ -445,57 +325,55 @@ export class CharacterView {
       }
       this.ringShown = pose.controlled;
     }
-    const bank = this.setup(p);
+    const b = this.setup(p);
     this.root.setVisible(true);
     this.root.setDepth(this.depthOverride ?? 10 + p.depth(x, y) / 1000 + 0.0005);
 
     const flash = pose.hitFlash > 0;
     const lying = pose.state === 'ko' || pose.asleep;
-    const tunic = flash ? 0xffffff : pose.state === 'yielded' ? shade(this.palette.tunic, 0.82) : this.palette.tunic;
-    const line = pose.highlighted ? HIGHLIGHT : OUTLINE;
-    const thick = pose.highlighted;
 
     // Which way they face on screen, in 45° steps.
     const base = p.toScreen(x, y, lying ? 0 : pose.lift);
     const ahead = p.toScreen(x + Math.cos(facing) * 10, y + Math.sin(facing) * 10);
     const kRaw = lying ? 2 : Math.round(Math.atan2(ahead.y - base.y, ahead.x - base.x) / (Math.PI / 4));
     const { k, flip } = canonical(kRaw);
-    const fx = Math.cos((k * Math.PI) / 4);
-    const fy = Math.sin((k * Math.PI) / 4);
-    const loweredFlag = !lying && (pose.crouched || pose.state === 'yielded');
-    const o = geom(fx, fy, p.up, p.across, loweredFlag ? 0.74 : 1);
-    const backView = fy <= -0.4;
+    const vi = viewIndex(k);
+    const v = b.views[vi];
+    const lowered = !lying && (pose.crouched || pose.state === 'yielded');
+    const squash = lowered ? 0.82 : 1;
 
-    const set = (l: Layer, variant: boolean, tint: number, visible = true) => {
-      const im = this.parts[l];
-      im.setVisible(visible);
-      if (!visible) return;
-      const fr = bank.frame(l, k, loweredFlag, variant);
-      im.setTexture(fr.page, fr.frame);
-      im.setTint(tint);
-    };
-    set('hose', false, flash ? 0xffffff : shade(this.palette.tunic, 0.55));
-    set('tunic', false, tunic);
-    set('bodyLine', thick, line);
-    set('belt', false, shade(this.palette.tunic, 0.5));
-    set('head', false, flash ? 0xffffff : backView ? this.palette.hair : SKIN);
-    set('eyes', lying, 0x2a1d14, !backView);
-    set('hair', false, this.palette.hair, !backView);
-    set('headLine', thick, line);
+    // Lying (asleep or out cold): the front view with the eyes shut.
+    this.figure.setFrame(b.frames[lying ? 10 : vi]);
+    if (flash) this.figure.setTint(0xffffff).setTintMode(Phaser.TintModes.FILL);
+    else this.figure.setTint(pose.state === 'yielded' ? 0xd2d2d2 : 0xffffff).setTintMode(Phaser.TintModes.MULTIPLY);
+    this.glow.setVisible(pose.highlighted).setFrame(b.frames[5 + vi]).setTint(HIGHLIGHT);
     const handMode = flash ? Phaser.TintModes.FILL : Phaser.TintModes.MULTIPLY;
-    for (const h of [...this.handsBack, ...this.handsFront]) h.setTint(0xffffff).setTintMode(handMode);
+    for (const h of [...this.handsBack, ...this.handsFront]) h.setTint(flash ? 0xffffff : this.skin).setTintMode(handMode);
 
-    if (lying) return this.placeLying(x, y, facing, pose, p, o);
+    if (lying) {
+      this.figure.setScale(1 / RES, 1 / RES);
+      this.glow.setScale(1 / RES, 1 / RES);
+      return this.placeLying(x, y, facing, pose, p, b);
+    }
 
     // Upright: the figure stands at its feet; mirrored for the left-facing directions.
     this.root.setPosition(base.x, base.y).setRotation(0).setScale(flip ? -1 : 1, 1);
+    this.figure.setScale(1 / RES, squash / RES);
+    this.glow.setScale(1 / RES, squash / RES);
     const ground = p.toScreen(x, y);
     this.shadow.setVisible(true).setPosition(0, ground.y - base.y).setScale(1 / RES);
 
-    // Hands: exact positions on the ground plane, behind or in front of the body.
-    const hz = handHeight(pose);
+    // Hands: exact positions on the ground plane, behind or in front of the body, at a height that suits the body.
+    const hz = (handArtHeight(pose) * v.Y * squash * b.u) / (p.up || 1);
+    // Hands hang beside the body, so broad people's hang further out (and children's closer in). Only the
+    // drawing: punches and held things use the same hand positions for everyone.
+    const wide = Math.max(0.45, (v.handX * b.u) / 16);
+    const cf = Math.cos(facing);
+    const sf = Math.sin(facing);
     (['left', 'right'] as const).forEach((hand, i) => {
-      const gp = handGround(x, y, facing, hand, pose);
+      const h = handOffset(hand, pose);
+      const ly0 = h.y * wide;
+      const gp = { x: x + h.x * cf - ly0 * sf, y: y + h.x * sf + ly0 * cf };
       const s = p.toScreen(gp.x, gp.y, hz);
       const behind = p.depth(gp.x, gp.y) < p.depth(x, y) - 1;
       const lx = (s.x - base.x) * (flip ? -1 : 1);
@@ -504,13 +382,11 @@ export class CharacterView {
       this.handsFront[i].setVisible(!behind).setPosition(lx, ly);
     });
 
-    const sx = flip ? -1 : 1;
-    const hx = base.x + o.hx * sx;
-    const hy = base.y + o.hy;
-    const half = Math.max(o.bodyW / 2, 0.35 * M * p.across);
+    const top = base.y + v.headTop * b.u * squash;
+    const half = Math.max(Math.max(-v.silBox.x0, v.silBox.x1) * v.X * b.u, 0.3 * M * p.across);
     return {
-      bounds: { x0: base.x - half, x1: base.x + half, y0: hy - o.headR - 4, y1: base.y + 6 },
-      headTop: { x: hx, y: hy - o.headR + 6 },
+      bounds: { x0: base.x - half, x1: base.x + half, y0: top - 4, y1: base.y + 6 },
+      headTop: { x: base.x + (flip ? -1 : 1) * v.fwd * b.u, y: top + 6 },
     };
   }
 
@@ -519,10 +395,12 @@ export class CharacterView {
    * figure, rotated to lie on the floor (or a bed, via `lift`) and
    * foreshortened by the view.
    */
-  private placeLying(x: number, y: number, facing: number, pose: CharacterPose, p: Projection, o: Geom): ViewResult {
+  private placeLying(x: number, y: number, facing: number, pose: CharacterPose, p: Projection, b: Baked): ViewResult {
+    const v = b.views[0];
+    const up = p.up || 1;
     const c = Math.cos(facing);
     const s = Math.sin(facing);
-    const length = 1.57 * M; // feet to the top of the head
+    const length = (-v.headTop * b.u) / up; // hem to the top of the head, in world px
     const z = pose.lift + 0.1 * M; // the body has some thickness
     const feet = { x: x - c * length * 0.5, y: y - s * length * 0.5 };
     const fs = p.toScreen(feet.x, feet.y, z);
@@ -530,17 +408,16 @@ export class CharacterView {
     const vx = hs.x - fs.x;
     const vy = hs.y - fs.y;
     const along = Math.hypot(vx, vy);
-    const up = p.up || 1;
     this.root.setPosition(fs.x, fs.y).setRotation(Math.atan2(vy, vx) + Math.PI / 2).setScale(1, Math.max(0.05, along / (length * up)));
 
     // Shadow (not in bed): stretched along the body, under its middle.
     this.shadow.setVisible(!pose.asleep).setPosition(0, -(length * up) / 2).setScale((1 / RES) * 1.1, ((1 / RES) * (length * up)) / (0.48 * M * up));
 
     // Arms by their sides when asleep, flung out when knocked out.
-    const out = pose.asleep ? 0.62 : 1.05;
+    const out = pose.asleep ? 1 : 1.45;
     [-1, 1].forEach((side, i) => {
       this.handsBack[i].setVisible(false);
-      this.handsFront[i].setVisible(true).setPosition(side * o.bodyW * out, o.beltY);
+      this.handsFront[i].setVisible(true).setPosition(side * v.handX * b.u * out, v.handY * b.u);
     });
 
     const pad = 0.4 * M;
@@ -560,6 +437,8 @@ export class CharacterView {
   }
 
   destroy(): void {
+    if (this.baked) FigureCache.release(this.scene, this.baked);
+    this.baked = null;
     this.root.destroy();
     this.ring?.destroy();
   }

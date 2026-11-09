@@ -176,6 +176,17 @@ When an item changes status, move it and add a dated note rather than silently r
 - Built so **equipment is easy later:** held items attach to a hand, worn items to the head or body (layered).
 - **Environments keep the art doc's direction** (detailed, layered, cel-shaded SVG). The character simplification applies to characters only.
 - In top-down, characters are seen from above; in the angled views they're upright figures facing one of **8 directions**, with hands placed exactly where they're aiming so combat stays precise.
+- *2026-11-09 01:35 UTC:* the in-game figures are now **the mock-up art** (the "Body sliders" design board): an upper body with no legs, a head with a face and hair, floating hands. Every person's figure is worked out from their body (sex, age, fat, muscle, height, frame, bust, waist, hips, skin, hair), from five angles mirrored to eight facings. Lying down (asleep or out cold) uses the front view with the eyes shut. **Clothing:** everyone wears one plain shirt in their clothes colour for now (PLACEHOLDER, clothing options to come).
+
+### Character creation
+*2026-11-09 01:35 UTC*
+
+- **The sandbox starts with character creation.** Name (with a 🎲 suggestion), sex, age (0–100, showing the life stage), fat and muscle ("changes with how they live"), height, frame, bust, waist and hips ("fixed at birth"), skin tone and hair colour, with a live preview you can turn round. Randomise, Reset, Start.
+- The person you make **joins the test cast** (as a fifth playable person, keys 1–5) and you start as them. The last person made is remembered, so starting again doesn't mean rebuilding them.
+- PLACEHOLDERS: the skin and hair palettes; temperament (Bold) and the character-panel profile (Newcomer, no traits or background, every skill at 1); clothes colour (brown). Any age can be chosen, including babies, who walk about like anyone else.
+- The perf test skips creation and draws its crowd from **16 fixed looks**, so thousands of people share 16 textures.
+- **The fighting age rule is now enforced:** children can't go into combat mode ("Children can't fight."), the Fight option says why it's unavailable, punches pass by people you aren't allowed to hit, and NPCs only fight back, defend or join in where the rule allows (otherwise they flee, watch or shout).
+- Height and weight for shoving now come from the body sliders and age (PLACEHOLDER formula) instead of the mock profiles.
 
 ### ~~View: isometric~~ *(superseded 2026-11-08 21:45 UTC by ¾, below)*
 *2026-11-08 21:37 UTC*

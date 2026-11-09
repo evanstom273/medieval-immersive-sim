@@ -28,6 +28,8 @@ import { PX_PER_METRE, tuning } from '../movement/tuning';
 import { MoveOrder } from '../navigation/MoveOrder';
 import { resistance, separate } from '../movement/shove';
 import { MOCK_PROFILES } from '../characters/mockProfiles';
+import { buildOf, canFight, fightGroup, type Body } from '../characters/body';
+import { PLAYER_REGISTRY_KEY, playerDef, type NewPerson } from '../characters/newPerson';
 import { profiler } from '../perf/profiler';
 import { detailSettings } from '../sim/detail';
 import { SpatialHash } from '../perception/spatialHash';
@@ -80,11 +82,15 @@ const KEY = Phaser.Input.Keyboard.KeyCodes;
 const ZERO: Point = Object.freeze({ x: 0, y: 0 }) as Point;
 const NO_MOVE = Object.freeze({ move: ZERO, run: false }) as { move: Point; run: boolean };
 
+function castBody(sex: Body['sex'], age: number, sliders: Partial<Body>, skin: string, hair: string): Body {
+  return { sex, age, fat: 0, mus: 0, height: 0, frame: 0, bust: 0, waist: 0, hips: 0, ...sliders, skin, hair };
+}
+
 const CAST: CharacterDef[] = [
-  { id: 'edric', name: 'Edric', temperament: 'bold', palette: { tunic: 0x8a3b2e, hair: 0x3b2416 }, x: 760, y: 900 },
-  { id: 'agnes', name: 'Agnes', temperament: 'meek', palette: { tunic: 0x3e5f8a, hair: 0x8a5a2b }, x: 880, y: 1000 },
-  { id: 'maud', name: 'Maud', temperament: 'wary', palette: { tunic: 0x4f7a3a, hair: 0x1f1a17 }, x: 680, y: 1060 },
-  { id: 'wat', name: 'Wat', temperament: 'bold', palette: { tunic: 0xb08a3a, hair: 0xb5a07a }, x: 980, y: 860 },
+  { id: 'edric', name: 'Edric', temperament: 'bold', palette: { tunic: 0x8a3b2e, hair: 0x3b2416 }, body: castBody('m', 34, { fat: 2, mus: 3, height: 1, frame: 2 }, '#d9a77e', '#3b2416'), x: 760, y: 900 },
+  { id: 'agnes', name: 'Agnes', temperament: 'meek', palette: { tunic: 0x3e5f8a, hair: 0x8a5a2b }, body: castBody('f', 27, { fat: -2, height: -3, bust: 2, waist: -2, hips: 3 }, '#f1cfb0', '#8a5a2b'), x: 880, y: 1000 },
+  { id: 'maud', name: 'Maud', temperament: 'wary', palette: { tunic: 0x4f7a3a, hair: 0x1f1a17 }, body: castBody('f', 52, { fat: -3, mus: -3, height: -5, frame: -2 }, '#e8bd98', '#1f1a17'), x: 680, y: 1060 },
+  { id: 'wat', name: 'Wat', temperament: 'bold', palette: { tunic: 0xb08a3a, hair: 0xb5a07a }, body: castBody('m', 19, { fat: 2, mus: 7, height: 8, frame: 6 }, '#c58c62', '#b5a07a'), x: 980, y: 860 },
 ];
 
 interface Dummy extends Targetable {
@@ -117,7 +123,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
   protected active!: Character;
 
   private keys!: Record<
-    'up' | 'down' | 'left' | 'right' | 'sprint' | 'crouch' | 'combat' | 'lock' | 'talk' | 'debug' | 'senses' | 'pause' | 'walls' | 'esc' | 'one' | 'two' | 'three' | 'four',
+    'up' | 'down' | 'left' | 'right' | 'sprint' | 'crouch' | 'combat' | 'lock' | 'talk' | 'debug' | 'senses' | 'pause' | 'walls' | 'esc' | 'one' | 'two' | 'three' | 'four' | 'five' | 'six' | 'seven' | 'eight' | 'nine',
     Phaser.Input.Keyboard.Key
   >;
   private solids!: Phaser.Physics.Arcade.StaticGroup;
@@ -203,7 +209,9 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
 
   /** Who's in the world at the start (the first is the one you control). */
   protected cast(): CharacterDef[] {
-    return CAST;
+    // Whoever was made in character creation comes first (so you start as them), beside the test cast.
+    const made = this.registry.get(PLAYER_REGISTRY_KEY) as NewPerson | undefined;
+    return made ? [playerDef(made, 820, 960), ...CAST] : CAST;
   }
 
   get now(): number {
@@ -268,7 +276,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     // Draw everyone and move the camera AFTER physics has moved bodies this frame.
     this.events.on(Phaser.Scenes.Events.POST_UPDATE, this.lateUpdate, this);
     this.setupInput();
-    this.say(this.inputSource === 'touch' ? 'Tap someone to interact. Tap a portrait to switch.' : 'Click someone to interact. 1–4 switches who you control.');
+    this.say(this.inputSource === 'touch' ? 'Tap someone to interact. Tap a portrait to switch.' : this.characters.length > 1 ? `Click someone to interact. 1–${Math.min(9, this.characters.length)} switches who you control.` : 'Click someone to interact.');
   }
 
   /**
@@ -429,6 +437,11 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
         two: KEY.TWO,
         three: KEY.THREE,
         four: KEY.FOUR,
+        five: KEY.FIVE,
+        six: KEY.SIX,
+        seven: KEY.SEVEN,
+        eight: KEY.EIGHT,
+        nine: KEY.NINE,
       },
       true,
     ) as typeof this.keys;
@@ -436,7 +449,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     // Registered after Phaser's own listener (Phaser ignores already-prevented events).
     const guard = (e: KeyboardEvent) => {
       if (!kb.enabled) return; // typing in a text box: leave Ctrl+A etc. alone
-      if ((e.ctrlKey || e.metaKey) && ['w', 'a', 's', 'd', 'r', 'f', 'e', '1', '2', '3', '4'].includes(e.key.toLowerCase())) e.preventDefault();
+      if ((e.ctrlKey || e.metaKey) && ['w', 'a', 's', 'd', 'r', 'f', 'e', '1', '2', '3', '4', '5', '6', '7', '8', '9'].includes(e.key.toLowerCase())) e.preventDefault();
       if (e.key === 'F3' || e.key === 'F4') e.preventDefault();
     };
     window.addEventListener('keydown', guard);
@@ -722,6 +735,10 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     this.endRest();
     const a = this.active;
     if (a.status !== 'ok') return;
+    if (a.mode === 'explore' && fightGroup(a.age) === 'child') {
+      this.say("Children can't fight.");
+      return;
+    }
     a.mode = a.mode === 'explore' ? 'combat' : 'explore';
     a.cancelOrder();
     a.social = null;
@@ -871,7 +888,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
             : null;
     const options: MenuOption[] = [
       ...SOCIAL_ACTIONS.map((s) => ({ id: s.id, label: s.label, icon: s.icon, disabled: selfBad ?? unavailable ?? undefined })),
-      { id: 'fight', label: 'Fight', icon: '👊', disabled: selfBad ?? (target.status === 'ko' ? 'Out cold' : undefined) },
+      { id: 'fight', label: 'Fight', icon: '👊', disabled: selfBad ?? (target.status === 'ko' ? 'Out cold' : undefined) ?? fightBar(a.age, target.age) ?? undefined },
       { id: 'control', label: 'Take control', icon: '👤' },
     ];
     const feels = opinionWord(this.relationships.opinion(target.id, a.id));
@@ -1403,7 +1420,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     if (Phaser.Input.Keyboard.JustDown(k.debug)) this.toggleDebug();
     if (Phaser.Input.Keyboard.JustDown(k.senses)) this.sensesOverlay = !this.sensesOverlay;
     if (Phaser.Input.Keyboard.JustDown(k.esc)) this.closeMenu();
-    (['one', 'two', 'three', 'four'] as const).forEach((key, i) => {
+    (['one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine'] as const).forEach((key, i) => {
       if (Phaser.Input.Keyboard.JustDown(k[key]) && this.characters[i]) this.switchTo(this.characters[i].id);
     });
 
@@ -1700,7 +1717,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
   private resistanceOf(c: Character): number {
     const prof = MOCK_PROFILES[c.id];
     return resistance({
-      build: prof?.build ?? { heightM: 1.7, weightKg: 70 },
+      build: buildOf(c.figure),
       strength: prof?.skills.labour?.level ?? 3,
       temperament: c.temperament,
       traits: prof?.traits ?? [],
@@ -1841,7 +1858,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     const wx = c.x + local.x * Math.cos(f) - local.y * Math.sin(f);
     const wy = c.y + local.x * Math.sin(f) + local.y * Math.cos(f);
     for (const other of this.characters) {
-      if (other === c || other.status === 'ko') continue;
+      if (other === c || other.status === 'ko' || !canFight(c.age, other.age)) continue;
       if (Math.hypot(wx - other.x, wy - other.y) <= BODY_RADIUS + 5) {
         this.hitCharacter(c, other, hand);
         return;
@@ -2405,4 +2422,12 @@ function toStimulus(p: Perception): RestStimulus {
     default:
       return { kind: p.kind };
   }
+}
+
+/** Why one person can't fight another (the age rule), or null if they can. */
+function fightBar(attackerAge: number, targetAge: number): string | null {
+  if (canFight(attackerAge, targetAge)) return null;
+  if (fightGroup(attackerAge) === 'child') return "Children can't fight";
+  if (fightGroup(targetAge) === 'child') return "They're a child";
+  return fightGroup(attackerAge) === 'teen' ? 'Only other teenagers' : "They're a teenager";
 }

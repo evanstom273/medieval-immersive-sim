@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createGame, sceneFromUrl } from './game/createGame';
 import { Hud } from './ui/Hud';
 import { BottomBar } from './ui/BottomBar';
@@ -8,17 +8,35 @@ import { RestDialog } from './ui/RestDialog';
 import { TouchControls } from './ui/TouchControls';
 import { TuningPanel } from './ui/TuningPanel';
 import { PerfHud } from './ui/PerfHud';
+import { CharacterCreator } from './ui/CharacterCreator';
+import { loadNewPerson, saveNewPerson, type NewPerson } from './game/characters/newPerson';
 
 export function App() {
   const scene = sceneFromUrl();
   const gameRef = useRef<HTMLDivElement>(null);
+  // The sandbox starts with character creation; the perf test doesn't.
+  const [newPerson, setNewPerson] = useState<NewPerson | null>(null);
+  const ready = scene === 'perf' || newPerson !== null;
 
   useEffect(() => {
-    const game = createGame(gameRef.current!, scene);
+    if (!ready) return;
+    const game = createGame(gameRef.current!, scene, newPerson ?? undefined);
     // Dev-only handle for poking at the game from the console or automated checks.
     if (import.meta.env.DEV) (window as unknown as { __game?: unknown }).__game = game;
     return () => game.destroy(true);
-  }, [scene]);
+  }, [scene, ready, newPerson]);
+
+  if (!ready) {
+    return (
+      <CharacterCreator
+        initial={loadNewPerson()}
+        onDone={(p) => {
+          saveNewPerson(p);
+          setNewPerson(p);
+        }}
+      />
+    );
+  }
 
   return (
     <div className="relative h-full w-full">

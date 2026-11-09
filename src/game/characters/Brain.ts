@@ -9,6 +9,7 @@ import type { Relationships } from '../social/relationships';
 import type { SocialActionId } from '../social/socialActions';
 import { between, weighted, type Rng } from '../util/rng';
 import type { Hand } from '../world/CharacterView';
+import { canFight } from './body';
 import type { Interactable } from '../world/interactables';
 import type { Character } from './Character';
 
@@ -95,7 +96,7 @@ export class Brain {
       w.yieldTo(c, attacker);
       return;
     }
-    if (response === 'fight') {
+    if (response === 'fight' && canFight(c.age, attacker.age)) {
       if (this.state.kind !== 'fight' || this.state.foe !== attacker) {
         w.announce(`${c.name} fights back!`, [c, attacker], true);
         this.startFight(c, attacker, w);
@@ -194,14 +195,14 @@ export class Brain {
     c.social = null;
 
     if (c.temperament === 'bold') {
-      if (side > 15 && victim.status === 'ok') {
+      if (side > 15 && victim.status === 'ok' && canFight(c.age, attacker.age)) {
         w.announce(`${c.name} steps in to defend ${victim.name}!`, [c, attacker, victim], true);
         w.noise('shout', c.x, c.y, c);
         w.witness('saw_intervene', c.x, c.y, c, victim);
         this.startFight(c, attacker, w);
         return;
       }
-      if (side < -15 && victim.status === 'ok') {
+      if (side < -15 && victim.status === 'ok' && canFight(c.age, victim.age)) {
         w.announce(`${c.name} joins in against ${victim.name}!`, [c, attacker, victim], true);
         w.noise('shout', c.x, c.y, c);
         this.startFight(c, victim, w);
@@ -313,7 +314,7 @@ export class Brain {
       s.closeSince ??= w.now;
       if (w.now - s.closeSince > 1200) {
         const response = reactToAttack(c.temperament, c.health / MAX_HEALTH, true);
-        if (response === 'fight') {
+        if (response === 'fight' && canFight(c.age, from.age)) {
           w.announce(`${c.name} is cornered and fights back!`, [c, from], true);
           this.startFight(c, from, w);
         } else if (response === 'yield') {

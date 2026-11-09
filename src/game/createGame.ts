@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { PerfScene } from './scenes/PerfScene';
 import { SandboxScene } from './scenes/SandboxScene';
+import { PLAYER_REGISTRY_KEY, type NewPerson } from './characters/newPerson';
 
 /**
  * The canvas is sized in DEVICE pixels and displayed at CSS size, so high-density
@@ -15,7 +16,7 @@ export function sceneFromUrl(): SceneChoice {
   return new URLSearchParams(window.location.search).get('scene') === 'perf' ? 'perf' : 'sandbox';
 }
 
-export function createGame(parent: HTMLElement, choice: SceneChoice = 'sandbox'): Phaser.Game {
+export function createGame(parent: HTMLElement, choice: SceneChoice = 'sandbox', newPerson?: NewPerson): Phaser.Game {
   const dpr = () => Math.min(window.devicePixelRatio || 1, 3);
   const size = () => ({
     w: Math.max(1, Math.round(parent.clientWidth * dpr())),
@@ -53,6 +54,9 @@ export function createGame(parent: HTMLElement, choice: SceneChoice = 'sandbox')
     },
     scene: [choice === 'perf' ? PerfScene : SandboxScene],
   });
+
+  // The person made in character creation: the scene reads this when it builds its cast.
+  if (newPerson) game.registry.set(PLAYER_REGISTRY_KEY, newPerson);
 
   // Follow container size (orientation changes, folding/unfolding, window resizes) and DPR changes.
   const resize = () => {
