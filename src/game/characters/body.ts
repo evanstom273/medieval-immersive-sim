@@ -69,6 +69,13 @@ export function canFight(attackerAge: number, victimAge: number): boolean {
   return a !== 'child' && a === fightGroup(victimAge);
 }
 
+/** Babies and toddlers (0–3) stay in the family but can't be played; from 4 (child) up, anyone can. */
+export const MIN_PLAYABLE_AGE = 4;
+
+export function isPlayableAge(age: number): boolean {
+  return age >= MIN_PLAYABLE_AGE;
+}
+
 /** Smooth curve through [age, ...values] points. */
 function curve(T: number[][], a: number): number[] {
   if (a <= T[0][0]) return T[0].slice(1);

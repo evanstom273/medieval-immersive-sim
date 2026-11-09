@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildOf, canFight, defaultBody, fightGroup, stageOf } from './body';
+import { buildOf, canFight, defaultBody, fightGroup, isPlayableAge, stageOf } from './body';
 
 describe('life stages', () => {
   it('follow the agreed age ranges', () => {
@@ -7,6 +7,12 @@ describe('life stages', () => {
     expect(at([0, 1, 3, 4, 9, 10, 12, 13, 17, 18, 29, 30, 64, 65, 100])).toEqual([
       'Baby', 'Toddler', 'Toddler', 'Child', 'Child', 'Preteen', 'Preteen', 'Teenager', 'Teenager', 'Young adult', 'Young adult', 'Adult', 'Adult', 'Elder', 'Elder',
     ]);
+  });
+});
+
+describe('who can be played', () => {
+  it('everyone from child (4) up; not babies or toddlers', () => {
+    expect([0, 1, 3, 4, 9, 30, 90].map(isPlayableAge)).toEqual([false, false, false, true, true, true, true]);
   });
 });
 

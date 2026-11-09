@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { defaultBody, HAIR_COLOURS, randomBody, SKIN_TONES, stageOf, type Body, type Sex, type SliderKey } from '../game/characters/body';
+import { defaultBody, HAIR_COLOURS, MIN_PLAYABLE_AGE, randomBody, SKIN_TONES, stageOf, type Body, type Sex, type SliderKey } from '../game/characters/body';
 import { buildView, drawFigure, VIEW_DEGREES } from '../game/characters/bodyArt';
 import { NAME_IDEAS, type NewPerson } from '../game/characters/newPerson';
 
@@ -213,7 +213,7 @@ export function CharacterCreator({ initial, onDone }: { initial: NewPerson; onDo
           </div>
 
           <div className="mt-4">
-            <Slider label="Age" value={body.age} min={0} max={100} low="0" high="100" text={`${body.age} · ${stageOf(body.age)}`} onChange={(age) => set({ age })} />
+            <Slider label="Age" value={body.age} min={MIN_PLAYABLE_AGE} max={100} low={String(MIN_PLAYABLE_AGE)} high="100" text={`${body.age} · ${stageOf(body.age)}`} onChange={(age) => set({ age })} />
           </div>
 
           <Heading>Changes with how they live</Heading>

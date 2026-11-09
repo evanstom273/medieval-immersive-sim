@@ -289,6 +289,7 @@ When an item changes status, move it and add a dated note rather than silently r
   | Elder | 65+ |
 
 - *Supersedes the idea of brackets without ages* (each person spending a random 3–5 years in a bracket): the sim needs a number anyway, and real ages are simpler.
+- *2026-11-09 01:52 UTC:* **Who can be played: everyone from Child (4) up.** Babies (0) and toddlers (1–3) stay part of the family but can't be played; they become playable on turning 4. In game: they can't be chosen in character creation (age starts at 4) or taken control of ("Too young to play").
 - **Who can fight whom** (decided earlier, recorded now): young adults, adults and elders can attack each other. **Teenagers can only attack teenagers.** **Children (preteens and younger) can't attack or be attacked at all**, not even by other children. This is a hard rule.
 
 ---

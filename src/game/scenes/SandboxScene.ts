@@ -28,7 +28,7 @@ import { PX_PER_METRE, tuning } from '../movement/tuning';
 import { MoveOrder } from '../navigation/MoveOrder';
 import { resistance, separate } from '../movement/shove';
 import { MOCK_PROFILES } from '../characters/mockProfiles';
-import { buildOf, canFight, fightGroup, type Body } from '../characters/body';
+import { buildOf, canFight, fightGroup, isPlayableAge, type Body } from '../characters/body';
 import { PLAYER_REGISTRY_KEY, playerDef, type NewPerson } from '../characters/newPerson';
 import { profiler } from '../perf/profiler';
 import { detailSettings } from '../sim/detail';
@@ -805,6 +805,10 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
   private switchTo(id: string): void {
     const next = this.characters.find((c) => c.id === id);
     if (!next) return;
+    if (!isPlayableAge(next.age)) {
+      this.say(`${next.name} is too young to play.`);
+      return;
+    }
     if (next !== this.active) this.endRest();
     if (this.switching) {
       // Can't interrupt a switch, but remember the choice rather than ignoring it.
@@ -889,7 +893,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     const options: MenuOption[] = [
       ...SOCIAL_ACTIONS.map((s) => ({ id: s.id, label: s.label, icon: s.icon, disabled: selfBad ?? unavailable ?? undefined })),
       { id: 'fight', label: 'Fight', icon: '👊', disabled: selfBad ?? (target.status === 'ko' ? 'Out cold' : undefined) ?? fightBar(a.age, target.age) ?? undefined },
-      { id: 'control', label: 'Take control', icon: '👤' },
+      { id: 'control', label: 'Take control', icon: '👤', disabled: isPlayableAge(target.age) ? undefined : 'Too young to play' },
     ];
     const feels = opinionWord(this.relationships.opinion(target.id, a.id));
     const subtitle = `${TEMPERAMENTS[target.temperament].label} · ${feels} towards ${a.name}`;

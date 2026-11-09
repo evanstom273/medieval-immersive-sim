@@ -2,7 +2,7 @@
  * The person made in character creation, and how they join the world.
  */
 
-import { buildOf, defaultBody, type Body } from './body';
+import { buildOf, defaultBody, MIN_PLAYABLE_AGE, type Body } from './body';
 import type { CharacterDef } from './Character';
 import { MOCK_PROFILES, SKILLS, type MockProfile } from './mockProfiles';
 
@@ -29,7 +29,7 @@ export function loadNewPerson(): NewPerson {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const p = JSON.parse(raw) as NewPerson;
-      if (p && typeof p.name === 'string' && p.body) return { name: p.name, body: { ...defaultBody(p.body.sex), ...p.body } };
+      if (p && typeof p.name === 'string' && p.body) return { name: p.name, body: { ...defaultBody(p.body.sex), ...p.body, age: Math.max(MIN_PLAYABLE_AGE, p.body.age ?? 30) } };
     }
   } catch {
     /* storage unavailable or junk */
