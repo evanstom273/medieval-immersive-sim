@@ -2,12 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { CameraRig } from './CameraRig';
 
 describe('CameraRig', () => {
-  it('clamps zoom to the enabled layers (direct only, for now)', () => {
+  it('clamps zoom to the enabled layers (direct and village, for now)', () => {
     const rig = new CameraRig();
     expect(rig.zoomBy(1000)).toBe(true);
     expect(rig.targetSpan).toBe(rig.limits.max);
     rig.span = rig.targetSpan;
-    expect(rig.layer).toBe('direct');
+    expect(rig.layer).toBe('village');
+    expect(rig.villageMix).toBe(1);
     expect(rig.zoomBy(0.0001)).toBe(true);
     expect(rig.targetSpan).toBe(rig.limits.min);
   });

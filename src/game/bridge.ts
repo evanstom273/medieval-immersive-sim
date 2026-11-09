@@ -153,7 +153,7 @@ export interface FloorState {
   canUp: boolean;
   canDown: boolean;
 }
-export const floorChannel = new Channel<FloorState>();
+export const floorChannel = new Channel<FloorState | null>();
 
 /** Game → UI: the world map while it's open (null = closed). */
 export const mapChannel = new Channel<MapState | null>();

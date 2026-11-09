@@ -260,6 +260,11 @@ export class Brain {
 
   // ------------------------------------------------------------ per-frame
 
+  /** Told to go somewhere by the player (a household order from the village view): do that, then carry on. */
+  takeOrder(): void {
+    this.state = { kind: 'busy' };
+  }
+
   update(c: Character, w: World): void {
     if (c.status !== 'ok') {
       if (this.state.kind !== 'idle') this.calm(c, w);

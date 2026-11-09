@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { PerfScene } from './scenes/PerfScene';
 import { SandboxScene } from './scenes/SandboxScene';
+import { MapScene } from './scenes/MapScene';
 import { PLAYER_REGISTRY_KEY, type NewPerson } from './characters/newPerson';
 
 /**
@@ -53,7 +54,8 @@ export function createGame(parent: HTMLElement, choice: SceneChoice = 'sandbox',
     fps: {
       panicMax: 20,
     },
-    scene: [choice === 'perf' ? PerfScene : SandboxScene],
+    // The map layers draw over the world (launched by the sandbox).
+    scene: [choice === 'perf' ? PerfScene : SandboxScene, MapScene],
   });
 
   // The person made in character creation: the scene reads this when it builds its cast.

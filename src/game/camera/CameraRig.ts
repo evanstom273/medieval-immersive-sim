@@ -6,15 +6,15 @@
  * portrait, a desktop monitor and a near-square foldable showing a similar
  * amount of world at the same zoom.
  *
- * The span runs through bands. Today only the direct-control band exists. The
- * strategic overview will be a further band beyond it, so zooming out keeps
- * going instead of switching screens. Band thresholds are PLACEHOLDERS; the
- * real values and transition mechanics are still open (see DESIGN_LOG.md).
+ * The span runs through bands: direct control, then the village (the live
+ * world crossfades into a parchment plan), then the region, then the overview
+ * (see DESIGN_LOG.md, "Zoom"). Zooming out keeps going instead of switching
+ * screens. Band thresholds are PLACEHOLDERS, to be tuned in play.
  *
  * Pure TypeScript, no Phaser.
  */
 
-export type ViewLayer = 'direct' | 'overview';
+export type ViewLayer = 'direct' | 'village' | 'region' | 'overview';
 
 export interface ZoomBand {
   layer: ViewLayer;
@@ -36,11 +36,12 @@ export interface CameraRigConfig {
 
 export const DEFAULT_CAMERA_CONFIG: CameraRigConfig = {
   bands: [
-    { layer: 'direct', minSpan: 4, maxSpan: 22 },
-    // Placeholder: the overview would take over beyond the direct band. Not built yet.
-    { layer: 'overview', minSpan: 22, maxSpan: 4000 },
+    { layer: 'direct', minSpan: 4, maxSpan: 28 },
+    { layer: 'village', minSpan: 28, maxSpan: 260 },
+    { layer: 'region', minSpan: 260, maxSpan: 4000 },
+    { layer: 'overview', minSpan: 4000, maxSpan: 40000 },
   ],
-  enabledLayers: ['direct'],
+  enabledLayers: ['direct', 'village'],
   initialSpan: 8,
   smoothing: 14,
 };
@@ -98,6 +99,14 @@ export class CameraRig {
   }
 
   /**
+   * How far the live world has turned into the village plan: 0 up close, 1 once zoomed out past the
+   * crossfade (a little either side of the direct/village boundary, even in log space).
+   */
+  get villageMix(): number {
+    return crossfade(this.span, 22, 36);
+  }
+
+  /**
    * Camera zoom factor for a renderer whose world unit is `pxPerMetre` and whose
    * viewport is `widthPx` × `heightPx` device pixels.
    */
@@ -105,4 +114,10 @@ export class CameraRig {
     const side = Math.sqrt(widthPx * heightPx);
     return side / (this.span * pxPerMetre);
   }
+}
+
+/** 0 below `a` metres, 1 above `b`, smooth in log space between. */
+export function crossfade(span: number, a: number, b: number): number {
+  const t = Math.min(1, Math.max(0, Math.log(span / a) / Math.log(b / a)));
+  return t * t * (3 - 2 * t);
 }

@@ -385,6 +385,19 @@ When an item changes status, move it and add a dated note rather than silently r
   - ~~**Auto-walk here** (blue): the person you control sets off and time runs fast (like waiting) until they arrive. **Only arriving stops it** (nothing on the way interrupts it).~~ **2026-11-09 17:53 UTC — Lyra:** auto-walk doesn't skip the journey: the person you control walks there on their own, in real time. (The wait button still speeds up any walk if you want it to.) Taking control yourself (moving, tapping, cancelling) stops it; the waypoint stays as a normal one.
 - PLACEHOLDERS: the map shows the ground floor only, isn't zoomable yet, and has no roads (there aren't any yet); the map title is just "Map" until places have names.
 
+### Zoom: direct control → village → region → overview
+*2026-11-09 17:58 UTC — Lyra (popup answers)*
+
+- **One continuous zoom** (scroll / pinch) from direct control all the way out; the game crosses into each view at set zoom levels.
+- **Village view:** past a zoom level the live world **crossfades** into a parchment plan (same positions); people become **portrait tokens** (round chips with what they're doing and a mood ring). You can **watch the life** and give **Sims-style orders to your household** (the people you can switch between): pick one, then where to go or what to do.
+- **Full world:** start with a **region** (villages including ours, a market town, roads; land: fields, commons, woods, rivers, hills; a manor or two and a castle), **generated** so it can later become real places; **plan for a country** later.
+- **Overview:** CKIII-style **painted map** of the region with the family shown alongside. For now it's **the way to skip forward generations**: CKIII fast-forward with event pop-ups.
+- **Time speeds up as you zoom out** ("gentle"): direct control normal; village 2×; region 8×; overview CKIII speeds from about 1 day to about 1 month per second.
+- **Events in the overview:** births and deaths in the family, marriages and coming of age, village happenings; your own death pauses it. (Read as: the others pop up as notices without stopping time. To confirm.)
+- **Generations:** you play the **family line**: when your person dies you **choose who to carry on as** from the living family.
+- Built in slices: (1) continuous zoom + village map, (2) the generated region, (3) the overview with generational fast-forward.
+- **2026-11-09 18:06 UTC — slice 1 built:** scroll / pinch out past direct control and the live world crossfades (about 22–36 m across the screen) into the village plan on parchment, with people as portrait tokens (tunic colour and initial, a mood ring, an icon for what they're doing; you have a white ring, whoever's picked a gold halo). Tap a token to pick them, tap the plan to send them there (you by default); someone else does that, then carries on with their day. Time runs 2× there (the clock shows it). The floor buttons hide on the plan. PLACEHOLDER thresholds; the plan's zoom stops at about 260 m across until the region exists.
+
 ## Undecided
 
 ### Time model

@@ -59,6 +59,7 @@ import { townArt } from '../art/buildingArt';
 import { pack, sheetSvg, type Placed } from '../art/atlas';
 import { BuildingView, bandOf, type ViewLevel } from '../view/BuildingView';
 import type { MapFeature, MapState, Waypoint } from '../map/worldMap';
+import type { MapScene, Token } from './MapScene';
 
 /**
  * PLACEHOLDER sandbox: a field, a small house with a door, a chest, a sign,
@@ -271,6 +272,11 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
   private waypointGfx!: Phaser.GameObjects.Graphics;
   private mapOpen = false;
   private mapTimer = 0;
+  /** The map layers of the zoom (village plan, portrait tokens), drawn over the world by their own scene. */
+  private mapScene: MapScene | null = null;
+  /** Who household orders go to in the village view (by id); defaults to the person you control. */
+  private selectedId: string | null = null;
+  private floorsHidden = false;
 
   constructor(key = 'sandbox') {
     super(key);
@@ -378,6 +384,14 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     this.setWalls(walls);
     this.setView('threequarter');
     if (this.buildingView) this.setViewLevel('roof');
+    // The village plan and tokens, over the world (once that scene has started).
+    this.scene.launch('map');
+    const mapScene = this.scene.get('map') as MapScene;
+    mapScene.events.once(Phaser.Scenes.Events.CREATE, () => {
+      this.mapScene = mapScene;
+      mapScene.buildPlan(this.mapFeatures, this.size.w / M, this.size.h / M);
+    });
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.scene.stop('map'));
 
     // Draw everyone and move the camera AFTER physics has moved bodies this frame.
     this.events.on(Phaser.Scenes.Events.POST_UPDATE, this.lateUpdate, this);
@@ -1026,6 +1040,10 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     if (this.restAsk) return;
     this.endRest();
     const a = this.active;
+    if (this.rig.villageMix > 0.5) {
+      this.villagePress(sx, sy);
+      return;
+    }
     const { x, y, level } = this.groundAt(sx, sy);
     const who = this.characterAt(sx, sy);
     if (who) {
@@ -1238,6 +1256,97 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     const s = this.worldToCss({ x: w.x, y: w.y }, 0.8 * M);
     const a = this.active;
     waypointChannel.emit({ x: s.x, y: s.y, metres: Math.hypot(a.x - w.x, a.y - w.y) / M, auto: w.auto });
+  }
+
+  // ---------------------------------------------------------------- the village view
+
+  /** How fast time runs for where you're looking: faster as you zoom out ("gentle": village 2×). */
+  private viewSpeed(): number {
+    return this.rig.villageMix > 0.5 ? 2 : 1;
+  }
+
+  /** The token under a camera-space point in the village view, if any. */
+  private tokenAt(sx: number, sy: number): Character | null {
+    const r = (19 * this.dpr()) / this.cameras.main.zoom;
+    let best: Character | null = null;
+    let bestD = r;
+    for (const c of this.characters) {
+      const d = Math.hypot(c.x - sx, c.y * 0.72 - sy);
+      if (d < bestD) {
+        best = c;
+        bestD = d;
+      }
+    }
+    return best;
+  }
+
+  /**
+   * A tap in the village view: on someone in your household picks them; on the plan, sends whoever's
+   * picked there (you, by default).
+   */
+  private villagePress(sx: number, sy: number): void {
+    const who = this.tokenAt(sx, sy);
+    if (who) {
+      this.selectedId = who.id;
+      this.say(who === this.active ? 'You. Tap the map to go somewhere.' : `${who.name}. Tap the map to send them somewhere.`);
+      return;
+    }
+    const c = this.characters.find((o) => o.id === this.selectedId) ?? this.active;
+    if (c.status !== 'ok') {
+      this.say(`${c.name} can't go anywhere right now.`);
+      return;
+    }
+    const p = this.proj.toGround(sx, sy);
+    if (c === this.active) {
+      this.endRest();
+      this.endDoing(c, false);
+      c.social = null;
+      if (!this.orderTo(c, p, 0)) this.say("You can't find a way there.");
+      return;
+    }
+    if (c.asleep) {
+      this.say(`${c.name} is asleep.`);
+      return;
+    }
+    this.endDoing(c, false);
+    c.social = null;
+    c.brain.takeOrder();
+    if (this.orderToPoint(c, p)) this.say(`${c.name} heads over.`);
+    else this.say(`${c.name} can't find a way there.`);
+  }
+
+  /** Everyone as a portrait token for the village plan. */
+  private tokens(): Token[] {
+    const sel = this.selectedId ?? this.active.id;
+    return this.characters.map((c) => ({
+      id: c.id,
+      x: c.x,
+      y: c.y,
+      colour: cssColour(c),
+      name: c.name,
+      mood: moodOf(c.needs, c.moodlets),
+      icon: c.asleep ? '💤' : c.status === 'ko' ? '💫' : c.mode === 'combat' ? '⚔️' : c.social ? '💬' : c.doing ? c.doing.offer.icon : c.order ? '🚶' : '',
+      you: c === this.active,
+      selected: c.id === sel,
+    }));
+  }
+
+  /** Crossfade the live world into the village plan as you zoom out. */
+  private syncMap(): void {
+    const cam = this.cameras.main;
+    const mix = this.rig.villageMix;
+    // At alpha 0 Phaser skips drawing the world entirely, but the camera still moves and takes clicks.
+    cam.setAlpha(mix >= 0.999 ? 0 : 1 - mix);
+    // Phaser only refreshes a camera's view (what clicks map to) while it draws: do it by hand while faded out.
+    if (cam.alpha === 0) cam.preRender();
+    // The floor buttons belong to the live world: hidden on the map.
+    const onMap = mix > 0.5;
+    if (onMap !== this.floorsHidden) {
+      this.floorsHidden = onMap;
+      if (onMap) floorChannel.emit(null);
+      else if (this.buildingView) this.setViewLevel(this.viewLevel);
+    }
+    this.mapScene?.sync(cam, mix, mix > 0.001 ? this.tokens() : [], this.dpr() / cam.zoom);
   }
 
   /** The sprint button. Sprinting stands you up out of a sneak. */
@@ -2293,7 +2402,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
    */
   private advance(realDt: number, manual: Point, hasManual: boolean, pointer: Point): void {
     const started = performance.now();
-    const speed = this.rest ? REST_SPEED : 1;
+    const speed = this.rest ? REST_SPEED : this.viewSpeed();
     this.time.timeScale = speed;
     this.moveAcc += realDt * speed;
     let steps = 0;
@@ -2693,7 +2802,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     if (this.clockTimer <= 0) {
       this.clockTimer = 0.1;
       const parts = this.clock.parts();
-      clockChannel.emit({ time: formatTime(parts), date: formatDate(parts), isDaytime: parts.isDaytime, speed: this.rest ? this.speedNow : 1 });
+      clockChannel.emit({ time: formatTime(parts), date: formatDate(parts), isDaytime: parts.isDaytime, speed: this.rest ? this.speedNow : this.viewSpeed() });
     }
     this.hudTimer -= dt;
     if (this.hudTimer <= 0) {
@@ -2762,6 +2871,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
   private lateUpdate(time: number, deltaMs: number): void {
     profiler.begin('draw');
     this.drawFrame(time, deltaMs);
+    this.syncMap();
     profiler.end('draw');
   }
 
