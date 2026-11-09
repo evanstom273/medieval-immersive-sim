@@ -11,6 +11,8 @@ import {
   uiCommands,
   clockChannel,
   restDialogChannel,
+  mapChannel,
+  waypointChannel,
   type MenuState,
   type RosterMember,
   type UiCommand,
@@ -56,6 +58,7 @@ import { floorAt, inRect, placeTown, stairEnds, stairProgress, type Town } from 
 import { townArt } from '../art/buildingArt';
 import { pack, sheetSvg, type Placed } from '../art/atlas';
 import { BuildingView, bandOf, type ViewLevel } from '../view/BuildingView';
+import type { MapFeature, MapState, Waypoint } from '../map/worldMap';
 
 /**
  * PLACEHOLDER sandbox: a field, a small house with a door, a chest, a sign,
@@ -149,7 +152,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
   protected active!: Character;
 
   private keys!: Record<
-    'up' | 'down' | 'left' | 'right' | 'sprint' | 'crouch' | 'combat' | 'lock' | 'talk' | 'debug' | 'senses' | 'pause' | 'walls' | 'floorUp' | 'floorDown' | 'esc' | 'one' | 'two' | 'three' | 'four' | 'five' | 'six' | 'seven' | 'eight' | 'nine',
+    'up' | 'down' | 'left' | 'right' | 'sprint' | 'crouch' | 'combat' | 'lock' | 'talk' | 'debug' | 'senses' | 'pause' | 'walls' | 'map' | 'floorUp' | 'floorDown' | 'esc' | 'one' | 'two' | 'three' | 'four' | 'five' | 'six' | 'seven' | 'eight' | 'nine',
     Phaser.Input.Keyboard.Key
   >;
   private solids!: Phaser.Physics.Arcade.StaticGroup;
@@ -241,7 +244,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
   /** Reused for every person's needs tick (no garbage). */
   private readonly needsTick: TickInput = { dt: 0, asleep: false, ambientWarmth: 0, gains: null };
   /** The "how long?" dialog is open (the game is paused behind it). */
-  private restAsk: { kind: RestKind; bed: Offering | null; wasPaused: boolean } | null = null;
+  private restAsk: { kind: 'wait' | 'sleep'; bed: Offering | null; wasPaused: boolean } | null = null;
   /** How many times normal speed the last frame actually ran. */
   private speedNow = 1;
   /** The preset buildings, laid out, and their art. */
@@ -261,6 +264,13 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
   private autoView: ViewLevel | null = null;
   /** The sprint button is on: the person you control runs (walking with the stick or keys, and on routes). */
   private sprintOn = false;
+  /** What the world map shows that doesn't move (metres). */
+  protected mapFeatures: MapFeature[] = [];
+  /** The waypoint set on the map (world px), if any. */
+  private waypoint: Waypoint | null = null;
+  private waypointGfx!: Phaser.GameObjects.Graphics;
+  private mapOpen = false;
+  private mapTimer = 0;
 
   constructor(key = 'sandbox') {
     super(key);
@@ -356,6 +366,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
 
     this.lockRing = this.add.graphics().setDepth(16);
     this.routeGfx = this.add.graphics().setDepth(5);
+    this.waypointGfx = this.add.graphics();
 
     let walls: WallMode = 'cutaway';
     try {
@@ -455,6 +466,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     furnish('barrel', hx + hw - t - 30, hy + hh - t - 34, 40, 40);
     furnish('privy', hx + hw + 110, hy + hh + 20, 64, 64);
     this.indoorAreas.push(new Phaser.Geom.Rectangle(hx, hy, hw, hh));
+    this.mapFeatures.push({ kind: 'building', name: 'House', x: hx / M, y: hy / M, w: hw / M, h: hh / M });
     const sign = new Sign(this, solids, 920, 760, 'Movement test. Mind the dummy.');
     this.interactables.push(door, chest, sign);
 
@@ -471,6 +483,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     (well.body as Phaser.Physics.Arcade.StaticBody).setCircle(44);
     solids.add(well);
     this.scenery.add({ kind: 'well', x: 512, y: 1280, r: 44, height: 0.8 * M });
+    this.mapFeatures.push({ kind: 'well', name: 'Well', x: 512 / M, y: 1280 / M, r: 44 / M });
     this.interactables.push(new Furniture(this, null, 'well', 512, 1280, 88, 88));
 
     // Cooking fire: people catch the smell of smoke and drift over to warm themselves.
@@ -481,6 +494,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     (fireBody.body as Phaser.Physics.Arcade.StaticBody).setCircle(24);
     solids.add(fireBody);
     this.fire = { x: fx, y: fy, g: this.add.graphics(), smokeTimer: 0 };
+    this.mapFeatures.push({ kind: 'fire', name: 'Fire', x: fx / M, y: fy / M, r: 0.5 });
     this.pendingSmells.push({ id: 'fire', kind: 'smoke', x: fx, y: fy, radius: 10 * M, pleasant: true });
     this.interactables.push(new Furniture(this, null, 'fire', fx, fy, 48, 48));
     this.heatSources.push({ x: fx, y: fy });
@@ -489,10 +503,12 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     const mx = 1980;
     const my = 1180;
     this.midden = { x: mx, y: my, g: this.add.graphics() };
+    this.mapFeatures.push({ kind: 'midden', name: 'Midden', x: mx / M, y: my / M, r: 1.2 });
     this.pendingSmells.push({ id: 'midden', kind: 'dung', x: mx, y: my, radius: 5 * M, pleasant: false });
 
     this.wall(solids, 1408, 1344, 320, 24, 0x6f6a5f, 1.0 * M);
     this.wall(solids, 1408 + 320 + 48, 1344, 320, 24, 0x6f6a5f, 1.0 * M);
+    for (const x of [1408, 1408 + 320 + 48]) this.mapFeatures.push({ kind: 'wall', x: x / M, y: 1344 / M, w: 320 / M, h: 24 / M });
 
     const dx = 1024;
     const dy = 1216;
@@ -500,6 +516,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     this.physics.add.existing(dummyBody, true);
     (dummyBody.body as Phaser.Physics.Arcade.StaticBody).setCircle(14);
     solids.add(dummyBody);
+    this.mapFeatures.push({ kind: 'dummy', name: 'Training dummy', x: dx / M, y: dy / M, r: 0.3 });
     this.dummy = { name: 'the training dummy', x: dx, y: dy, radius: 14, g: this.add.graphics(), hits: 0, flashUntil: 0, wobble: { x: 0, y: 0 }, isTargetable: () => true };
   }
 
@@ -526,7 +543,9 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
       const x0 = Math.min(...row.map((b) => b.rect.x));
       const x1 = Math.max(...row.map((b) => b.rect.x + b.rect.w));
       this.scenery.add({ kind: 'paving', x: x0 - 0.5 * M, y, w: x1 - x0 + M, h: 1.6 * M, colour: 0xa39b8c });
+      this.mapFeatures.push({ kind: 'paving', x: (x0 - 0.5 * M) / M, y: y / M, w: (x1 - x0 + M) / M, h: 1.6 });
     }
+    for (const b of town.buildings) this.mapFeatures.push({ kind: 'building', name: b.plot.building.name, x: b.rect.x / M, y: b.rect.y / M, w: b.rect.w / M, h: b.rect.h / M });
     for (const b of town.buildings) this.indoorAreas.push(new Phaser.Geom.Rectangle(b.rect.x, b.rect.y, b.rect.w, b.rect.h));
     town.fixtures.forEach((fx) => {
       if (fx.fixture.kind !== 'hearth' || fx.level !== 0) return;
@@ -771,6 +790,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
         senses: KEY.F4,
         pause: KEY.SPACE,
         walls: KEY.V,
+        map: KEY.M,
         floorUp: KEY.PAGE_UP,
         floorDown: KEY.PAGE_DOWN,
         esc: KEY.ESC,
@@ -948,6 +968,15 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
       case 'floor':
         this.stepViewLevel(c.dir);
         break;
+      case 'map':
+        this.setMapOpen(c.open ?? !this.mapOpen);
+        break;
+      case 'waypoint':
+        this.setWaypoint(c.x * M, c.y * M, c.auto);
+        break;
+      case 'clearWaypoint':
+        this.clearWaypoint();
+        break;
       case 'setWalls':
         this.setWalls(c.mode);
         break;
@@ -1101,6 +1130,121 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     floorChannel.emit({ label: floorLabel(v), canUp: v !== 'roof', canDown: v === 'roof' || v > 0 });
   }
 
+  // ---------------------------------------------------------------- world map and waypoints
+
+  private setMapOpen(open: boolean): void {
+    this.mapOpen = open;
+    this.mapTimer = 0;
+    if (!open) mapChannel.emit(null);
+  }
+
+  private mapState(): MapState {
+    return {
+      w: this.size.w / M,
+      h: this.size.h / M,
+      features: this.mapFeatures,
+      people: this.characters.map((c) => ({ x: c.x / M, y: c.y / M, name: c.name, you: c === this.active })),
+      waypoint: this.waypoint && { x: this.waypoint.x / M, y: this.waypoint.y / M, auto: this.waypoint.auto },
+    };
+  }
+
+  /**
+   * A waypoint from the map: one to walk to yourself (a flag on the ground, an arrow at the edge of the
+   * screen), or auto-walk: the person you control sets off for it and time runs fast until they arrive.
+   */
+  private setWaypoint(x: number, y: number, auto: boolean): void {
+    const a = this.active;
+    const at = this.ensureNav(0).nearestFree({ x, y }, 3 * M) ?? { x, y };
+    this.waypoint = { x: at.x, y: at.y, auto };
+    this.setMapOpen(false);
+    if (!auto) {
+      this.say('Waypoint set.');
+      return;
+    }
+    if (a.status !== 'ok' || a.mode === 'combat' || this.switching) {
+      this.say(a.mode === 'combat' ? "You can't wander off in the middle of a fight." : "You can't set off right now.");
+      this.waypoint.auto = false;
+      return;
+    }
+    this.endRest();
+    this.endDoing(a, false);
+    a.social = null;
+    if (!this.orderTo(a, at, 0)) {
+      this.say("You can't find a way there.");
+      this.waypoint.auto = false;
+      return;
+    }
+    this.rest = { kind: 'travel', untilS: Infinity, bed: null, startS: this.clock.seconds };
+    for (const o of this.characters) if (o !== a && o.social?.target === a) o.social = null;
+    this.say('You set off.');
+  }
+
+  private clearWaypoint(): void {
+    this.waypoint = null;
+    if (this.rest?.kind === 'travel') this.endRest('You stop.');
+  }
+
+  /** Reaching the waypoint clears it (and ends an auto-walk); an auto-walk that's lost its route stops. */
+  private checkWaypoint(): void {
+    const w = this.waypoint;
+    const a = this.active;
+    if (w && a.level === 0 && Math.hypot(a.x - w.x, a.y - w.y) < 1.2 * M) {
+      this.waypoint = null;
+      if (this.rest?.kind === 'travel') this.endRest('You arrive.');
+      else this.say("You've reached your waypoint.");
+      return;
+    }
+    if (this.rest?.kind === 'travel' && !a.order && !a.climb) {
+      if (this.waypoint) this.waypoint.auto = false;
+      this.endRest('You stop.');
+    }
+  }
+
+  /** A flag on the ground at the waypoint, with a slow pulse (blue for auto-walk, red otherwise). */
+  private drawWaypoint(time: number): void {
+    const g = this.waypointGfx;
+    g.clear();
+    const w = this.waypoint;
+    if (!w) return;
+    const p = this.proj;
+    const base = p.toScreen(w.x, w.y);
+    const top = p.toScreen(w.x, w.y, 1.6 * M);
+    const pulse = (time / 1000) % 1.6;
+    g.lineStyle(2, 0xf0c060, 0.9 * (1 - pulse / 1.6));
+    ringOnGround(g, p, w.x, w.y, 12 + pulse * 18);
+    g.lineStyle(3, 0x2a1d14, 1);
+    g.lineBetween(base.x, base.y, top.x, top.y);
+    g.fillStyle(w.auto ? 0x3f7fbf : 0xc0392b, 1);
+    g.lineStyle(1.5, 0x2a1d14, 1);
+    g.beginPath();
+    g.moveTo(top.x, top.y);
+    g.lineTo(top.x + 26, top.y + 9);
+    g.lineTo(top.x, top.y + 18);
+    g.closePath();
+    g.fillPath();
+    g.strokePath();
+    g.setDepth(this.depthAt(w.x, w.y, 15) + 0.0006);
+  }
+
+  /** The map (while it's open) and where the waypoint is on screen, for the HUD. */
+  private emitMap(dt: number): void {
+    if (this.mapOpen) {
+      this.mapTimer -= dt;
+      if (this.mapTimer <= 0) {
+        this.mapTimer = 0.2;
+        mapChannel.emit(this.mapState());
+      }
+    }
+    const w = this.waypoint;
+    if (!w) {
+      if (waypointChannel.last) waypointChannel.emit(null);
+      return;
+    }
+    const s = this.worldToCss({ x: w.x, y: w.y }, 0.8 * M);
+    const a = this.active;
+    waypointChannel.emit({ x: s.x, y: s.y, metres: Math.hypot(a.x - w.x, a.y - w.y) / M, auto: w.auto });
+  }
+
   /** The sprint button. Sprinting stands you up out of a sneak. */
   private toggleSprint(): void {
     this.sprintOn = !this.sprintOn;
@@ -1187,7 +1331,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
   /** Stop whatever the active character is doing (walking somewhere, talking, squaring up). */
   private cancelAction(): void {
     if (this.rest) {
-      this.endRest(this.rest.kind === 'sleep' ? 'You get up.' : 'You stop waiting.');
+      this.endRest(this.rest.kind === 'sleep' ? 'You get up.' : this.rest.kind === 'travel' ? 'You stop.' : 'You stop waiting.');
       return;
     }
     if (this.active.doing) {
@@ -1911,6 +2055,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     // The rest dialog keeps the game paused until it's answered.
     if (Phaser.Input.Keyboard.JustDown(k.pause) && !this.restAsk) this.setPaused(!this.paused);
     if (Phaser.Input.Keyboard.JustDown(k.walls)) this.cycleWalls();
+    if (Phaser.Input.Keyboard.JustDown(k.map)) this.setMapOpen(!this.mapOpen);
     if (Phaser.Input.Keyboard.JustDown(k.floorUp)) this.stepViewLevel(1);
     if (Phaser.Input.Keyboard.JustDown(k.floorDown)) this.stepViewLevel(-1);
     if (this.paused) {
@@ -1970,6 +2115,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     }
 
     this.advance(dt, manual, hasManual, pointer);
+    this.checkWaypoint();
     this.updateHover(pointerScreen.x, pointerScreen.y);
     profiler.begin('ui');
     this.emitUi(dt);
@@ -2179,7 +2325,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
   // ---------------------------------------------------------------- waiting & sleeping
 
   /** Open the TES-style "how long?" dialog (pauses the game behind it). */
-  private askRest(kind: RestKind, bed: Offering | null, explain = false): void {
+  private askRest(kind: 'wait' | 'sleep', bed: Offering | null, explain = false): void {
     const a = this.active;
     if (this.rest || this.restAsk) return;
     if (a.status !== 'ok' || a.mode === 'combat' || this.switching) {
@@ -2503,6 +2649,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
   // ================================================================ UI feed
 
   private activityOf(c: Character): string {
+    if (c === this.active && this.rest?.kind === 'travel') return 'Travelling to the waypoint';
     if (c === this.active && this.rest) return `${this.rest.kind === 'sleep' ? 'Sleeping' : 'Waiting'} · ${formatDuration(this.rest.untilS - this.clock.seconds)} left`;
     if (c.status === 'ko') return 'Out cold';
     if (c.status === 'yielded') return 'Yielding';
@@ -2546,6 +2693,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
   }
 
   private emitUi(dt: number): void {
+    this.emitMap(dt);
     const a = this.active;
     this.clockTimer -= dt;
     if (this.clockTimer <= 0) {
@@ -2709,6 +2857,7 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
 
     this.drawLockRing(time);
     this.drawRoute(a, time, dt);
+    this.drawWaypoint(time);
     this.drawSensesOverlay(time);
     this.drawCollisionView();
 

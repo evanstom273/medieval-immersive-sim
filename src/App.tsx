@@ -12,6 +12,7 @@ import { CharacterCreator } from './ui/CharacterCreator';
 import { loadNewPerson, saveNewPerson, type NewPerson } from './game/characters/newPerson';
 import { gameRestart } from './game/bridge';
 import { FloorButtons } from './ui/Hud';
+import { WaypointArrow, WorldMap } from './ui/WorldMap';
 
 export function App() {
   const scene = sceneFromUrl();
@@ -50,12 +51,14 @@ export function App() {
       <TouchControls />
       {/* Above the touch layer (which covers the whole screen), like the bottom bar. */}
       <FloorButtons />
+      <WaypointArrow />
       {/* The perf scene has its own HUD instead of the household bar (which isn't built for hundreds of people). */}
       {scene === 'perf' ? <PerfHud /> : <BottomBar />}
       <TuningPanel perf={scene === 'perf'} />
       <RadialMenu />
       <SwitchCard />
       <RestDialog />
+      <WorldMap />
     </div>
   );
 }

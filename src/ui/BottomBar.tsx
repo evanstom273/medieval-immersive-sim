@@ -97,8 +97,9 @@ export function BottomBar() {
 
           {/* ---- centre: time, and walls up / cutaway / down */}
           <div className={`flex items-center self-center ${touch ? 'gap-1' : 'gap-2'}`}>
-            <TimeControls paused={paused} touch={touch} resting={/^(Waiting|Sleeping)/.test(active.activity)} />
+            <TimeControls paused={paused} touch={touch} resting={/^(Waiting|Sleeping|Travelling)/.test(active.activity)} />
             <WallsButton touch={touch} />
+            <MapButton touch={touch} />
             {/* Touch has its own Sprint button by the thumb. */}
             {!touch && <SprintButton on={!!hud?.sprinting} />}
           </div>
@@ -328,6 +329,26 @@ function SprintButton({ on }: { on: boolean }) {
     >
       <span aria-hidden>»</span>
       <span>Sprint</span>
+    </button>
+  );
+}
+
+/** Opens the world map (M). */
+function MapButton({ touch }: { touch: boolean }) {
+  return (
+    <button
+      className={`flex items-center justify-center gap-1.5 rounded-full bg-white/5 text-white ring-1 ring-white/10 hover:bg-white/10 ${touch ? 'h-9 w-9' : 'h-11 px-3 text-sm'}`}
+      title="World map (M)"
+      onClick={(e) => {
+        uiCommands.emit({ kind: 'map' });
+        e.currentTarget.blur();
+      }}
+    >
+      <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden>
+        <path d="M1 3l4.5-1.5 5 1.5L15 1.5v11.5l-4.5 1.5-5-1.5L1 14.5z" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+        <path d="M5.5 1.5v11.5M10.5 3v11.5" stroke="currentColor" strokeWidth="1.2" />
+      </svg>
+      {!touch && <span>Map</span>}
     </button>
   );
 }

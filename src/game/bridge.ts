@@ -1,4 +1,5 @@
 import type { Gait } from './movement/motor';
+import type { MapState } from './map/worldMap';
 import type { MenuOption } from './world/interactables';
 
 /** Minimal pub/sub so Phaser can talk to the React HUD without either importing the other. */
@@ -120,6 +121,11 @@ export type UiCommand =
   | { kind: 'cycleWalls' }
   /** The sprint button: run everywhere until switched off. */
   | { kind: 'toggleSprint' }
+  /** Open / close the world map (no `open`: toggle). */
+  | { kind: 'map'; open?: boolean }
+  /** Set a waypoint (world metres): one you walk to yourself, or auto-walk (time sped up until you arrive). */
+  | { kind: 'waypoint'; x: number; y: number; auto: boolean }
+  | { kind: 'clearWaypoint' }
   /** Show the storey above (1) or below (−1); above the top storey are the roofs. */
   | { kind: 'floor'; dir: 1 | -1 }
   | { kind: 'cancelAction' }
@@ -148,6 +154,18 @@ export interface FloorState {
   canDown: boolean;
 }
 export const floorChannel = new Channel<FloorState>();
+
+/** Game → UI: the world map while it's open (null = closed). */
+export const mapChannel = new Channel<MapState | null>();
+
+/** Game → UI: where the waypoint is on screen (CSS px in the game container) and how far, or null if none. */
+export interface WaypointScreen {
+  x: number;
+  y: number;
+  metres: number;
+  auto: boolean;
+}
+export const waypointChannel = new Channel<WaypointScreen | null>();
 
 /** UI → app: rebuild the game from scratch (e.g. after changing the building scale). Same person, fresh world. */
 export const gameRestart = new Channel<null>();

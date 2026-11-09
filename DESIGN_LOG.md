@@ -376,6 +376,15 @@ When an item changes status, move it and add a dated note rather than silently r
 - ~~The touch stick floats: pushing it to the rim sprints, and if your thumb drifts past the rim the stick follows it.~~ The stick appears where your thumb first lands and **stays put**; it only walks (a gentle push slowly, a firm one at full pace).
 - Waiting (the hourglass) no longer stops you: if you're on your way somewhere you keep walking while time runs faster. Sleeping still stops you.
 
+### World map and waypoints
+*2026-11-09 17:47 UTC — Lyra*
+
+- A world map (M, or the Map button in the bottom bar): a drawn plan on parchment, with the buildings named, the well, the fire, the midden, walls, a compass and a scale bar; you (a red ring) and everyone else (small dots).
+- Tap anywhere on it for two kinds of waypoint:
+  - **Set waypoint** (red): you walk there yourself. A flag on the ground, an arrow at the edge of the screen with the distance when it's off screen, and a pin on the map. It clears when you reach it, or with "Clear waypoint" on the map.
+  - **Auto-walk here** (blue): the person you control sets off and time runs fast (like waiting) until they arrive. **Only arriving stops it** (nothing on the way interrupts it). Taking control yourself (moving, tapping, cancelling) stops it; the waypoint stays as a normal one.
+- PLACEHOLDERS: the map shows the ground floor only, isn't zoomable yet, and has no roads (there aren't any yet); the map title is just "Map" until places have names.
+
 ## Undecided
 
 ### Time model
