@@ -242,8 +242,10 @@ export function TouchControls() {
         className="pointer-events-none absolute top-0 left-0 h-[52px] w-[52px] rounded-full border-2 border-black/30 opacity-0 transition-opacity"
       />
 
+      {/* Action buttons: only for the live world, not out on the map. */}
       <div
         className="absolute"
+        hidden={hud?.onMap}
         style={{
           right: 'max(16px, env(safe-area-inset-right))',
           // Above the bottom bar.

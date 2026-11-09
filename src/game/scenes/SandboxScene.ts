@@ -51,7 +51,7 @@ import { REACTION_ICON, SOCIAL_ACTIONS, describeSocial, resolveSocial, socialAct
 import { between, createRng, type Rng } from '../util/rng';
 import { handOffset, PUNCH_EXTEND, PUNCH_TOTAL, type Hand, type ViewResult } from '../world/CharacterView';
 import { Bed, Chest, Door, Sign, Window, type InteractContext, type Interactable, type MenuOption } from '../world/interactables';
-import { formatDate, formatDuration, formatTime, GameClock, DAWN_HOUR, DAYS_PER_YEAR } from '../time/clock';
+import { formatDate, formatDuration, formatFullDate, formatShortDate, formatTime, GameClock, DAWN_HOUR, DAYS_PER_YEAR } from '../time/clock';
 import { Furniture, type Offer, type Offering } from '../world/furniture';
 import { addMoodlet, ambientWarmth, moodOf, MOODLETS, expireMoodlets, healthLossPerHour, inDanger, irritability, pressingSign, speedFactor, tickNeeds, type MoodletId, type TickInput } from '../life/needs';
 import { interruptsRest, MAX_REST_HOURS, REST_SPEED, type RestKind, type RestStimulus } from '../time/rest';
@@ -300,9 +300,8 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
   private population: Population | null = null;
   /** Who you are in the long view (the person the family line follows). */
   private youId: string | null = null;
-  /** The overview's speed (0 paused, 1–5), days not yet run, and whether any time has passed since you went out to it. */
+  /** The overview's speed (0 paused, 1–5), and whether you're out there.  */
   private overviewSpeed = 0;
-  private overviewDays = 0;
   private overviewRan = false;
   private overviewTimer = 0;
   /** The fast-forward is waiting on you (a name, an heir). */
@@ -1032,7 +1031,9 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
         this.closeMenu();
         break;
       case 'setPaused':
-        this.setPaused(c.paused);
+        // In the overview the pause button pauses the fast-forward.
+        if (this.rig.layer === 'overview' && this.population) this.overviewSpeed = c.paused ? 0 : this.overviewLast;
+        else this.setPaused(c.paused);
         break;
       case 'cancelAction':
         this.cancelAction();
@@ -1476,16 +1477,21 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
       if (Phaser.Input.Keyboard.JustDown(k[key])) this.overviewSpeed = i + 1;
     });
     if (this.overviewSpeed) this.overviewLast = this.overviewSpeed;
+    // The game clock itself runs fast (the bottom bar's clock spins through the hours); each midnight
+    // it passes, everyone lives another day.
     if (!this.lifeAsk && this.overviewSpeed > 0) {
-      this.overviewDays += OVERVIEW_DAYS_PER_SECOND[this.overviewSpeed] * dt;
-      let steps = 0;
-      while (this.overviewDays >= 1 && !this.lifeAsk && steps++ < 40) {
-        this.overviewDays -= 1;
-        this.clock.seconds += 86400;
-        this.overviewDaysRun++;
-        this.lifeEvents(pop.day(this.today(), this.youId));
+      let left = Math.min(40, OVERVIEW_DAYS_PER_SECOND[this.overviewSpeed] * dt) * 86400;
+      while (left > 0 && !this.lifeAsk) {
+        const toMidnight = 86400 - (this.clock.seconds % 86400);
+        const step = Math.min(left, toMidnight);
+        this.clock.seconds += step;
+        left -= step;
+        if (step === toMidnight) {
+          this.overviewDaysRun++;
+          this.lifeEvents(pop.day(this.today(), this.youId));
+        }
       }
-    } else this.overviewDays = 0;
+    }
     this.emitUi(dt);
   }
 
@@ -3134,7 +3140,8 @@ export class SandboxScene extends Phaser.Scene implements World, SensesHost {
     if (this.clockTimer <= 0) {
       this.clockTimer = 0.1;
       const parts = this.clock.parts();
-      clockChannel.emit({ time: formatTime(parts), date: formatDate(parts), isDaytime: parts.isDaytime, speed: this.rest ? this.speedNow : this.viewSpeed() });
+      const inOverview = this.rig.layer === 'overview' && !!this.population;
+      clockChannel.emit({ time: formatTime(parts), date: formatFullDate(parts), shortDate: formatShortDate(parts), isDaytime: parts.isDaytime, speed: this.rest ? this.speedNow : this.viewSpeed(), overview: inOverview ? this.overviewSpeed : null });
     }
     this.hudTimer -= dt;
     if (this.hudTimer <= 0) {

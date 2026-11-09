@@ -219,6 +219,10 @@ export const uiCommands = new Channel<UiCommand>();
 
 /** Game → UI: the game clock (placeholder day length; see time/clock.ts). */
 export interface ClockState {
+  /** The date, short enough for a phone. */
+  shortDate: string;
+  /** Out in the overview: its speed (0 paused, 1–5), shown in place of the wait button; null otherwise. */
+  overview: number | null;
   time: string;
   date: string;
   isDaytime: boolean;

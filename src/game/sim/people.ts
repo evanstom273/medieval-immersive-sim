@@ -1,5 +1,6 @@
 import { between, createRng, pick, type Rng } from '../util/rng';
 import { kinship, matchWeight, mayMarry, tieWord } from './kinship';
+import { DAYS_PER_YEAR as CALENDAR_DAYS_PER_YEAR } from '../time/clock';
 
 /**
  * Everyone in the world as records, for the long view: the generational fast-forward (the overview)
@@ -49,7 +50,8 @@ export const GIVEN: Record<Sex, string[]> = {
 };
 export const SURNAMES = ['Smith', 'Taylor', 'Baker', 'Cooper', 'Fletcher', 'Turner', 'Walker', 'Wright', 'Carter', 'Mason', 'Thatcher', 'Shepherd', 'Miller', 'Webb', 'Ward', 'Wood', 'Hill', 'Green', 'Clarke', 'Harris', 'Allen', 'Cook', 'Hall', 'Young', 'King', 'Wilkins', 'Hobbs', 'Pratt', 'Coles', 'Lambert', 'Saunders', 'Fuller', 'Dyer', 'Tanner', 'Chandler', 'Archer'];
 
-export const DAYS_PER_YEAR = 365;
+/** The game's calendar year (336 days: 12 months of 28). */
+export const DAYS_PER_YEAR = CALENDAR_DAYS_PER_YEAR;
 export const ageOf = (p: Person, day: number) => ((p.died ?? day) - p.born) / DAYS_PER_YEAR;
 export const alive = (p: Person) => p.died === undefined;
 

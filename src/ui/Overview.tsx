@@ -15,21 +15,8 @@ export function OverviewPanel() {
   const [s, setS] = useState<OverviewState | null>(() => overviewChannel.last ?? null);
   useEffect(() => overviewChannel.on(setS), []);
   if (!s) return null;
-  const speed = (n: number) => uiCommands.emit({ kind: 'overviewSpeed', speed: n });
   return (
     <>
-      {/* Date and speed, top centre. */}
-      <div className="pointer-events-auto absolute left-1/2 z-20 flex -translate-x-1/2 items-center gap-2 rounded-full px-3 py-1.5 shadow-lg ring-1 ring-black/30" style={{ top: 'max(14px, env(safe-area-inset-top))', background: PAPER, color: INK, ...serif }}>
-        <span className="min-w-[9rem] text-center text-sm italic">{s.date}</span>
-        <button className="h-8 w-8 rounded-full text-sm ring-1 ring-black/20" style={{ background: s.speed === 0 ? '#a8261c' : 'transparent', color: s.speed === 0 ? '#fff' : INK }} onClick={() => speed(s.speed === 0 ? 1 : 0)} title="Pause / play (Space)" aria-label={s.speed === 0 ? 'Play' : 'Pause'}>
-          {s.speed === 0 ? '▶' : '❚❚'}
-        </button>
-        <div className="flex items-center gap-1" title="Speed (1–5)">
-          {[1, 2, 3, 4, 5].map((n) => (
-            <button key={n} className="h-6 w-4 rounded-sm" aria-label={`Speed ${n}`} style={{ background: n <= s.speed ? INK : 'rgba(59,42,26,0.2)' }} onClick={() => speed(n)} />
-          ))}
-        </div>
-      </div>
       {/* The family, down the left. */}
       <div className="pointer-events-auto absolute z-20 flex max-h-[calc(100vh-11rem)] w-60 flex-col overflow-hidden rounded-md shadow-xl ring-1 ring-black/30" style={{ left: 'max(12px, env(safe-area-inset-left))', top: 'max(64px, calc(env(safe-area-inset-top) + 56px))', background: PAPER, color: INK, ...serif }}>
         <div className="border-b px-3 py-2" style={{ borderColor: 'rgba(59,42,26,0.25)' }}>

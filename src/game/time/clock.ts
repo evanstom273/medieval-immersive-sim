@@ -108,6 +108,16 @@ export function formatDate(p: ClockParts): string {
   return `Day ${p.day} · Month ${p.month} · Year ${p.year}`;
 }
 
+/** Short, for phones: e.g. "Wd 3 · Day 10 · M2 · Y1". */
+export function formatShortDate(p: ClockParts): string {
+  return `Wd ${p.weekday} · Day ${p.day} · M${p.month} · Y${p.year}`;
+}
+
+/** With the day of the week too, e.g. "Weekday 3 · Day 10 · Month 2 · Year 1". */
+export function formatFullDate(p: ClockParts): string {
+  return `Weekday ${p.weekday} · ${formatDate(p)}`;
+}
+
 /** e.g. "5h 20m" / "40m". */
 export function formatDuration(gameSeconds: number): string {
   const m = Math.max(0, Math.ceil(gameSeconds / 60));

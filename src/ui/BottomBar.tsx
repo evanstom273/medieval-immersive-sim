@@ -77,7 +77,7 @@ export function BottomBar() {
           }`}
           // Content height plus the phone's gesture/safe area, so the bar sits flush with the bottom edge.
           style={{
-            height: `calc(${touch ? 60 : 100}px + env(safe-area-inset-bottom))`,
+            height: `calc(${touch ? 72 : 100}px + env(safe-area-inset-bottom))`,
             paddingBottom: `calc(${touch ? 8 : 12}px + env(safe-area-inset-bottom))`,
             paddingLeft: `max(${touch ? 8 : 16}px, env(safe-area-inset-left))`,
             paddingRight: `max(${touch ? 8 : 16}px, env(safe-area-inset-right))`,
@@ -98,7 +98,8 @@ export function BottomBar() {
           {/* ---- centre: time, and walls up / cutaway / down */}
           <div className={`flex items-center self-center ${touch ? 'gap-1' : 'gap-2'}`}>
             <TimeControls paused={paused} touch={touch} resting={/^(Waiting|Sleeping)/.test(active.activity)} />
-            <WallsButton touch={touch} />
+            {/* Walls mean nothing on the map. */}
+            {!hud?.onMap && <WallsButton touch={touch} />}
             <MapButton touch={touch} />
             {/* Touch has its own Sprint button by the thumb. */}
             {!touch && <SprintButton on={!!hud?.sprinting} />}
@@ -208,9 +209,12 @@ function Identity({ member: m }: { member: RosterMember }) {
   );
 }
 
-function TimeControls({ paused, touch, resting }: { paused: boolean; touch: boolean; resting: boolean }) {
+function TimeControls({ paused: worldPaused, touch, resting }: { paused: boolean; touch: boolean; resting: boolean }) {
   const [clock, setClock] = useState<ClockState | null>(clockChannel.last ?? null);
   useEffect(() => clockChannel.on(setClock), []);
+  // Out in the overview the same controls run the fast-forward: pause, and speeds 1–5 in place of waiting.
+  const overview = clock?.overview ?? null;
+  const paused = overview !== null ? overview === 0 : worldPaused;
   const btn = `flex items-center justify-center rounded-full transition ${touch ? 'h-8 w-8 text-xs' : 'h-9 w-9 text-sm'}`;
   return (
     <div className="relative flex shrink-0 flex-col items-center gap-1 self-center">
@@ -225,16 +229,33 @@ function TimeControls({ paused, touch, resting }: { paused: boolean; touch: bool
         >
           {paused ? '▶' : '❚❚'}
         </button>
-        <button
-          className={`${btn} ${resting ? 'bg-white/15' : 'hover:bg-white/10'}`}
-          title={resting ? 'Stop waiting / get up' : 'Wait… (choose how many hours)'}
-          onClick={(e) => {
-            uiCommands.emit(resting ? { kind: 'cancelAction' } : { kind: 'wait' });
-            e.currentTarget.blur();
-          }}
-        >
-          ⏳
-        </button>
+        {overview !== null ? (
+          <div className="flex items-center gap-0.5 px-1" title="Speed (1–5)">
+            {[1, 2, 3, 4, 5].map((n) => (
+              <button
+                key={n}
+                aria-label={`Speed ${n}`}
+                className={`rounded-sm ${touch ? 'h-5 w-2' : 'h-7 w-3.5'}`}
+                style={{ background: n <= overview ? '#fcd34d' : 'rgba(255,255,255,0.18)' }}
+                onClick={(e) => {
+                  uiCommands.emit({ kind: 'overviewSpeed', speed: n });
+                  e.currentTarget.blur();
+                }}
+              />
+            ))}
+          </div>
+        ) : (
+          <button
+            className={`${btn} ${resting ? 'bg-white/15' : 'hover:bg-white/10'}`}
+            title={resting ? 'Stop waiting / get up' : 'Wait… (choose how many hours)'}
+            onClick={(e) => {
+              uiCommands.emit(resting ? { kind: 'cancelAction' } : { kind: 'wait' });
+              e.currentTarget.blur();
+            }}
+          >
+            ⏳
+          </button>
+        )}
       </div>
       {clock && (
         <div className="flex flex-col items-center leading-tight" title="Placeholder day length (see the design log)">
@@ -243,14 +264,17 @@ function TimeControls({ paused, touch, resting }: { paused: boolean; touch: bool
             {touch ? '' : ' '}
             {clock.time}
             {/* On phones the pause button already shows it's paused; space is tight. */}
-            {paused && !touch ? ' · Paused' : clock.speed > 1 ? ` ×${clock.speed}` : ''}
+            {paused && !touch ? ' · Paused' : overview ? ` · ${OVERVIEW_SPEED_LABEL[overview]}` : clock.speed > 1 ? ` ×${clock.speed}` : ''}
           </span>
-          {!touch && <span className="text-[11px] text-white/45">{clock.date}</span>}
+          <span className={`whitespace-nowrap text-white/45 ${touch ? 'text-[10px]' : 'text-[11px]'}`}>{touch ? clock.shortDate : clock.date}</span>
         </div>
       )}
     </div>
   );
 }
+
+/** How fast the overview runs at each speed (matches the scene's days per second). */
+const OVERVIEW_SPEED_LABEL = ['', '1 day/s', '3 days/s', '1 week/s', '2 weeks/s', '1 month/s'];
 
 /** Top-left: what you're doing right now, with a cancel button. */
 function CurrentAction({ member: m, touch }: { member: RosterMember; touch: boolean }) {
@@ -303,7 +327,7 @@ function WallsButton({ touch }: { touch: boolean }) {
   }, []);
   return (
     <button
-      className={`flex items-center justify-center gap-1.5 rounded-full bg-white/5 text-white ring-1 ring-white/10 hover:bg-white/10 ${touch ? 'h-9 w-9' : 'h-11 px-3 text-sm'}`}
+      className={`flex items-center justify-center gap-1.5 rounded-full bg-white/5 text-white ring-1 ring-white/10 hover:bg-white/10 ${touch ? 'h-8 w-8' : 'h-11 px-3 text-sm'}`}
       title={`${WALL_LABEL[mode]} (V to change)`}
       onClick={(e) => {
         uiCommands.emit({ kind: 'cycleWalls' });
@@ -337,7 +361,7 @@ function SprintButton({ on }: { on: boolean }) {
 function MapButton({ touch }: { touch: boolean }) {
   return (
     <button
-      className={`flex items-center justify-center gap-1.5 rounded-full bg-white/5 text-white ring-1 ring-white/10 hover:bg-white/10 ${touch ? 'h-9 w-9' : 'h-11 px-3 text-sm'}`}
+      className={`flex items-center justify-center gap-1.5 rounded-full bg-white/5 text-white ring-1 ring-white/10 hover:bg-white/10 ${touch ? 'h-8 w-8' : 'h-11 px-3 text-sm'}`}
       title="World map (M)"
       onClick={(e) => {
         uiCommands.emit({ kind: 'map' });
